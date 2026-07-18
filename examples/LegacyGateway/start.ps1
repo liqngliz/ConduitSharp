@@ -145,6 +145,15 @@ $null = New-Item -ItemType Directory -Path $YarpOut -Force
 dotnet publish "$Root/../ConduitSharp.Plugin.YarpProxy/src/ConduitSharp.Plugin.YarpProxy" -c Release -o $YarpOut -v q
 Write-Ok "YarpProxyPlugin → $YarpOut"
 
+Write-Step "Building SlidingWindow limiter (root drop-in IRateLimiter)..."
+$SlidingSrc = "$Root/../ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow"
+dotnet build $SlidingSrc -c Release -v q
+# Only the algorithm DLL goes in the plugins root; its lone dependency (ConduitSharp.Traffic)
+# is already loaded by the host and resolves from there.
+$PluginsRoot = Join-Path $Root "gateway" "plugins"
+Copy-Item "$SlidingSrc/bin/Release/net10.0/ConduitSharp.RateLimit.SlidingWindow.dll" $PluginsRoot -Force
+Write-Ok "SlidingWindowRateLimiter → $PluginsRoot"
+
 if ($Build) { Write-Ok "Build complete."; exit 0 }
 
 # ---------------------------------------------------------------------------

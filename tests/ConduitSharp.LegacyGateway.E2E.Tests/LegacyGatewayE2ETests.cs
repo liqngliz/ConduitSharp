@@ -87,4 +87,42 @@ public sealed class LegacyGatewayE2ETests(LegacyGatewayFixture fx) : GatewayE2ET
             $"breaker should open after 2 failures, got sequence: {string.Join(",", statuses)}");
         Assert.All(statuses.TakeLast(10), status => Assert.Equal(200, status));
     }
+
+    // =========================================================================
+    // Rate limiting — drop-in SlidingWindowRateLimiter (IRateLimiter) wired via the
+    // plugins root. The /api/ratelimit-demo route carries a tiny per-client quota
+    // (maxRequests: 3, windowSeconds: 30), so a 4th request inside the window trips 429.
+    // =========================================================================
+
+    [Fact]
+    public async Task SlidingWindowLimiter_IsDiscovered_AndEnforcesPerClientQuota()
+    {
+        // The host logs the drop-in algorithm it registered at startup — proof the *sliding*
+        // limiter is active, not the built-in fixed window (both would 429, only this line
+        // distinguishes them).
+        var logPath = Path.Combine(Fx.ExampleRoot, "logs", "gateway.log");
+        var log = File.Exists(logPath) ? await ReadSharedAsync(logPath) : "";
+        Assert.Contains("SlidingWindowRateLimiter", log, StringComparison.Ordinal);
+
+        // A unique client key isolates this burst from any other caller/run against the
+        // shared per-route counter.
+        var clientKey = $"burst-{Guid.NewGuid():N}";
+        var statuses = new List<HttpResponseMessage>();
+        for (var i = 0; i < 4; i++)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, "/api/ratelimit-demo/probe");
+            request.Headers.Add("X-Demo-Client", clientKey);
+            statuses.Add(await Fx.Client.SendAsync(request));
+        }
+
+        // First 3 pass the limiter (forwarded upstream — any non-429 status); the 4th is denied.
+        Assert.All(statuses.Take(3), r => Assert.NotEqual(HttpStatusCode.TooManyRequests, r.StatusCode));
+        Assert.Equal(HttpStatusCode.TooManyRequests, statuses[3].StatusCode);
+
+        // The algorithm supplies its own Retry-After — a sliding log answers "seconds until your
+        // oldest request ages out", and it must be a positive whole number of seconds.
+        var retryAfter = statuses[3].Headers.RetryAfter?.Delta;
+        Assert.NotNull(retryAfter);
+        Assert.InRange(retryAfter!.Value.TotalSeconds, 1, 30);
+    }
 }

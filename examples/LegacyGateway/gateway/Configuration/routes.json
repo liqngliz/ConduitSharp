@@ -69,6 +69,41 @@
       "maxRequestBodyBytes": 1048576
     },
     {
+      "id": "ratelimit-demo",
+      "description": "Demo route for the drop-in SlidingWindowRateLimiter — tiny per-client quota so a burst trips 429. Forwards to the inventory cluster; only the rate-limit decision matters here.",
+      "route": {
+        "match": {
+          "path": "/api/ratelimit-demo/{**rest}",
+          "methods": [ "GET" ]
+        }
+      },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": { "address": "http://localhost:5101" },
+          "node-1": { "address": "http://localhost:5102" }
+        },
+        "httpRequest": { "activityTimeout": "00:00:05" }
+      },
+      "plugins": [
+        {
+          "name": "rate-limit",
+          "order": 1,
+          "enabled": true,
+          "config": {
+            "windowSeconds": 30,
+            "maxRequests": 3,
+            "keyHeader": "X-Demo-Client"
+          }
+        },
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ]
+    },
+    {
       "id": "order-service",
       "description": "Order API — JWT (HS256) auth, forwarded to order service",
       "route": {
