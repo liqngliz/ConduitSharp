@@ -122,14 +122,16 @@ jobs:
       # the make-run child processes into the gateway's `dotnet run` build). E2E product
       # coverage isn't worth a red gate; the in-process suite in build-and-test carries the
       # coverage number. Docker-contained gateways (grafana/mTLS) gate on green only.
+      # --blame-hang-timeout: a wedged gateway fixture dumps and fails fast instead of
+      # hanging the job to the 6h ceiling. Cheap insurance on process-launching suites.
       - name: LegacyGateway E2E (real gateway process, PowerShell plugin, body capture)
-        run: dotnet test tests/ConduitSharp.LegacyGateway.E2E.Tests --no-restore
+        run: dotnet test tests/ConduitSharp.LegacyGateway.E2E.Tests --no-restore --blame-hang-timeout 120s
 
       - name: EmbeddedGateway E2E (real gateway process, embedded composition)
-        run: dotnet test tests/ConduitSharp.EmbeddedGateway.E2E.Tests --no-restore
+        run: dotnet test tests/ConduitSharp.EmbeddedGateway.E2E.Tests --no-restore --blame-hang-timeout 120s
 
       - name: EmbeddedGatewayPrefixed E2E (real gateway process, path prefix)
-        run: dotnet test tests/ConduitSharp.EmbeddedGatewayPrefixed.E2E.Tests --no-restore
+        run: dotnet test tests/ConduitSharp.EmbeddedGatewayPrefixed.E2E.Tests --no-restore --blame-hang-timeout 120s
 
       - name: Grafana E2E (Docker observability stack — Tempo/Prometheus/Loki)
         run: make test-e2e-grafana
