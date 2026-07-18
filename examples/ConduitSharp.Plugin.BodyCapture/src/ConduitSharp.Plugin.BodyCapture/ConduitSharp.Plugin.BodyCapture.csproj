@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ConduitSharp.Plugin.BodyCapture</RootNamespace>
+    
+    <IsPackable>true</IsPackable>
+    <PackageId>ConduitSharp.Plugin.BodyCapture</PackageId>
+    <Title>ConduitSharp BodyCapture Plugin</Title>
+    <PackageTags>$(PackageTags);audit;logging;opentelemetry;plugin</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>
+      A plugin for the ConduitSharp API gateway that captures incoming HTTP request bodies
+      and exports them via OpenTelemetry logging (e.g. to Grafana Loki).
+      Includes a configurable MaxSize to automatically truncate large payloads.
+    </Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\ConduitSharp.Core\ConduitSharp.Core.csproj" />
+  </ItemGroup>
+</Project>

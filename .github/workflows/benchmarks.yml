@@ -1,0 +1,197 @@
+# Benchmarks on demand. GitHub runners are shared 4-vCPU VMs: numbers here are a
+# TREND/REGRESSION signal only — never publishable, never APISIX-comparable.
+# Published numbers come from a dedicated Linux box (see benchmarks/load/README.md).
+name: benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Load-bench duration per run (bombardier -d)"
+        # 60s: shared-runner noise (CPU steal, neighbor bursts) comes in windows longer than a
+        # short run — a 15-30s sample can land entirely inside one burst and read 3x low. A
+        # 60s sample averages across them. Costs runtime, buys repeatability.
+        default: "60s"
+      only:
+        description: "Run a single phase; each phase publishes its own results, so e.g. micro re-benches and republishes micro.md + the README block alone"
+        type: choice
+        options: [all, micro, load, matrix, compare]
+        default: all
+  release:
+    types: [published] # bench every release; manual dispatch for anything between
+
+permissions:
+  contents: read
+
+jobs:
+  micro:
+    name: Phase 1 — BenchmarkDotNet (short job)
+    # Release runs everything; dispatch runs what "only" says (inputs are empty on release events).
+    if: github.event_name == 'release' || inputs.only == 'all' || inputs.only == 'micro'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commits docs/benchmarks/micro.md
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && 'main' || github.ref }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Run microbenchmarks
+        run: >
+          dotnet run -c Release
+          --project benchmarks/ConduitSharp.Benchmarks
+          -- --filter "*" --job short
+      # Publish policy: B/op (Allocated) is the headline — allocations are
+      # deterministic even on shared runners; timing columns are trend-only.
+      - name: Publish micro results to docs
+        run: |
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          RESULTS_DIR=$(find . -type d -path '*BenchmarkDotNet.Artifacts/results' | head -1)
+          [ -n "$RESULTS_DIR" ] || { echo "no BenchmarkDotNet results found"; find . -name '*-report-github.md'; exit 1; }
+          {
+            echo "# Microbenchmarks (Phase 1) — latest CI run"
+            echo
+            echo "> Shared GitHub Actions runner: **Allocated (B/op) is deterministic and comparable;**"
+            echo "> **time columns are trend signal only.** Source run: $RUN_URL"
+            for f in "$RESULTS_DIR"/*-report-github.md; do
+              echo
+              echo "## $(basename "$f" | sed 's/ConduitSharp.Benchmarks.//; s/-report-github.md//')"
+              echo
+              cat "$f"
+            done
+          } > docs/benchmarks/micro.md
+          # in-proc ConduitSharp-vs-Ocelot tables → README (APISIX not .NET, excluded there)
+          python3 benchmarks/ConduitSharp.Benchmarks/readme-micro.py "$RESULTS_DIR" "$RUN_URL"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/benchmarks/micro.md README.md
+          git diff --cached --quiet || {
+            git commit -m "chore(bench): update micro benchmark results [skip ci]"
+            BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            for i in 1 2 3; do git pull --rebase origin "$BRANCH" && git push origin "$BRANCH" && break || sleep 5; done
+          }
+      # Upload even when the job fails. The benching is the hour; the steps that fail after it are
+      # cheap (a git push racing main, a generator refusing bad input). Losing the figures to a
+      # failed push is what report-regenerate exists to make impossible.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: micro-results
+          path: "**/BenchmarkDotNet.Artifacts/results/"
+
+  load:
+    name: Phase 2/3 — docker load bench
+    if: github.event_name == 'release' || inputs.only == 'all' || inputs.only == 'load'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run load scenarios (direct, A, B, flood)
+        working-directory: benchmarks/load
+        run: DUR="${{ inputs.duration || '60s' }}" ./run.sh all
+      # Upload even when the job fails. The benching is the hour; the steps that fail after it are
+      # cheap (a git push racing main, a generator refusing bad input). Losing the figures to a
+      # failed push is what report-regenerate exists to make impossible.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-results
+          path: benchmarks/load/results.md
+
+  matrix:
+    name: Phase 3 — structured comparison s1..s5 (validated protocol)
+    if: github.event_name == 'release' || inputs.only == 'all' || inputs.only == 'matrix'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commits the rendered s1..s5 tables
+    # 10 throughput arms x (warmup + 3 x 60s reps) + the s3 ramp + rig-gate settling between
+    # arms lands around 60-90 min. The gate exits 1 if the runner never settles — a loud
+    # failure beats a quiet garbage number.
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run s1..s5 (median of 3, gated, c=96)
+        working-directory: benchmarks/load
+        # GW_MEM=1g because s5's 512m tmpfs pages count against the same cgroup as the heap;
+        # s1..s4 just get headroom they don't use. STEPS pins the s3 ramp to the two levels the
+        # README documents. CONNS=96 is the validated operating point for 1 MB bodies — see
+        # "What makes a run of this matrix valid" in benchmarks/load/README.md.
+        run: >
+          DUR="${{ inputs.duration || '60s' }}" CONNS=96 REPS=3
+          GW_MEM=1g TMPFS_SIZE=512m STEPS="96 384" PTF_DUR=60s
+          ./run.sh matrix
+      - name: Publish the s1..s5 tables
+        run: |
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          python3 benchmarks/load/readme-matrix.py benchmarks/load/runs.jsonl \
+            benchmarks/load/README.md "$RUN_URL" README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/load/README.md README.md
+          git diff --cached --quiet || {
+            git commit -m "chore(bench): update s1..s5 matrix tables [skip ci]"
+            BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            for i in 1 2 3; do git pull --rebase origin "$BRANCH" && git push origin "$BRANCH" && break || sleep 5; done
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: matrix-results
+          path: |
+            benchmarks/load/results.md
+            benchmarks/load/runs.jsonl
+
+  compare:
+    name: Head-to-head — ConduitSharp vs Ocelot vs APISIX
+    if: github.event_name == 'release' || inputs.only == 'all' || inputs.only == 'compare'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commits README ratios + docs/benchmarks/latest.md
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Release events check out the tag (detached) — the README commit must
+          # land on main. Release tags are cut from main's tip, so same code.
+          ref: ${{ github.event_name == 'release' && 'main' || github.ref }}
+      - name: Run comparison (sequential, same rig)
+        working-directory: benchmarks/load
+        run: DUR="${{ inputs.duration || '60s' }}" ./run.sh compare
+      - name: High-concurrency pass (tail-latency spread)
+        working-directory: benchmarks/load
+        run: DUR="${{ inputs.duration || '60s' }}" CONNS=512 APPEND=1 ./run.sh compare-hc
+      # Publish policy: ratios in the README (shared runners — absolutes are noise),
+      # raw figures land in docs/benchmarks/latest.md + this run's artifact, both linked.
+      - name: Publish ratios to README + raw table to docs
+        run: |
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          python3 benchmarks/load/readme-block.py benchmarks/load/runs.jsonl README.md "$RUN_URL"
+          mkdir -p docs/benchmarks
+          {
+            echo "# Latest CI benchmark run (raw figures)"
+            echo
+            echo "> Shared GitHub Actions runner (4 vCPU): absolute numbers are run-to-run noise;"
+            echo "> the published claim is the README's same-rig ratio table."
+            echo "> Source run: $RUN_URL"
+            echo
+            cat benchmarks/load/results.md
+          } > docs/benchmarks/latest.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/benchmarks/latest.md
+          git diff --cached --quiet || {
+            git commit -m "chore(bench): update CI benchmark ratios [skip ci]"
+            # main may move during the ~15-min run (or the micro job pushes) — rebase + retry
+            BRANCH=$(git rev-parse --abbrev-ref HEAD)
+            for i in 1 2 3; do git pull --rebase origin "$BRANCH" && git push origin "$BRANCH" && break || sleep 5; done
+          }
+      # Upload even when the job fails. The benching is the hour; the steps that fail after it are
+      # cheap (a git push racing main, a generator refusing bad input). Losing the figures to a
+      # failed push is what report-regenerate exists to make impossible.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compare-results
+          path: |
+            benchmarks/load/results.md
+            benchmarks/load/runs.jsonl

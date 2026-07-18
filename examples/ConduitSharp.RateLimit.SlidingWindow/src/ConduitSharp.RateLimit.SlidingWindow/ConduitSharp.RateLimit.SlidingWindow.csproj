@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ConduitSharp.RateLimit.SlidingWindow</RootNamespace>
+    <OutputType>Library</OutputType>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>ConduitSharp.RateLimit.SlidingWindow</PackageId>
+    <Title>ConduitSharp Sliding-Window Rate Limiting</Title>
+    <PackageTags>$(PackageTags);rate-limit;sliding-window</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>
+      Sliding-log rate-limit algorithm (IRateLimiter) for ConduitSharp. Drops into the plugins
+      directory to replace the built-in fixed-window limiter, which allows up to 2x the nominal
+      rate across a window boundary. Holds the limit across every instant by keeping the timestamp
+      of each permit still inside the window, trading O(maxRequests) memory per active key for the
+      accuracy.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ConduitSharp.RateLimit.SlidingWindow.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ProjectReference, not PackageReference: this repo publishes both sides, so referencing
+         source directly means the build always uses the current API/ABI instead of whatever was
+         last published to NuGet. `dotnet pack` converts these to versioned dependencies. -->
+    <ProjectReference Include="..\..\..\..\src\ConduitSharp.Traffic\ConduitSharp.Traffic.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ConduitSharp.Plugin.PowerShell/ConduitSharp.Plugin.PowerShell.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ConduitSharp.Plugin.PowerShell.Tests/ConduitSharp.Plugin.PowerShell.Tests.csproj" />
+  </Folder>
+  <Project Path="../../src/ConduitSharp.Core/ConduitSharp.Core.csproj" />
+</Solution>

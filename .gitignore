@@ -1,0 +1,43 @@
+# Build output
+bin/
+obj/
+*.dll
+*.pdb
+
+# User-specific VS/Rider files
+*.user
+*.suo
+.vs/
+.idea/
+
+# dotnet test results
+TestResults/
+
+# NuGet
+*.nupkg
+packages/
+
+.*
+!.gitignore
+!.editorconfig
+!.config/
+!.gitattributes
+!.github/
+
+alt-*
+
+
+# Runtime artefacts
+logs/
+examples/LegacyGateway/logs/
+examples/LegacyGateway/bin/
+examples/LegacyGateway/.pid-*
+examples/LegacyGateway/gateway/plugins/
+examples/EmbeddedGateway/gateway/plugins/
+# mTLS e2e generated certs (throwaway, regenerated each run)
+tests/mtls-e2e/certs/
+docs/planning/ENTERPRISE-Plan.md
+BenchmarkDotNet.Artifacts/
+
+# Generated per-run by CertificateMaterial.Generate — throwaway test CA
+tests/ConduitSharp.Mtls.E2E.Tests/assets/certs/

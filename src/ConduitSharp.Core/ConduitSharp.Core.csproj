@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ConduitSharp.Core</RootNamespace>
+
+    <!-- NuGet package metadata. Version/Authors/License/URLs are shared via Directory.Build.props. -->
+    <PackageId>ConduitSharp.Core</PackageId>
+    <Description>
+      Plugin contracts, routing primitives, and pipeline executor for the ConduitSharp API Gateway.
+      Reference this package to build external plugins that can be dropped into a running gateway
+      without recompiling it.
+    </Description>
+    <PackageTags>api-gateway;plugin;middleware;kestrel;dotnet</PackageTags>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- Do not include this project's own output in the package symbol file -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>ConduitSharp.Core.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>ConduitSharp.Transformation.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>ConduitSharp.Integration.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>ConduitSharp.Security.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>ConduitSharp.Traffic.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- Embed the package-specific README and root LICENSE into the NuGet package -->
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

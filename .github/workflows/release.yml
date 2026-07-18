@@ -1,0 +1,220 @@
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/conduitsharp
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fail fast before anything is published anywhere: the git tag names the
+  # binaries and Docker image, but NuGet versions come from <Version> in
+  # Directory.Build.props — a mismatched tag would ship artifacts under one
+  # version and packages under another.
+  # ---------------------------------------------------------------------------
+  verify-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tag matches Directory.Build.props version
+        run: |
+          PROPS_VERSION=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PROPS_VERSION" != "$TAG_VERSION" ]; then
+            echo "Tag $GITHUB_REF_NAME ($TAG_VERSION) != Directory.Build.props <Version> ($PROPS_VERSION)"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Self-contained binaries — built on ubuntu so we can cross-compile both
+  # runtimes without needing a Windows runner.
+  # ---------------------------------------------------------------------------
+  binaries:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # --- Windows x64 -------------------------------------------------------
+      - name: Publish win-x64
+        run: |
+          dotnet publish src/ConduitSharp.Host \
+            -c Release \
+            -r win-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -o publish/win-x64
+
+      - name: Package win-x64
+        run: |
+          cd publish/win-x64
+          zip -r ../../conduitsharp-${{ github.ref_name }}-win-x64.zip .
+
+      # --- Linux x64 ---------------------------------------------------------
+      - name: Publish linux-x64
+        run: |
+          dotnet publish src/ConduitSharp.Host \
+            -c Release \
+            -r linux-x64 \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -o publish/linux-x64
+
+      - name: Package linux-x64
+        run: |
+          chmod +x publish/linux-x64/ConduitSharp.Host
+          tar czf conduitsharp-${{ github.ref_name }}-linux-x64.tar.gz \
+            -C publish/linux-x64 .
+
+      - name: Upload binary artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: |
+            conduitsharp-${{ github.ref_name }}-win-x64.zip
+            conduitsharp-${{ github.ref_name }}-linux-x64.tar.gz
+
+  # ---------------------------------------------------------------------------
+  # Docker image — pushed to GitHub Container Registry (ghcr.io), multi-arch.
+  # The image publishes a portable framework-dependent build (no pinned RID — see
+  # Dockerfile), so it runs on both amd64 and arm64 hosts; build both so the manifest
+  # actually offers arm64 (Apple Silicon, Graviton) rather than silently amd64-only.
+  # ---------------------------------------------------------------------------
+  docker:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # ---------------------------------------------------------------------------
+  # NuGet packages — the full ConduitSharp.* dependency chain, not just the tool.
+  # ConduitSharp.Gateway.AspNetCore (the embeddable library) depends on Core/Traffic/
+  # Security/Transformation/Observability at the SAME version (all share <Version> from
+  # the root Directory.Build.props) — publishing only the tool package would leave
+  # `dotnet add package ConduitSharp.Gateway.AspNetCore` unable to restore its own
+  # dependencies. Pack and push every packable project explicitly (deliberately NOT a
+  # blanket `dotnet pack ConduitSharp.sln`, so nothing new ships by accident). The drop-in
+  # example plugins under examples/ are published too — they're the packaged form of the
+  # plugin system (body capture, Redis cache, Redis rate-limit store) and their
+  # ProjectReferences pack as dependencies on the same-version core packages.
+  #
+  # Uses GitHub OIDC (trusted publisher) — no API key secret required.
+  # One-time setup per package: nuget.org → Trusted Publishers → add this repo/workflow
+  # (release.yml) for EACH package ID below — trust is configured per package, not per repo.
+  # ---------------------------------------------------------------------------
+  nuget:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read    # a permissions block zeroes everything unlisted — checkout needs this back
+      id-token: write   # required to request the OIDC token
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pack
+        run: |
+          for proj in \
+            src/ConduitSharp.Core \
+            src/ConduitSharp.Traffic \
+            src/ConduitSharp.Security \
+            src/ConduitSharp.Transformation \
+            src/ConduitSharp.Observability \
+            src/ConduitSharp.Gateway.AspNetCore \
+            src/ConduitSharp.Gateway.AspNetCore.Swagger \
+            src/ConduitSharp.Host \
+            examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture \
+            examples/ConduitSharp.Cache.RedisProtocol/src/ConduitSharp.Cache.RedisProtocol \
+            examples/ConduitSharp.RateLimit.RedisProtocol/src/ConduitSharp.RateLimit.RedisProtocol \
+          ; do
+            dotnet pack "$proj" -c Release -o nupkg
+          done
+
+      # Exchanges the GitHub OIDC token for a short-lived nuget.org API key — the raw
+      # JWT is NOT itself a valid api-key. Requires (one-time, on nuget.org):
+      #   1. A Trusted Publishing policy under the publishing account:
+      #      Profile → Trusted Publishing → repository liqngliz/ConduitSharp,
+      #      workflow release.yml.
+      #   2. The NUGET_USER repo secret set to that nuget.org username.
+      - name: NuGet login (OIDC → short-lived API key)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push nupkg/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
+            --skip-duplicate
+
+  # ---------------------------------------------------------------------------
+  # GitHub Release — attaches binaries once all jobs finish
+  # ---------------------------------------------------------------------------
+  # Deliberately NOT gated on nuget: binaries and the Docker image are useful on their
+  # own, and a NuGet-side failure (e.g. trusted-publishing config) shouldn't hold the
+  # GitHub Release hostage. NuGet can be re-run separately; --skip-duplicate makes it safe.
+  release:
+    needs: [ binaries, docker ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            conduitsharp-${{ github.ref_name }}-win-x64.zip
+            conduitsharp-${{ github.ref_name }}-linux-x64.tar.gz

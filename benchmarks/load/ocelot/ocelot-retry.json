@@ -1,0 +1,33 @@
+{
+  "Routes": [
+    {
+      "UpstreamPathTemplate": "/{everything}",
+      "UpstreamHttpMethod": [
+        "Get",
+        "Post",
+        "Put"
+      ],
+      "DownstreamPathTemplate": "/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [
+        {
+          "Host": "upstream",
+          "Port": 8081
+        },
+        {
+          "Host": "upstream",
+          "Port": 8082
+        }
+      ],
+      "LoadBalancerOptions": {
+        "Type": "RoundRobin"
+      },
+      "QoSOptions": {
+        "ExceptionsAllowedBeforeBreaking": 0,
+        "DurationOfBreak": 1000,
+        "TimeoutValue": 30000
+      }
+    }
+  ],
+  "GlobalConfiguration": {}
+}

@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!--
+      Docker E2E tests for the Grafana observability stack. They start the full
+      docker-compose.grafana.yml stack (plus docker-compose.e2e.yml override),
+      drive traffic through the gateway, and assert traces/metrics/logs actually
+      land in Tempo, Prometheus, and Loki. Requires a running Docker daemon.
+      Run explicitly:
+        make test-e2e-grafana       (from examples/LegacyGateway/)
+        dotnet test tests/ConduitSharp.Grafana.E2E.Tests
+      Excluded from the root `make test` run via filter Category!=E2E.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector"          Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk"      Version="17.12.0" />
+    <PackageReference Include="xunit"                       Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio"   Version="3.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="System.Net" />
+    <Using Include="System.Net.Http" />
+    <Using Include="System.Text.Json" />
+    <Using Include="System.Diagnostics" />
+  </ItemGroup>
+
+</Project>

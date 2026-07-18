@@ -1,0 +1,283 @@
+{
+  "routes": [
+    {
+      "id": "inventory-service",
+      "description": "Inventory API — API key auth, rate limited, round-robin across two nodes",
+      "route": {
+        "match": {
+          "path": "/api/inventory/{**rest}",
+          "methods": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": {
+            "address": "http://localhost:6101"
+          },
+          "node-1": {
+            "address": "http://localhost:6102"
+          }
+        },
+        "httpRequest": {
+          "activityTimeout": "00:00:05"
+        }
+      },
+      "swagger": {
+        "fetchFrom": "http://localhost:6101/openapi/v1.json"
+      },
+      "plugins": [
+        {
+          "name": "api-key-auth",
+          "order": 1,
+          "enabled": true,
+          "config": {
+            "header": "X-Api-Key",
+            "keys": [
+              "demo-api-key-conduitsharp-example"
+            ]
+          }
+        },
+        {
+          "name": "rate-limit",
+          "order": 2,
+          "enabled": true,
+          "config": {
+            "windowSeconds": 60,
+            "maxRequests": 100
+          }
+        },
+        {
+          "name": "custom",
+          "variant": "body-capture",
+          "order": 10,
+          "enabled": true,
+          "config": {
+            "maxSize": 1024
+          }
+        },
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ],
+      "maxRequestBodyBytes": 1048576
+    },
+    {
+      "id": "order-service",
+      "description": "Order API — JWT (HS256) auth, forwarded to order service",
+      "route": {
+        "match": {
+          "path": "/api/orders/{**rest}",
+          "methods": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": {
+            "address": "http://localhost:6201"
+          }
+        },
+        "httpRequest": {
+          "activityTimeout": "00:00:05"
+        }
+      },
+      "swagger": {
+        "fetchFrom": "http://localhost:6201/openapi/v1.json"
+      },
+      "plugins": [
+        {
+          "name": "jwt-auth",
+          "order": 1,
+          "enabled": true,
+          "config": {
+            "signingKey": "ZGVtby1zaWduaW5nLWtleS1jb25kdWl0c2hhcnAtZXhhbXBsZS0zMmNo",
+            "issuer": "conduitsharp-demo",
+            "audience": "conduitsharp-demo"
+          }
+        },
+        {
+          "name": "custom",
+          "variant": "body-capture",
+          "order": 10,
+          "enabled": true,
+          "config": {
+            "maxSize": 1024
+          }
+        },
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "upload-service",
+      "description": "Upload API — streamed directly without buffering, no body capture",
+      "route": {
+        "match": {
+          "path": "/api/upload/{**rest}",
+          "methods": [
+            "POST",
+            "PUT"
+          ]
+        }
+      },
+      "streamOnly": true,
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": {
+            "address": "http://localhost:6201"
+          }
+        },
+        "httpRequest": {
+          "activityTimeout": "00:00:15"
+        }
+      },
+      "plugins": [
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "finance-margin-report",
+      "description": "ERP finance report — JWT auth + role-based access, rate limited, cached 60s, executed via PowerShell plugin",
+      "route": {
+        "match": {
+          "path": "/finance/reports/margin",
+          "methods": [
+            "GET"
+          ]
+        }
+      },
+      "cluster": null,
+      "swagger": {
+        "specFile": "specs/finance-margin-report.json"
+      },
+      "plugins": [
+        {
+          "name": "jwt-auth",
+          "order": 1,
+          "enabled": true,
+          "config": {
+            "signingKey": "ZGVtby1zaWduaW5nLWtleS1jb25kdWl0c2hhcnAtZXhhbXBsZS0zMmNo",
+            "issuer": "conduitsharp-demo",
+            "audience": "conduitsharp-demo",
+            "requiredClaims": [
+              {
+                "claim": "role",
+                "anyOf": [
+                  "analyst",
+                  "finance-admin"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rate-limit",
+          "order": 2,
+          "enabled": true,
+          "config": {
+            "windowSeconds": 3600,
+            "maxRequests": 100
+          }
+        },
+        {
+          "name": "cache",
+          "order": 3,
+          "enabled": true,
+          "config": {
+            "ttlSeconds": 60
+          }
+        },
+        {
+          "name": "custom",
+          "variant": "power-shell",
+          "order": 99,
+          "enabled": true,
+          "config": {
+            "scriptPath": "scripts/Get-MarginReport.ps1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "health",
+      "description": "Health check — passthrough, no auth, no policies",
+      "route": {
+        "match": {
+          "path": "/health",
+          "methods": [
+            "GET"
+          ]
+        }
+      },
+      "swagger": {
+        "specFile": "specs/health.json"
+      },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": {
+            "address": "http://localhost:6101"
+          }
+        },
+        "httpRequest": {
+          "activityTimeout": "00:00:02"
+        }
+      },
+      "plugins": [
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "greeter-grpc",
+      "description": "gRPC passthrough — the YARP forwarder relays HTTP/2 verbatim to the Greeter service (no transcoding)",
+      "route": {
+        "match": {
+          "path": "/greet.Greeter/{**method}",
+          "methods": [
+            "POST"
+          ]
+        }
+      },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": {
+            "address": "http://localhost:6301"
+          }
+        },
+        "httpRequest": {
+          "activityTimeout": "00:00:05"
+        }
+      },
+      "plugins": [
+        {
+          "name": "http-proxy",
+          "enabled": true,
+          "order": 99,
+          "config": {}
+        }
+      ]
+    }
+  ]
+}

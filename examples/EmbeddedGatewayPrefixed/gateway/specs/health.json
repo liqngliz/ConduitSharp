@@ -1,0 +1,39 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Health",
+    "version": "v1",
+    "description": "Gateway health check — no auth required, forwarded to InventoryService."
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "description": "Returns 200 when the gateway and upstream inventory service are reachable.",
+        "responses": {
+          "200": {
+            "description": "Healthy",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" },
+                "example": { "status": "healthy", "service": "inventory-svc" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status":  { "type": "string", "example": "healthy" },
+          "service": { "type": "string", "example": "inventory-svc" }
+        }
+      }
+    }
+  }
+}

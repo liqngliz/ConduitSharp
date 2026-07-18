@@ -1,0 +1,106 @@
+# Phase 2/3 load-bench rig — APISIX-style method (see docs/planning/BENCHMARKS_PLAN.md).
+#
+#   ./run.sh all                 # scenarios with 30s runs, writes results.md
+#   SCENARIO=scenario-b ./run.sh scenario-b
+#
+# Publishable numbers require a Linux host; add core pinning there with:
+#   docker compose -f docker-compose.yml -f docker-compose.pin.yml up -d
+services:
+  upstream:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./payload:/payload:ro # /big serves payload/128k.bin — the large-response scenario
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    # Every gateway gets the same ceiling so push-to-failure compares behaviour at the limit
+    # rather than who was handed more RAM. Sized to fit alongside upstream + load-gen on a
+    # 4 GB GitHub Actions runner.
+    mem_limit: ${GW_MEM:-1g}
+    environment:
+      Gateway__RoutesPath: /config/${SCENARIO:-scenario-a}.json
+      # Phase 3 flood: lower the global buffered-body budget to force 503 load-shed.
+      Gateway__RequestLimits__MaxTotalBufferedBodyBytes: ${MAX_TOTAL_BUFFERED:-134217728}
+      # The RAM tier, carved out of the total above; the rest is the disk-spill tier.
+      Gateway__RequestLimits__MaxMemoryBufferedBodyBytes: ${MAX_MEMORY_BUFFERED:-67108864}
+      # Per-request RAM ceiling. Scenario 4 drops this to nginx's client_body_buffer_size (16k)
+      # so ConduitSharp's buffered path is configured like APISIX's default rather than better.
+      Gateway__RequestLimits__MemoryBufferThresholdBytes: ${MEMORY_THRESHOLD:-1048576}
+      # A real disk-backed volume, NOT the container's /tmp — on many images that is tmpfs,
+      # which would make the "disk" tier RAM and quietly turn the step-down into an OOM.
+      Gateway__RequestLimits__SpillDirectory: ${SPILL_DIR:-/spill}
+      DOTNET_gcServer: "1"
+      Logging__LogLevel__Default: Warning
+    volumes:
+      - ./routes:/config:ro
+      - spill:/spill
+    # RAM-backed spill for s5, sized explicitly. Three limits can stop a tmpfs spill and only one
+    # of them is graceful, so they must be ordered:
+    #   MaxTotalBufferedBodyBytes (503) < tmpfs size= (ENOSPC -> 500) < mem_limit (OOM-kill)
+    # Unset, a tmpfs mount defaults to half the host's RAM and /dev/shm to 64 MB — the latter is why
+    # an earlier spill-heavy run looked fast while actually returning 85% 500s. tmpfs pages are
+    # charged to the container's cgroup, so GW_MEM must cover this mount PLUS the heap.
+    tmpfs:
+      - /spill-tmpfs:size=${TMPFS_SIZE:-512m},mode=1777
+    ports:
+      - "127.0.0.1:8080:8080" # host-side health checks / debugging only
+    depends_on:
+      - upstream
+
+  # ── Competitors for the head-to-head chart (started only when named explicitly) ──
+  ocelot:
+    build: ./ocelot
+    profiles: [compare]
+    mem_limit: ${GW_MEM:-1g} # same ceiling as the gateway — see the note there
+    environment:
+      DOTNET_gcServer: "1"
+      # Ocelot ships no retry. OCELOT_RETRY=1 registers a hand-written Polly provider via
+      # AddPolly<TProvider> — the documented seam — so the retry scenarios can measure Ocelot
+      # rather than skip it. See ocelot/RetryQoSProvider.cs for what it does and does not buy.
+      OCELOT_RETRY: ${OCELOT_RETRY:-0}
+    ports:
+      - "127.0.0.1:8083:8080"
+    depends_on:
+      - upstream
+
+  apisix:
+    image: apache/apisix:3.11.0-debian
+    profiles: [compare]
+    mem_limit: ${GW_MEM:-1g} # same ceiling as the gateway — see the note there
+    environment:
+      APISIX_STAND_ALONE: "true" # yaml config, no etcd
+    # config.yaml is copied in at start rather than bind-mounted, because APISIX's entrypoint
+    # rewrites it in place (sed) for standalone mode — and a host file cannot satisfy that. Mounted
+    # read-only it aborts ("Read-only file system"); mounted read-write it is owned by the host user
+    # and the image runs as uid 636 (apisix), so on a normal Linux host the rewrite is "Permission
+    # denied". Docker Desktop hides both by remapping ownership, so this only ever failed in CI.
+    # Copying into the container's own writable layer sidesteps the lot: /usr/local/apisix/conf is
+    # apisix-owned, so the copy lands writable and the repo template stays untouched and read-only.
+    entrypoint: ["/bin/sh", "-c", "cp /conf-template/config.yaml /usr/local/apisix/conf/config.yaml && exec /docker-entrypoint.sh docker-start"]
+    # Same deal for APISIX: nginx's client_body_temp is where it buffers every request body, so
+    # putting it on an identically-sized tmpfs is what makes "both spill to RAM" a fair comparison.
+    tmpfs:
+      - /usr/local/apisix/client_body_temp:size=${TMPFS_SIZE:-512m},mode=1777
+    volumes:
+      - ./apisix/${APISIX_ROUTES:-apisix}.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./apisix/${APISIX_CONF:-config-default}.yaml:/conf-template/config.yaml:ro
+    ports:
+      - "127.0.0.1:9080:9080"
+    depends_on:
+      - upstream
+
+  # Load generator; invoked per-run: docker compose run --rm load <bombardier args>
+  load:
+    image: alpine/bombardier:latest
+    profiles: [tools]
+    volumes:
+      - ./payload:/payload:ro
+
+volumes:
+  # Disk-backed spill for the gateway's buffering overflow tier. A named volume rather than
+  # the container's /tmp on purpose: /tmp is tmpfs on many images, and spilling to RAM would
+  # defeat the whole point of having a disk tier.
+  spill:

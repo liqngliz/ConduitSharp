@@ -1,0 +1,21 @@
+// Minimal gRPC contract for the AtAGlance gRPC-passthrough example.
+// The gateway forwards /greet.Greeter/* verbatim over HTTP/2 (no transcoding).
+syntax = "proto3";
+
+option csharp_namespace = "GreeterService.Protos";
+
+package greet;
+
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply);
+}
+
+message HelloRequest {
+  string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+  // Reported by the server so callers can assert the request protocol end-to-end.
+  string protocol = 2;
+}

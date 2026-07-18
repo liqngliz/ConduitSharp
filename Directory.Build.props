@@ -1,0 +1,59 @@
+<Project>
+  <!--
+    Repo-wide code quality gates. These run automatically on every `dotnet build`
+    (and therefore every `dotnet test`, which builds first) — no separate step needed.
+
+    - .NET analyzers on with the SDK's default high-confidence rules, PLUS a curated set
+      of security/resource rules opted in via .editorconfig (opt-in beats opting out of a
+      noisy superset — "Recommended"/"All" flood the build with low-value perf/style hints).
+    - NuGet audit flags vulnerable direct AND transitive packages during restore
+      (emits NU19xx), so a newly-disclosed CVE surfaces on the next build.
+
+    Findings are warnings, not errors, so they never block a local build. CI can add
+    /p:TreatWarningsAsErrors=true to enforce a clean bar on PRs.
+  -->
+  <PropertyGroup>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+  </PropertyGroup>
+
+  <!--
+    Shared NuGet package metadata — one source of truth so every ConduitSharp.* package
+    ships with the same version, license, and links. Individual projects set only their own
+    PackageId / Description / README. Test projects opt out with IsPackable=false.
+    The embeddable library (ConduitSharp.Gateway.AspNetCore) depends on Core/Traffic/Security/
+    Transformation/Observability, so these must version together to produce a restorable package.
+  -->
+  <PropertyGroup>
+    <Version>0.1.5</Version>
+    <Authors>liqngliz</Authors>
+    <Company>ConduitSharp</Company>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/liqngliz/ConduitSharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/liqngliz/ConduitSharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- Default search tags; a project can override with its own PackageTags. -->
+    <PackageTags>api-gateway;gateway;yarp;reverse-proxy;aspnetcore;dotnet</PackageTags>
+
+    <!--
+      SourceLink + symbols. SourceLink for GitHub is built into the .NET SDK — these
+      properties turn it on and ship a .snupkg so consumers can step into gateway code.
+    -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <PackageIcon>icon.png</PackageIcon>
+  </PropertyGroup>
+
+  <!-- Shared package icon, packed into every ConduitSharp.* package. -->
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)assets/branding/icon.png" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+</Project>

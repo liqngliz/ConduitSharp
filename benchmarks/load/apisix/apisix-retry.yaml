@@ -1,0 +1,14 @@
+# APISIX with upstream retries — the config for the retry scenarios.
+#
+# nginx can only retry a request it has buffered (its docs state that with
+# proxy_request_buffering off "it is not possible to retry the request to the next server"), so
+# this pairs with config-default.yaml, where buffering stays at nginx's default of on.
+routes:
+  - uri: /*
+    upstream:
+      type: roundrobin
+      retries: 2
+      nodes:
+        "upstream:8081": 1
+        "upstream:8082": 1
+#END

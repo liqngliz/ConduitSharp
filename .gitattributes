@@ -1,0 +1,7 @@
+# Normalize line endings. Shell scripts MUST stay LF or they break in bash / as Docker
+# entrypoints on a Windows checkout (core.autocrlf=true would otherwise inject CRLF).
+* text=auto
+*.sh   text eol=lf
+*.ps1  text eol=crlf
+Dockerfile text eol=lf
+*.conf text eol=lf

@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ConduitSharp.Plugin.PowerShell</RootNamespace>
+    <NoWarn>$(NoWarn);NU1903</NoWarn>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>ConduitSharp.Plugin.PowerShell</PackageId>
+    <Title>ConduitSharp PowerShell Plugin</Title>
+    <PackageTags>$(PackageTags);powershell;automation;legacy;plugin</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>
+      A plugin for the ConduitSharp API gateway that runs an existing PowerShell (.ps1) script
+      in-process as an HTTP endpoint via the embedded Microsoft.PowerShell.SDK — no system pwsh
+      installation required. Ideal for exposing legacy Windows automation as an authenticated API.
+    </Description>
+    <!-- Force runtime-specific assets (e.g. System.Management.Automation from net8.0
+         runtimes/ folder) to be copied to the publish output. Without this, a
+         framework-dependent net10.0 publish leaves them in the NuGet cache only,
+         making the embedded PowerShell runtime unavailable at runtime. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ProjectReference, not PackageReference: always builds against current source. -->
+    <ProjectReference Include="..\..\..\..\src\ConduitSharp.Core\ConduitSharp.Core.csproj" />
+    <!--<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />-->
+    <!-- Embeds the PowerShell 7 runtime — no system pwsh installation required. -->
+    <PackageReference Include="Microsoft.PowerShell.SDK" Version="7.4.6" />
+    <!-- Override PS SDK's transitive vulnerable version of this package -->
+    <!--<PackageReference Include="System.Security.Cryptography.Xml" Version="9.0.15" />-->
+  </ItemGroup>
+</Project>

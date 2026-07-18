@@ -1,0 +1,83 @@
+services:
+
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:latest
+    ports:
+      - "18888:18888"   # Dashboard UI
+      - "18889:18889"   # OTLP/gRPC ingest
+      - "18890:18890"   # OTLP/HTTP ingest
+    environment:
+      - DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true
+      - DOTNET_DASHBOARD_TELEMETRY_OPTOUT=true
+
+  inventory-svc-1:
+    build:
+      context: ../..
+      dockerfile: examples/EmbeddedGateway/docker/inventory-svc/Dockerfile
+    environment:
+      - ASPNETCORE_URLS=http://+:6101
+    expose:
+      - "6101"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:6101/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  inventory-svc-2:
+    build:
+      context: ../..
+      dockerfile: examples/EmbeddedGateway/docker/inventory-svc/Dockerfile
+    environment:
+      - ASPNETCORE_URLS=http://+:6101
+    expose:
+      - "6101"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:6101/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  order-svc:
+    build:
+      context: ../..
+      dockerfile: examples/EmbeddedGateway/docker/order-svc/Dockerfile
+    environment:
+      - ASPNETCORE_URLS=http://+:6201
+    expose:
+      - "6201"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:6201/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: examples/EmbeddedGateway/docker/gateway/Dockerfile
+    ports:
+      - "6050:6050"
+    environment:
+      - ASPNETCORE_URLS=http://+:6050
+      - Gateway__RoutesPath=/app/Configuration/docker-routes.json
+      - Gateway__BasePath=/app
+      - GATEWAY_CONFIG_FILE=/app/configuration-docker/appsettings.json
+    depends_on:
+      aspire-dashboard:
+        condition: service_started
+      inventory-svc-1:
+        condition: service_healthy
+      inventory-svc-2:
+        condition: service_healthy
+      order-svc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:6050/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s

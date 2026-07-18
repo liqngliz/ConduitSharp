@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ConduitSharp.RateLimit.RedisProtocol/ConduitSharp.RateLimit.RedisProtocol.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ConduitSharp.RateLimit.RedisProtocol.Tests/ConduitSharp.RateLimit.RedisProtocol.Tests.csproj" />
+  </Folder>
+  <Project Path="../../src/ConduitSharp.Core/ConduitSharp.Core.csproj" />
+  <Project Path="../../src/ConduitSharp.Traffic/ConduitSharp.Traffic.csproj" />
+  <Project Path="../../src/ConduitSharp.Gateway.AspNetCore/ConduitSharp.Gateway.AspNetCore.csproj" />
+</Solution>

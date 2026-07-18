@@ -1,0 +1,25 @@
+{
+  "routes": [
+    {
+      "id": "mtls",
+      "description": "Forwards to an mTLS-protected upstream; the gateway presents a client cert.",
+      "route": {
+        "match": {
+          "path": "/{**catch-all}"
+        }
+      },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": {
+            "address": "https://upstream:443"
+          }
+        },
+        "httpRequest": {
+          "activityTimeout": "00:00:05"
+        }
+      },
+      "plugins": []
+    }
+  ]
+}

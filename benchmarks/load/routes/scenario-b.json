@@ -1,0 +1,34 @@
+{
+  "routes": [
+    {
+      "id": "bench-policy",
+      "description": "Scenario B — 2 plugins (jwt-auth + rate-limit), cost of policy. Mirrors APISIX scenario 2 (limit-count + prometheus). Rate limit is set far above achievable QPS so nothing is rejected — we measure plugin overhead, not throttling. Signing key is a public bench-only secret.",
+      "route": { "match": { "path": "/{**catch-all}" } },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": { "address": "http://upstream:8081" },
+          "node-1": { "address": "http://upstream:8082" }
+        }
+      },
+      "plugins": [
+        {
+          "name": "jwt-auth",
+          "order": 1,
+          "config": {
+            "signingKey": "Y29uZHVpdHNoYXJwLWxvYWQtYmVuY2gtc2lnbmluZy1rZXktMDEyMzQ1Njc4OQ==",
+            "algorithm": "HS256"
+          }
+        },
+        {
+          "name": "rate-limit",
+          "order": 2,
+          "config": {
+            "windowSeconds": 60,
+            "maxRequests": 1000000000
+          }
+        }
+      ]
+    }
+  ]
+}

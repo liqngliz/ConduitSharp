@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  # Manual trigger (Actions tab "Run workflow", or `gh workflow run ci.yml`) — no external
+  # side effects, so safe to dispatch on any branch to test CI itself.
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      # TreatWarningsAsErrors enforces the analyzer + NuGet vulnerability-audit (NU19xx)
+      # gate from Directory.Build.props on every PR — a newly disclosed CVE in a
+      # dependency fails the build here instead of only surfacing as a local warning.
+      - name: Build
+        run: dotnet build --no-restore -c Release /p:TreatWarningsAsErrors=true
+
+      # Fast gate: unit + integration tests only. E2E suites (real gateway process,
+      # Docker observability stack, Docker mTLS handshake) run in the separate e2e-tests
+      # job below — they're slower and exercise out-of-process/containerized behavior
+      # that the in-process suite here can't cover, but shouldn't block the inner loop.
+      - name: Test & Collect Coverage
+        run: dotnet test --no-build -c Release --filter "Category!=E2E" --collect:"XPlat Code Coverage" --results-directory ./TestResults --logger "console;verbosity=minimal"
+
+      # Install ReportGenerator tool globally
+      - name: Install ReportGenerator
+        run: dotnet tool install -g dotnet-reportgenerator-globaltool
+
+      # Merge all XML coverage files into a single Cobertura file and generate the HTML dashboard
+      - name: Generate HTML & Merged Cobertura Report
+        run: reportgenerator -reports:"./TestResults/**/coverage.cobertura.xml" -targetdir:"./TestResults/CoverageReport" -reporttypes:"Html;Cobertura"
+
+      # Parse the merged Cobertura XML and output a Markdown summary
+      - name: Generate Code Coverage Summary
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: ./TestResults/CoverageReport/Cobertura.xml
+          badge: true
+          format: markdown
+          output: both
+
+      # Append the markdown coverage report to the GitHub Actions Job Summary page
+      - name: Write Coverage to Job Summary
+        run: cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
+
+      # Post the markdown coverage report as a comment on Pull Requests
+      - name: Add Coverage PR Comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        if: github.event_name == 'pull_request'
+        with:
+          recreate: true
+          path: code-coverage-results.md
+
+      # Upload the CoverageReport directory (contains index.html and Cobertura.xml)
+      - name: Upload HTML Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-html
+          path: ./TestResults/CoverageReport
+
+      # Execute custom Code Metrics tool
+      - name: Generate Code Metrics
+        run: make metrics
+
+      # Upload the Code Metrics directory (contains metrics.html and metrics.csv)
+      - name: Upload Code Metrics Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-metrics
+          path: ./TestResults/metrics
+
+      # Parse metrics.csv and append it as a Markdown table to the Job Summary
+      - name: Write Metrics to Job Summary
+        run: |
+          echo "## 📊 Code Metrics" >> $GITHUB_STEP_SUMMARY
+          echo "For color-coded sorting, download the HTML report from the **Artifacts** dropdown." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          python3 -c '
+          import csv, sys
+          with open("./TestResults/metrics/metrics.csv", "r") as f:
+              reader = csv.reader(f)
+              header = next(reader)
+              print("| " + " | ".join(header) + " |")
+              print("|" + "|".join(["---"] * len(header)) + "|")
+              for row in reader:
+                  print("| " + " | ".join(row) + " |")
+          ' >> $GITHUB_STEP_SUMMARY
+
+  e2e-tests:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      # GitHub-hosted ubuntu runners ship Docker and make preinstalled — no extra setup.
+      # The process-launching suites run as plain `dotnet test`: wrapping them in
+      # dotnet-coverage crashed the embedded test host under the Linux profiler (it follows
+      # the make-run child processes into the gateway's `dotnet run` build). E2E product
+      # coverage isn't worth a red gate; the in-process suite in build-and-test carries the
+      # coverage number. Docker-contained gateways (grafana/mTLS) gate on green only.
+      - name: LegacyGateway E2E (real gateway process, PowerShell plugin, body capture)
+        run: dotnet test tests/ConduitSharp.LegacyGateway.E2E.Tests --no-restore
+
+      - name: EmbeddedGateway E2E (real gateway process, embedded composition)
+        run: dotnet test tests/ConduitSharp.EmbeddedGateway.E2E.Tests --no-restore
+
+      - name: EmbeddedGatewayPrefixed E2E (real gateway process, path prefix)
+        run: dotnet test tests/ConduitSharp.EmbeddedGatewayPrefixed.E2E.Tests --no-restore
+
+      - name: Grafana E2E (Docker observability stack — Tempo/Prometheus/Loki)
+        run: make test-e2e-grafana
+
+      - name: mTLS E2E (Docker client-certificate handshake)
+        run: make test-e2e-mtls

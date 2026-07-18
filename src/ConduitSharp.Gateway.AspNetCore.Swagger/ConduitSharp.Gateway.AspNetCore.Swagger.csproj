@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ConduitSharp.Gateway.Swagger</RootNamespace>
+
+    <!-- Optional add-on: aggregated Swagger UI for the embeddable gateway. Split out of the
+         core library so embedders that don't want Swagger don't take a Swashbuckle dependency. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ConduitSharp.Gateway.AspNetCore.Swagger</PackageId>
+    <Description>Aggregated Swagger UI add-on for ConduitSharp.Gateway.AspNetCore — call UseConduitSharpGatewaySwagger() to serve one Swagger UI built from every route's OpenAPI spec.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ConduitSharp.Gateway.AspNetCore\ConduitSharp.Gateway.AspNetCore.csproj" />
+    <ProjectReference Include="..\ConduitSharp.Core\ConduitSharp.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="7.3.1" />
+  </ItemGroup>
+</Project>

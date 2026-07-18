@@ -1,0 +1,17 @@
+{
+  "routes": [
+    {
+      "id": "bench-pure-proxy",
+      "description": "Scenario A — pure proxy, no plugins (routing/forward ceiling). Mirrors APISIX scenario 1.",
+      "route": { "match": { "path": "/{**catch-all}" } },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": { "address": "http://upstream:8081" },
+          "node-1": { "address": "http://upstream:8082" }
+        }
+      },
+      "plugins": []
+    }
+  ]
+}

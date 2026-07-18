@@ -1,0 +1,18 @@
+{
+  "routes": [
+    {
+      "id": "bench-flood",
+      "description": "Phase 3 flood — retry route so PUT bodies take the buffered path (bodies are buffered only when a consumer exists; plain uploads stream and never touch the budget).",
+      "route": { "match": { "path": "/{**catch-all}" } },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": { "address": "http://upstream:8081" },
+          "node-1": { "address": "http://upstream:8082" }
+        }
+      },
+      "retry": { "maxAttempts": 2 },
+      "plugins": []
+    }
+  ]
+}

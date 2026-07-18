@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!--
+      E2E tests start real OS processes (make run / start.ps1) and require live
+      services on localhost:5050 through 5201. Run them explicitly:
+        make test-e2e               (from examples/LegacyGateway/)
+        dotnet test tests/ConduitSharp.LegacyGateway.E2E.Tests
+      Excluded from the root `make test` run via filter Category!=E2E.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector"          Version="6.0.0" />
+    <PackageReference Include="Google.Protobuf"             Version="3.30.2" />
+    <PackageReference Include="Grpc.Net.Client"             Version="2.71.0" />
+    <PackageReference Include="Grpc.Tools"                  Version="2.72.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk"      Version="17.12.0" />
+    <PackageReference Include="xunit"                       Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio"   Version="3.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same contract the GreeterService serves — client stubs only. -->
+    <Protobuf Include="..\..\examples\SharedServices\GreeterService\Protos\greet.proto"
+              GrpcServices="Client" Link="Protos\greet.proto" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="System.Net" />
+    <Using Include="System.Net.Http" />
+    <Using Include="System.Net.Http.Headers" />
+    <Using Include="System.Diagnostics" />
+    <Using Include="System.Security.Cryptography" />
+    <Using Include="System.Text" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\E2E\GatewayE2ETestsBase.cs" Link="Shared\GatewayE2ETestsBase.cs" />
+    <Compile Include="..\Shared\E2E\GatewayProcessFixture.cs" Link="Shared\GatewayProcessFixture.cs" />
+  </ItemGroup>
+
+</Project>

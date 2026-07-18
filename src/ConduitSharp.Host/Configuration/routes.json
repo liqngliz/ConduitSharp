@@ -1,0 +1,206 @@
+{
+  "routes": [
+    {
+      "id": "user-service-route",
+      "description": "Public user profile endpoint — JWT auth + rate limiting",
+      "route": {
+        "match": {
+          "path": "/api/users/{**catch-all}",
+          "methods": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": {
+            "address": "http://user-service-1:8080"
+          },
+          "node-1": {
+            "address": "http://user-service-2:8080"
+          }
+        },
+        "httpRequest": {
+          "activityTimeout": "00:00:05"
+        }
+      },
+      "plugins": [
+        {
+          "name": "jwt-auth",
+          "enabled": true,
+          "order": 1,
+          "config": {
+            "issuer": "https://auth.example.com",
+            "audience": "gateway",
+            "requiredClaims": {
+              "role": "user"
+            }
+          }
+        },
+        {
+          "name": "rate-limit",
+          "enabled": true,
+          "order": 2,
+          "config": {
+            "windowSeconds": 60,
+            "maxRequests": 100,
+            "keyHeader": "X-Forwarded-For"
+          }
+        },
+        {
+          "name": "header-transform",
+          "enabled": true,
+          "order": 3,
+          "config": {
+            "request": {
+              "add": {
+                "X-Gateway-Request-Id": "{requestId}",
+                "X-Forwarded-By": "SimpleAPIGateway"
+              },
+              "remove": [
+                "X-Internal-Secret"
+              ]
+            },
+            "response": {
+              "add": {},
+              "remove": [
+                "X-Powered-By",
+                "Server"
+              ]
+            }
+          }
+        },
+        {
+          "name": "cache",
+          "enabled": true,
+          "order": 4,
+          "config": {
+            "ttlSeconds": 30,
+            "varyByHeaders": [
+              "Accept-Language"
+            ],
+            "varyByQueryParams": [
+              "page",
+              "limit"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "order-service-route",
+      "description": "Order service — API key auth + rate limiting",
+      "route": {
+        "match": {
+          "path": "/api/orders/{**catch-all}",
+          "methods": [
+            "GET",
+            "POST"
+          ]
+        }
+      },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": {
+            "address": "http://order-service:8081"
+          }
+        },
+        "httpRequest": {
+          "activityTimeout": "00:00:05"
+        }
+      },
+      "plugins": [
+        {
+          "name": "api-key-auth",
+          "enabled": true,
+          "order": 1,
+          "config": {
+            "header": "X-API-Key",
+            "allowedKeys": [
+              "key-abc-123",
+              "key-xyz-789"
+            ]
+          }
+        },
+        {
+          "name": "rate-limit",
+          "enabled": true,
+          "order": 2,
+          "config": {
+            "strategy": "FixedWindow",
+            "windowSeconds": 60,
+            "maxRequests": 20,
+            "keyBy": "header:X-API-Key"
+          }
+        }
+      ]
+    },
+    {
+      "id": "internal-admin-route",
+      "description": "Admin API — strict JWT with admin role, no caching",
+      "route": {
+        "match": {
+          "path": "/api/admin/{**catch-all}",
+          "methods": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE"
+          ]
+        }
+      },
+      "cluster": {
+        "loadBalancingPolicy": "Random",
+        "destinations": {
+          "node-0": {
+            "address": "http://admin-service:9090"
+          }
+        },
+        "httpRequest": {
+          "activityTimeout": "00:00:10"
+        }
+      },
+      "plugins": [
+        {
+          "name": "jwt-auth",
+          "enabled": true,
+          "order": 1,
+          "config": {
+            "issuer": "https://auth.example.com",
+            "audience": "gateway",
+            "requiredClaims": {
+              "role": "admin"
+            }
+          }
+        },
+        {
+          "name": "header-transform",
+          "enabled": true,
+          "order": 2,
+          "config": {
+            "request": {
+              "add": {
+                "X-Gateway-Request-Id": "{requestId}",
+                "X-Admin-Forwarded": "true"
+              },
+              "remove": [
+                "X-Internal-Secret",
+                "X-Debug-Token"
+              ]
+            },
+            "response": {
+              "add": {},
+              "remove": [
+                "X-Powered-By",
+                "Server"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

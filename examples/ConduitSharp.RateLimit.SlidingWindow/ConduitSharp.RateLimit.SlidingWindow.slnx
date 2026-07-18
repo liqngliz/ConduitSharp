@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ConduitSharp.RateLimit.SlidingWindow/ConduitSharp.RateLimit.SlidingWindow.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ConduitSharp.RateLimit.SlidingWindow.Tests/ConduitSharp.RateLimit.SlidingWindow.Tests.csproj" />
+  </Folder>
+  <Project Path="../../src/ConduitSharp.Core/ConduitSharp.Core.csproj" />
+  <Project Path="../../src/ConduitSharp.Traffic/ConduitSharp.Traffic.csproj" />
+</Solution>

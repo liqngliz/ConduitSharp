@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>EmbeddedGateway</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);services\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ProjectReference, not PackageReference: this repo publishes all three, so
+         referencing source directly avoids depending on whatever was last published
+         to NuGet (and the version-drift bug that caused). -->
+    <ProjectReference Include="..\..\src\ConduitSharp.Gateway.AspNetCore\ConduitSharp.Gateway.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\ConduitSharp.Gateway.AspNetCore.Swagger\ConduitSharp.Gateway.AspNetCore.Swagger.csproj" />
+    <ProjectReference Include="..\ConduitSharp.Cache.RedisProtocol\src\ConduitSharp.Cache.RedisProtocol\ConduitSharp.Cache.RedisProtocol.csproj" />
+    <ProjectReference Include="..\ConduitSharp.Plugin.BodyCapture\src\ConduitSharp.Plugin.BodyCapture\ConduitSharp.Plugin.BodyCapture.csproj" />
+    <ProjectReference Include="..\ConduitSharp.Plugin.PowerShell\src\ConduitSharp.Plugin.PowerShell\ConduitSharp.Plugin.PowerShell.csproj" />
+  </ItemGroup>
+
+</Project>

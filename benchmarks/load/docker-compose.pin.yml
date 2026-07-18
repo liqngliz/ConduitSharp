@@ -1,0 +1,16 @@
+# Linux-only overlay: APISIX-style core pinning (gateway on 4 cores, everything
+# else off them). Meaningless under Docker Desktop on macOS (VM in the middle).
+#   docker compose -f docker-compose.yml -f docker-compose.pin.yml up -d
+services:
+  gateway:
+    cpuset: "0-3"
+  upstream:
+    cpuset: "4,5"
+  load:
+    cpuset: "6,7"
+  # Competitors get the SAME cores as the gateway — they bench sequentially,
+  # one gateway-under-test at a time, so this is what makes the chart fair.
+  ocelot:
+    cpuset: "0-3"
+  apisix:
+    cpuset: "0-3"

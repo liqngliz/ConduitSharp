@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ConduitSharp.Gateway</RootNamespace>
+
+    <!-- Embeddable-library distribution: wire the gateway into any ASP.NET Core / Kestrel
+         app with AddConduitSharpGateway() / UseConduitSharpGateway(), the YARP model.
+         The Host project (dotnet tool) and the Docker image both build on top of this. -->
+    <!-- Version/Authors/License/URLs are shared via Directory.Build.props. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ConduitSharp.Gateway.AspNetCore</PackageId>
+    <Description>Embed the ConduitSharp API gateway inside your own ASP.NET Core app: AddConduitSharpGateway() / UseConduitSharpGateway() wire the per-route plugin pipeline, proxy engine, and observability into your Kestrel host.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Ship XML docs so the public API (extension methods + options) surfaces in consumer
+         IntelliSense. The DI/pipeline plumbing is internal, so CS1591 now only guards the
+         genuinely-public surface — no blanket suppression. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- Class library that lights up ASP.NET Core types (IMiddleware, HttpContext,
+       WebApplication) without being a Web SDK project. The FrameworkReference brings the
+       assemblies; the Using items restore the implicit global usings the Web SDK would
+       otherwise provide, so the moved middleware/plugin files compile unchanged. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Hosting" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.AspNetCore.Routing" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets the integration test project cover internal types (FileSpanExporter,
+         body-buffering) in-process. -->
+    <InternalsVisibleTo Include="ConduitSharp.Integration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ConduitSharp.Core\ConduitSharp.Core.csproj" />
+    <ProjectReference Include="..\ConduitSharp.Traffic\ConduitSharp.Traffic.csproj" />
+    <ProjectReference Include="..\ConduitSharp.Security\ConduitSharp.Security.csproj" />
+    <ProjectReference Include="..\ConduitSharp.Transformation\ConduitSharp.Transformation.csproj" />
+    <ProjectReference Include="..\ConduitSharp.Observability\ConduitSharp.Observability.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
+    <PackageReference Include="Polly.Core" Version="8.7.0" />
+    <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
+  </ItemGroup>
+</Project>

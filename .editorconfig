@@ -1,0 +1,37 @@
+root = true
+
+[*.cs]
+
+# ---------------------------------------------------------------------------
+# Muted — noise for this codebase, not defects
+# ---------------------------------------------------------------------------
+# Underscores in identifiers: the xUnit Method_State_Expectation naming convention.
+dotnet_diagnostic.CA1707.severity = none
+# ConfigureAwait(false): unnecessary (and discouraged) in ASP.NET Core — no sync context.
+dotnet_diagnostic.CA2007.severity = none
+# Insecure randomness: Random is used for load-balancer node selection, not security.
+dotnet_diagnostic.CA5394.severity = none
+
+# ---------------------------------------------------------------------------
+# Promoted — correctness / resource safety worth surfacing
+# (CA2000 "dispose locals before losing scope" is deliberately NOT promoted — it is
+#  heavily false-positive in HttpClient/DI code where ownership transfers.)
+# ---------------------------------------------------------------------------
+dotnet_diagnostic.CA2213.severity = warning   # disposable fields should be disposed
+dotnet_diagnostic.CA1063.severity = warning   # implement IDisposable correctly
+dotnet_diagnostic.CA2016.severity = warning   # forward CancellationToken
+dotnet_diagnostic.CA1310.severity = warning   # specify StringComparison (ordinal vs culture bugs)
+
+# ---------------------------------------------------------------------------
+# Promoted — security (high value for a gateway)
+# ---------------------------------------------------------------------------
+dotnet_diagnostic.CA2100.severity = warning   # SQL injection
+dotnet_diagnostic.CA3075.severity = warning   # insecure DTD / XXE
+dotnet_diagnostic.CA5350.severity = warning   # weak cryptographic algorithms
+dotnet_diagnostic.CA5351.severity = warning   # broken cryptographic algorithms
+dotnet_diagnostic.CA5359.severity = warning   # do not disable certificate validation
+dotnet_diagnostic.CA5364.severity = warning   # do not use deprecated security protocols
+
+[**/tests/**.cs]
+# Constant array arguments are common and fine in test data setup.
+dotnet_diagnostic.CA1861.severity = none

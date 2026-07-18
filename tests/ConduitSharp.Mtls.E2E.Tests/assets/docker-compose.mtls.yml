@@ -1,0 +1,46 @@
+# End-to-end mTLS test: a real TLS handshake between the gateway and an upstream that
+# REQUIRES a client certificate. Exercises the one path the in-process tests can't —
+# per-route client-cert loading + presenting it during the handshake.
+#
+#   CertificateMaterial (.NET) → CA, server cert (SAN=upstream), client.pfx
+#   upstream (nginx)     → HTTPS with ssl_verify_client on
+#   gateway              → routes to https://upstream:443 WITH the client cert  → expect 200
+#   gateway-nocert       → same route WITHOUT the client cert                   → expect 400
+#
+# SSL_CERT_FILE makes the gateway trust our CA for the upstream's server cert. Note the
+# gateway cannot use skipCertificateVerification here: that selects the "upstream-insecure"
+# client, which does not attach a client certificate.
+
+services:
+  upstream:
+    image: nginx:alpine
+    volumes:
+      - ./certs:/certs:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+
+  gateway:
+    build: { context: ../../.., dockerfile: Dockerfile }
+    image: conduitsharp-mtls-e2e
+    depends_on: [upstream]
+    ports: ["8080:8080"]
+    volumes:
+      - ./certs:/certs:ro
+      - ./routes.json:/config/routes.json:ro
+    environment:
+      Gateway__RoutesPath: /config/routes.json
+      Gateway__Tls__ClientCertificates__0__RouteId: mtls
+      Gateway__Tls__ClientCertificates__0__Path: /certs/client.pfx
+      Gateway__Tls__ClientCertificates__0__Password: testpass
+      SSL_CERT_FILE: /certs/ca.crt
+
+  # Control: identical routing but no client cert configured — the upstream must reject it.
+  gateway-nocert:
+    image: conduitsharp-mtls-e2e
+    depends_on: [gateway]
+    ports: ["8081:8080"]
+    volumes:
+      - ./certs:/certs:ro
+      - ./routes.json:/config/routes.json:ro
+    environment:
+      Gateway__RoutesPath: /config/routes.json
+      SSL_CERT_FILE: /certs/ca.crt

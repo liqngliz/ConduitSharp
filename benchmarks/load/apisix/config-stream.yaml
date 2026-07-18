@@ -1,0 +1,18 @@
+# APISIX with request buffering OFF — needed for the pure-streaming scenario.
+#
+# APISIX buffers request bodies by default: it emits no proxy_request_buffering directive, so
+# nginx's default (on) applies and every body over ~16k lands in client_body_temp. That makes an
+# out-of-the-box APISIX incomparable to a streaming gateway. This snippet turns it off so scenario 2
+# really is "nobody allocates a buffer".
+#
+# nginx's own docs note the trade this forces: with proxy_request_buffering off it "is not possible
+# to retry the request to the next server" — which is precisely why the retry scenarios use the
+# stock config instead.
+deployment:
+  role: data_plane
+  role_data_plane:
+    config_provider: yaml
+
+nginx_config:
+  http_server_location_configuration_snippet: |
+    proxy_request_buffering off;

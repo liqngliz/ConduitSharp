@@ -1,0 +1,6 @@
+# Stock APISIX behaviour: no nginx_config overrides, so request buffering stays at nginx's
+# default (on) — this is APISIX exactly as it ships, and the baseline for the retry scenarios.
+deployment:
+  role: data_plane
+  role_data_plane:
+    config_provider: yaml

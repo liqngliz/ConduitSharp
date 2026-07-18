@@ -1,0 +1,24 @@
+# E2E-test override for the Grafana stack.
+# Exposes the observability backends' query APIs to the host so the
+# ConduitSharp.Grafana.E2E.Tests suite can assert telemetry actually landed,
+# and speeds up the gateway's metric export so tests don't wait 60s.
+#
+# Usage (what the test fixture runs):
+#   docker compose -f docker-compose.grafana.yml -f docker-compose.e2e.yml up --build -d
+services:
+  tempo:
+    ports:
+      - "3200:3200"     # Tempo query API
+
+  prometheus:
+    ports:
+      - "9090:9090"     # Prometheus query API
+
+  loki:
+    ports:
+      - "3100:3100"     # Loki query API
+
+  gateway:
+    environment:
+      # Default periodic metric export is 60s; tests poll with a deadline.
+      - OTEL_METRIC_EXPORT_INTERVAL=5000

@@ -1,0 +1,133 @@
+# Re-render the README benchmark blocks from figures a previous run already measured.
+#
+# Editing readme-micro.py / readme-block.py should not cost an hour of benching, and re-benching to
+# fix a table's wording changes the numbers underneath it — you cannot tell a rendering fix from a
+# rig fluctuation. This pulls the stored artifacts from an existing benchmarks run and re-renders
+# against them, so the figures are byte-identical and only the presentation moves.
+#
+# The figures live in artifacts, not the repo (BenchmarkDotNet.Artifacts/ is gitignored, runs.jsonl
+# is untracked), so this reads them from a run — by default the latest successful one.
+name: report-regenerate
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "benchmarks run ID to render figures from (blank = latest successful)"
+        required: false
+      dry_run:
+        description: "render and print the blocks, do not commit"
+        type: boolean
+        default: false
+      only:
+        description: "Re-render a single report's blocks; the others are left byte-identical"
+        type: choice
+        options: [all, micro, compare, matrix]
+        default: all
+
+permissions:
+  contents: write # commits the re-rendered README
+  actions: read # lists/downloads artifacts from the source benchmarks run
+
+jobs:
+  regenerate:
+    name: Re-render README from stored figures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main # the README commit must land on main, wherever this was dispatched from
+
+      - name: Resolve source run
+        id: src
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID="${{ inputs.run_id }}"
+          if [ -z "$RUN_ID" ]; then
+            # Not --status=success: every artifact now uploads with if:always(), so a run whose
+            # benching finished and whose *push* then lost a race still holds perfectly good
+            # figures — and is exactly the run someone wants to re-render. Take the newest
+            # completed run and let the download step decide whether it actually has artifacts.
+            RUN_ID=$(gh run list --workflow=benchmarks.yml --status=completed \
+                       --limit 1 --json databaseId -q '.[0].databaseId')
+            [ -z "$RUN_ID" ] && { echo "::error::no completed benchmarks run to render from"; exit 1; }
+          fi
+          # The URL in the README must point at the run that MEASURED the figures, not at this
+          # rendering run — a reader following it needs the data, not a re-render with no artifacts.
+          {
+            echo "run_id=$RUN_ID"
+            echo "run_url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$RUN_ID"
+          } >> "$GITHUB_OUTPUT"
+          echo "Rendering figures measured by run $RUN_ID"
+
+      - name: Download stored figures
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p figures
+          # Each artifact is optional: a source run whose micro job failed can still have usable
+          # load figures, and vice versa. Missing input skips its generator rather than failing.
+          # "only" narrows the fetch to one report; the render step keys off which directories
+          # exist, so not downloading an artifact is all it takes to leave its blocks untouched.
+          ONLY="${{ inputs.only || 'all' }}"
+          for A in micro-results compare-results matrix-results; do
+            case "$ONLY" in all|"${A%-results}") ;; *) echo "skipping $A (only=$ONLY)"; continue ;; esac
+            gh run download "${{ steps.src.outputs.run_id }}" -D "figures/$A" -n "$A" \
+              && echo "got $A" \
+              || echo "::warning::artifact $A not present on run ${{ steps.src.outputs.run_id }} — skipping its block"
+          done
+          find figures -type f | sed 's/^/  /'
+
+      - name: Re-render README blocks
+        env:
+          RUN_URL: ${{ steps.src.outputs.run_url }}
+        run: |
+          set -euo pipefail
+          RENDERED=0
+
+          # Each find tolerates its directory being absent ("only" skips downloads entirely):
+          # under pipefail a bare find on a missing dir would abort the step before later
+          # sections run — the || true keeps absence meaning "skip", not "die".
+
+          # Micro: readme-micro.py wants the directory holding the BDN *-report-github.md files.
+          BDN=$(find figures/micro-results -type d -name results 2>/dev/null | head -1 || true)
+          if [ -n "$BDN" ]; then
+            python3 benchmarks/ConduitSharp.Benchmarks/readme-micro.py "$BDN" "$RUN_URL" README.md
+            RENDERED=1
+          fi
+
+          # Load: readme-block.py wants runs.jsonl.
+          JSONL=$(find figures/compare-results -type f -name runs.jsonl 2>/dev/null | head -1 || true)
+          if [ -n "$JSONL" ]; then
+            python3 benchmarks/load/readme-block.py "$JSONL" README.md "$RUN_URL"
+            RENDERED=1
+          fi
+
+          # Matrix: the full s1..s5 tables live in benchmarks/load/README.md; the same records
+          # also render the compact relative-QPS summary into the root README.
+          MJSONL=$(find figures/matrix-results -type f -name runs.jsonl 2>/dev/null | head -1 || true)
+          if [ -n "$MJSONL" ]; then
+            python3 benchmarks/load/readme-matrix.py "$MJSONL" benchmarks/load/README.md "$RUN_URL" README.md
+            RENDERED=1
+          fi
+
+          [ "$RENDERED" = "1" ] || { echo "::error::neither artifact yielded figures — nothing rendered"; exit 1; }
+
+      - name: Show the diff
+        run: git --no-pager diff -- README.md benchmarks/load/README.md || true
+
+      - name: Commit
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md benchmarks/load/README.md
+          git diff --cached --quiet && { echo "README already matches the generators' output — nothing to commit"; exit 0; }
+          git commit -m "chore(bench): re-render README from run ${{ steps.src.outputs.run_id }} [skip ci]"
+          # main moves under long benchmark runs (the micro/compare jobs push their own results)
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push origin main && exit 0
+            sleep 5
+          done
+          echo "::error::could not push after 3 rebase attempts"; exit 1
