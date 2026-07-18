@@ -60,16 +60,16 @@ Whether you embed it in a custom application or run it as a standalone appliance
 xychart-beta
     title "Relative QPS at 125 connections — higher is faster"
     x-axis ["ConduitSharp", "APISIX", "Ocelot", "no gateway (direct)"]
-    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 5.40
-    bar [1.00, 1.15, 0.76, 4.70]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 4.87
+    bar [1.00, 1.03, 0.67, 4.24]
 ```
 
 | gateway | QPS (relative) | p50 | p99 |
 |---|---:|---:|---:|
-| ConduitSharp | 1.00× | 12.98 ms | 43.50 ms |
-| APISIX | 1.15× | 11.43 ms | 30.50 ms |
-| Ocelot | 0.76× | 17.15 ms | 51.26 ms |
-| *(no gateway — direct to nginx)* | 4.70× | 2.40 ms | 10.60 ms |
+| ConduitSharp | 1.00× | 6.86 ms | 24.88 ms |
+| APISIX | 1.03× | 6.72 ms | 21.29 ms |
+| Ocelot | 0.67× | 10.32 ms | 34.30 ms |
+| *(no gateway — direct to nginx)* | 4.24× | 1.23 ms | 6.76 ms |
 
 #### 512 connections
 
@@ -78,19 +78,19 @@ xychart-beta
     title "Relative QPS at 512 connections — higher is faster"
     x-axis ["ConduitSharp", "APISIX", "Ocelot"]
     y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.15
-    bar [1.00, 0.99, 0.75]
+    bar [1.00, 0.94, 0.69]
 ```
 
 | gateway | QPS (relative) | p50 | p99 |
 |---|---:|---:|---:|
-| ConduitSharp | 1.00× | 50.95 ms | 197.31 ms |
-| APISIX | 0.99× | 53.68 ms | 95.81 ms |
-| Ocelot | 0.75× | 70.96 ms | 200.65 ms |
+| ConduitSharp | 1.00× | 27.32 ms | 113.60 ms |
+| APISIX | 0.94× | 29.11 ms | 71.33 ms |
+| Ocelot | 0.69× | 42.29 ms | 133.00 ms |
 
 Pure proxy, 1 KB upstream response, bombardier, gateways benched sequentially on the
 identical rig. **Measured on shared GitHub Actions runners (4 vCPU) — only ratios are
 meaningful there; absolute QPS on shared CI is noise.** Raw figures for this exact run:
-[CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29581520422). Method & how to reproduce on pinned hardware:
+[CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29659383588). Method & how to reproduce on pinned hardware:
 [benchmarks/load](benchmarks/load/README.md).
 <!-- BENCH:END -->
 
