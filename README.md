@@ -337,7 +337,8 @@ Pick by how you deploy. The embedded-library and Docker paths fit immutable-infr
 Host the gateway *inside your own ASP.NET Core app* — the YARP `AddReverseProxy()` / `MapReverseProxy()` model. Plugins arrive as NuGet packages registered in DI, so the whole deployment is one immutable, versioned build.
 
 ```bash
-dotnet add package ConduitSharp.Gateway.AspNetCore
+# --prerelease while 1.0.0-rc is the latest; drop it once a stable 1.0.0 ships
+dotnet add package ConduitSharp.Gateway.AspNetCore --prerelease
 ```
 
 ```csharp
@@ -368,7 +369,8 @@ To ship plugins the immutable way, build your own image `FROM` this one and `COP
 ### dotnet tool
 
 ```bash
-dotnet tool install -g ConduitSharp.Gateway
+# --prerelease while 1.0.0-rc is the latest; drop it once a stable 1.0.0 ships
+dotnet tool install -g ConduitSharp.Gateway --prerelease
 conduitsharp
 ```
 
