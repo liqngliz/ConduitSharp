@@ -35,6 +35,10 @@ internal sealed class FileSpanExporter : BaseExporter<Activity>
                         spanId       = activity.SpanId.ToString(),
                         parentSpanId = activity.ParentSpanId == default ? null : activity.ParentSpanId.ToString(),
                         name         = activity.DisplayName,
+                        // Instrumentation scope (OTel): which ActivitySource emitted the span and
+                        // its version — the same identity a real OTLP exporter records per scope.
+                        scopeName    = activity.Source.Name,
+                        scopeVersion = activity.Source.Version,
                         kind         = activity.Kind.ToString(),
                         durationMs   = Math.Round(activity.Duration.TotalMilliseconds, 2),
                         status       = activity.Status.ToString(),

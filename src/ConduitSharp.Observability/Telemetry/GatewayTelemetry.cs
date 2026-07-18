@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Reflection;
 
 namespace ConduitSharp.Observability.Telemetry;
 
@@ -13,10 +14,20 @@ public static class GatewayTelemetry
     /// <summary>Source name used for both tracing and metrics — pass to AddSource/AddMeter in the host.</summary>
     public const string SourceName = "ConduitSharp.Gateway";
 
-    /// <summary>Emits one span per gateway request.</summary>
-    public static readonly ActivitySource ActivitySource = new(SourceName, "0.1.0");
+    // Scope version tracks the package version automatically (Directory.Build.props <Version>
+    // → AssemblyInformationalVersion, read back here). Same value on the ActivitySource and
+    // the Meter so this scope never reports a conflicting version across signals. Split('+')
+    // drops SourceLink's "+<gitcommit>" suffix.
+    internal static readonly string Version =
+        typeof(GatewayTelemetry).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion.Split('+')[0]
+        ?? "0.0.0";
 
-    private static readonly Meter Meter = new(SourceName, "0.1.0");
+    /// <summary>Emits one span per gateway request.</summary>
+    public static readonly ActivitySource ActivitySource = new(SourceName, Version);
+
+    private static readonly Meter Meter = new(SourceName, Version);
 
     /// <summary>Total requests processed, tagged by route_id / http.request.method / http.response.status_code.</summary>
     public static readonly Counter<long> RequestCounter =

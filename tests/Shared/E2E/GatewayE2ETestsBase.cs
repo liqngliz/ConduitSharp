@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Xunit;
 
 namespace ConduitSharp.E2E.Shared;
@@ -493,6 +494,56 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
 
         Assert.Fail($"No gateway.request span appeared in {tracesPath} within 15s — " +
                     "the file exporter pipeline (span creation → processor → exporter) is broken.");
+    }
+
+    [Fact]
+    public async Task Traces_GatewayRequestSpan_CarriesAlignedInstrumentationScope()
+    {
+        // The gateway.request span must name its instrumentation scope (ConduitSharp.Gateway) and
+        // report a scope version that tracks the package version — auto-aligned from
+        // AssemblyInformationalVersion, SourceLink's "+<commit>" suffix stripped — not a stale
+        // hardcode. Proven end to end against the real running gateway, not just the source.
+        var response = await fx.Client.SendAsync(ApiKeyRequest(HttpMethod.Get, "/api/inventory"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var tracesPath = Path.Combine(fx.ExampleRoot, "logs", "otel-traces.jsonl");
+        var deadline   = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (File.Exists(tracesPath))
+            {
+                var span = FindSpan(await ReadSharedAsync(tracesPath), "gateway.request");
+                if (span is not null)
+                {
+                    Assert.Equal("ConduitSharp.Gateway", span.Value.GetProperty("scopeName").GetString());
+
+                    var scopeVersion = span.Value.GetProperty("scopeVersion").GetString();
+                    Assert.False(string.IsNullOrEmpty(scopeVersion));
+                    Assert.DoesNotContain("+", scopeVersion!);          // SourceLink suffix stripped
+                    Assert.NotEqual("0.1.0", scopeVersion);             // aligned, not the old hardcode
+                    Assert.Matches(@"^\d+\.\d+\.\d+", scopeVersion!);   // starts with a SemVer core
+                    return;
+                }
+            }
+            await Task.Delay(500);
+        }
+
+        Assert.Fail($"No gateway.request span with instrumentation scope appeared in {tracesPath} within 15s.");
+    }
+
+    // Parses JSON-lines trace output, returning the first span whose "name" matches, or null.
+    private static JsonElement? FindSpan(string jsonl, string name)
+    {
+        foreach (var line in jsonl.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            JsonDocument doc;
+            try { doc = JsonDocument.Parse(line); }   // skip a half-written trailing line mid-append
+            catch (JsonException) { continue; }
+            using (doc)
+                if (doc.RootElement.TryGetProperty("name", out var n) && n.GetString() == name)
+                    return doc.RootElement.Clone();
+        }
+        return null;
     }
 
     // =========================================================================

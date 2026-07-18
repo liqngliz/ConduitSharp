@@ -16,6 +16,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   it is also more memory/disk than such an operator was accidentally getting.
 
 ### Added
+- **Instrumentation scope name + version in the file trace exporter.** Each JSON-line span now
+  records `scopeName`/`scopeVersion` — the emitting `ActivitySource` and its version — matching the
+  per-scope identity a real OTLP exporter records.
+- **SlidingWindow limiter wired into the LegacyGateway example.** The drop-in DLL builds into the
+  gateway's `plugins/` root, and a `/api/ratelimit-demo` route (3 req/30s per client) demonstrates
+  the sliding-log 429 + `Retry-After` end to end.
 - **Sliding-window rate limiting** (`examples/ConduitSharp.RateLimit.SlidingWindow`) — a drop-in
   `IRateLimiter` that refuses the burst a fixed window allows across its boundary (a caller can
   spend a full quota either side of an aligned seam, delivering 2x the nominal rate). Trades
@@ -23,6 +29,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the existing plugins-directory seam; no routes.json change.
 
 ### Changed
+- **Telemetry scope version tracks the package version.** The `ConduitSharp.Pipeline` and
+  `ConduitSharp.Gateway` `ActivitySource`s (and the gateway `Meter`) previously hardcoded scope
+  version `0.1.0`; they now read `AssemblyInformationalVersion` (generated from
+  `Directory.Build.props` `<Version>`, SourceLink's `+<commit>` suffix stripped), so telemetry
+  never drifts from the release.
 - **`IRateLimiter` redesigned against two implementations.** It previously took the window and
   quota per *instance* (`bool TryAcquire(string key)`), which forced `RateLimitPlugin` to cache a
   limiter per distinct config and left `Retry-After` arithmetic stranded in the plugin — fixed-window
