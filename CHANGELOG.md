@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] — 2026-07-19
+
 ### Fixed
 - **Buffered routes now tell the server their body limit.** `SetMaxRequestBodySize` ran on the
   streaming path only, so a buffered route (retry or body-reading plugin) inherited Kestrel's
