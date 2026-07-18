@@ -122,14 +122,27 @@ jobs:
       # the make-run child processes into the gateway's `dotnet run` build). E2E product
       # coverage isn't worth a red gate; the in-process suite in build-and-test carries the
       # coverage number. Docker-contained gateways (grafana/mTLS) gate on green only.
+      # --blame-crash/-hang capture a dump + Sequence.xml when the testhost dies without
+      # reporting results (exit 1, no xunit summary) — the only way to root-cause a startup
+      # crash that won't reproduce locally. Artifacts uploaded below.
       - name: LegacyGateway E2E (real gateway process, PowerShell plugin, body capture)
-        run: dotnet test tests/ConduitSharp.LegacyGateway.E2E.Tests --no-restore
+        run: dotnet test tests/ConduitSharp.LegacyGateway.E2E.Tests --no-restore --blame-crash --blame-hang-timeout 120s
 
       - name: EmbeddedGateway E2E (real gateway process, embedded composition)
-        run: dotnet test tests/ConduitSharp.EmbeddedGateway.E2E.Tests --no-restore
+        run: dotnet test tests/ConduitSharp.EmbeddedGateway.E2E.Tests --no-restore --blame-crash --blame-hang-timeout 120s
 
       - name: EmbeddedGatewayPrefixed E2E (real gateway process, path prefix)
-        run: dotnet test tests/ConduitSharp.EmbeddedGatewayPrefixed.E2E.Tests --no-restore
+        run: dotnet test tests/ConduitSharp.EmbeddedGatewayPrefixed.E2E.Tests --no-restore --blame-crash --blame-hang-timeout 120s
+
+      # Blame dumps + Sequence.xml land under TestResults/. Upload on failure so the crash
+      # is downloadable from the run's Artifacts.
+      - name: Upload E2E crash dumps
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-blame-dumps
+          path: "**/TestResults/**"
+          if-no-files-found: ignore
 
       - name: Grafana E2E (Docker observability stack — Tempo/Prometheus/Loki)
         run: make test-e2e-grafana
