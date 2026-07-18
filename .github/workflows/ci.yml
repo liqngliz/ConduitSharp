@@ -122,29 +122,16 @@ jobs:
       # the make-run child processes into the gateway's `dotnet run` build). E2E product
       # coverage isn't worth a red gate; the in-process suite in build-and-test carries the
       # coverage number. Docker-contained gateways (grafana/mTLS) gate on green only.
-      # Capture WHY the testhost dies without reporting results (exit 1, no xunit summary):
-      #   --diag                       → vstest log with testhost stdout/stderr + exit reason
-      #   --blame-crash-dump-type full → an analyzable dump (default mini lacks CLR modules)
-      #   --blame-hang-timeout         → dump instead of hanging the job on a stuck fixture
-      # The --diag log is the primary signal for a no-output crash; the full dump is backup.
+      # --blame-hang-timeout: a wedged gateway fixture dumps and fails fast instead of
+      # hanging the job to the 6h ceiling. Cheap insurance on process-launching suites.
       - name: LegacyGateway E2E (real gateway process, PowerShell plugin, body capture)
-        run: dotnet test tests/ConduitSharp.LegacyGateway.E2E.Tests --no-restore --blame-crash --blame-crash-dump-type full --blame-hang-timeout 120s --diag TestResults/diag-legacy.log
+        run: dotnet test tests/ConduitSharp.LegacyGateway.E2E.Tests --no-restore --blame-hang-timeout 120s
 
       - name: EmbeddedGateway E2E (real gateway process, embedded composition)
-        run: dotnet test tests/ConduitSharp.EmbeddedGateway.E2E.Tests --no-restore --blame-crash --blame-crash-dump-type full --blame-hang-timeout 120s --diag TestResults/diag-embedded.log
+        run: dotnet test tests/ConduitSharp.EmbeddedGateway.E2E.Tests --no-restore --blame-hang-timeout 120s
 
       - name: EmbeddedGatewayPrefixed E2E (real gateway process, path prefix)
-        run: dotnet test tests/ConduitSharp.EmbeddedGatewayPrefixed.E2E.Tests --no-restore --blame-crash --blame-crash-dump-type full --blame-hang-timeout 120s --diag TestResults/diag-prefixed.log
-
-      # Blame dumps + Sequence.xml land under TestResults/. Upload on failure so the crash
-      # is downloadable from the run's Artifacts.
-      - name: Upload E2E crash dumps
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-blame-dumps
-          path: "**/TestResults/**"
-          if-no-files-found: ignore
+        run: dotnet test tests/ConduitSharp.EmbeddedGatewayPrefixed.E2E.Tests --no-restore --blame-hang-timeout 120s
 
       - name: Grafana E2E (Docker observability stack — Tempo/Prometheus/Loki)
         run: make test-e2e-grafana

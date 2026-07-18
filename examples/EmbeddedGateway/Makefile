@@ -96,7 +96,7 @@ stop:
 	@pkill -f "[I]nventoryService.dll" 2>/dev/null || true
 	@pkill -f "[O]rderService.dll" 2>/dev/null || true
 	@pkill -f "[G]reeterService.dll" 2>/dev/null || true
-	@pkill -f "run.*EmbeddedGateway" 2>/dev/null || true
+	@pkill -f "dotnet run.*EmbeddedGateway" 2>/dev/null || true
 	@pkill -f "[E]mbeddedGateway.dll" 2>/dev/null || true
 	@echo "✓ All processes stopped."
 
