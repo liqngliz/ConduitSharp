@@ -2,9 +2,13 @@
 
 ## Supported versions
 
-| Version | Supported |
-|---------|-----------|
-| 0.1.x   | ✅ Yes    |
+Security fixes are provided for the 1.x line onwards, starting with the `1.0.0-rc`
+release candidate. Earlier `0.x` previews were never tagged or published and are not supported.
+
+| Version        | Supported |
+|----------------|-----------|
+| 1.x (incl. rc) | ✅ Yes    |
+| 0.x            | ❌ No     |
 
 ## Reporting a vulnerability
 

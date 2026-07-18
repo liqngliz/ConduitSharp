@@ -29,7 +29,7 @@
     Transformation/Observability, so these must version together to produce a restorable package.
   -->
   <PropertyGroup>
-    <Version>0.1.5</Version>
+    <Version>1.0.0-rc.1</Version>
     <Authors>liqngliz</Authors>
     <Company>ConduitSharp</Company>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
