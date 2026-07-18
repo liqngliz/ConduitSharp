@@ -32,6 +32,7 @@
     <Version>1.0.0-rc.1</Version>
     <Authors>liqngliz</Authors>
     <Company>ConduitSharp</Company>
+    <Copyright>Copyright © 2026 liqngliz</Copyright>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/liqngliz/ConduitSharp</PackageProjectUrl>
     <RepositoryUrl>https://github.com/liqngliz/ConduitSharp</RepositoryUrl>
