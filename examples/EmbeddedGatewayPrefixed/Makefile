@@ -96,7 +96,9 @@ stop:
 	@pkill -f "[I]nventoryService.dll" 2>/dev/null || true
 	@pkill -f "[O]rderService.dll" 2>/dev/null || true
 	@pkill -f "[G]reeterService.dll" 2>/dev/null || true
-	@pkill -f "dotnet run.*EmbeddedGateway" 2>/dev/null || true
+	# [r]un: the bracket keeps pkill's own recipe shell (whose cmdline contains this
+	# pattern) from self-matching — same trick as the [I]/[O]/[G]/[E] lines above.
+	@pkill -f "dotnet [r]un.*EmbeddedGateway" 2>/dev/null || true
 	@pkill -f "[E]mbeddedGateway.dll" 2>/dev/null || true
 	@echo "✓ All processes stopped."
 
