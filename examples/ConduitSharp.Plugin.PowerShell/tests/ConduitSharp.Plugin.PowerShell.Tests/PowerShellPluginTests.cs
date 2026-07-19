@@ -93,4 +93,65 @@ public sealed class PowerShellPluginTests
             File.Delete(script);
         }
     }
+
+    [Fact]
+    public async Task ExecuteAsync_ClientAborts_ReturnsPromptly_DoesNotLeakThread()
+    {
+        // A hung script (Start-Sleep 60) with the client already gone: context.RequestAborted
+        // is signalled but ExecuteAsync never observes it, so the call blocks on ps.Invoke()
+        // for the full script duration, parking a thread-pool thread the whole time. A correct
+        // implementation registers RequestAborted -> ps.Stop() and returns once the token fires.
+        var script = Path.Combine(Path.GetTempPath(), $"ps-hang-{Guid.NewGuid():N}.ps1");
+        await File.WriteAllTextAsync(script, "Start-Sleep -Seconds 60; 'done'");
+        try
+        {
+            var plugin = Build();
+            var config = System.Text.Json.JsonSerializer.SerializeToElement(new { scriptPath = script });
+
+            var context = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+            context.Response.Body = new MemoryStream();
+            using var cts = new CancellationTokenSource();
+            context.RequestAborted = cts.Token;
+            cts.Cancel(); // client already gone before the script finishes
+
+            var exec = plugin.ExecuteAsync(context, config, _ => Task.CompletedTask);
+            var finished = await Task.WhenAny(exec, Task.Delay(TimeSpan.FromSeconds(5)));
+
+            Assert.True(finished == exec,
+                "ExecuteAsync did not return within 5s of RequestAborted firing — the hung script " +
+                "is blocking a thread-pool thread until it completes on its own.");
+        }
+        finally
+        {
+            File.Delete(script);
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ScriptExceedsTimeout_Returns504()
+    {
+        // No client abort — the configured timeoutMs must stop a slow script on its own.
+        var script = Path.Combine(Path.GetTempPath(), $"ps-slow-{Guid.NewGuid():N}.ps1");
+        await File.WriteAllTextAsync(script, "Start-Sleep -Seconds 60; 'done'");
+        try
+        {
+            var plugin = Build();
+            var config = System.Text.Json.JsonSerializer.SerializeToElement(
+                new { scriptPath = script, timeoutMs = 500 });
+
+            var context = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+            context.Response.Body = new MemoryStream();
+
+            var exec = plugin.ExecuteAsync(context, config, _ => Task.CompletedTask);
+            var finished = await Task.WhenAny(exec, Task.Delay(TimeSpan.FromSeconds(5)));
+
+            Assert.True(finished == exec, "ExecuteAsync did not return within 5s — timeout not enforced.");
+            await exec;
+            Assert.Equal(504, context.Response.StatusCode);
+        }
+        finally
+        {
+            File.Delete(script);
+        }
+    }
 }

@@ -53,6 +53,17 @@ public sealed class PowerShellPlugin : IPipelinePlugin
 
         // Run the synchronous PS Invoke on a thread-pool thread so we don't
         // block the ASP.NET request thread while the runspace initialises.
+        // ps.Stop() (fired from RequestAborted or the timeout) unblocks Invoke()
+        // so a hung script can't park the pool thread until it finishes on its own.
+        var timeout = cfg.TimeoutMs > 0
+            ? TimeSpan.FromMilliseconds(cfg.TimeoutMs)
+            : Timeout.InfiniteTimeSpan;
+        using var timeoutCts = new CancellationTokenSource();
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            context.RequestAborted, timeoutCts.Token);
+        if (timeout != Timeout.InfiniteTimeSpan)
+            timeoutCts.CancelAfter(timeout);
+
         string? output = null;
         string? errorOutput = null;
 
@@ -60,7 +71,12 @@ public sealed class PowerShellPlugin : IPipelinePlugin
         {
             using var ps = System.Management.Automation.PowerShell.Create();
             ps.AddScript(scriptContent);
-            var results = ps.Invoke();
+            using var reg = linked.Token.Register(ps.Stop);
+            if (linked.Token.IsCancellationRequested) return; // aborted before Invoke started
+
+            System.Collections.ObjectModel.Collection<PSObject> results;
+            try { results = ps.Invoke(); }
+            catch (System.Management.Automation.PipelineStoppedException) { return; }
 
             if (ps.HadErrors)
             {
@@ -71,6 +87,17 @@ public sealed class PowerShellPlugin : IPipelinePlugin
 
             output = string.Join("\n", results.Select(r => r?.ToString() ?? "")).Trim();
         });
+
+        if (context.RequestAborted.IsCancellationRequested)
+            return; // client gone — nothing to write
+
+        if (timeoutCts.IsCancellationRequested)
+        {
+            context.Response.StatusCode = 504;
+            await Microsoft.AspNetCore.Http.HttpResponseWritingExtensions.WriteAsync(
+                context.Response, $"Script timed out after {cfg.TimeoutMs}ms.");
+            return;
+        }
 
         if (errorOutput is not null)
         {
@@ -91,4 +118,5 @@ public sealed class PowerShellPlugin : IPipelinePlugin
 internal sealed record PsConfig
 {
     [JsonPropertyName("scriptPath")] public string ScriptPath { get; init; } = "";
+    [JsonPropertyName("timeoutMs")]  public int    TimeoutMs  { get; init; } = 30_000;
 }
