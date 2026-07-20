@@ -188,7 +188,11 @@ public static class GatewayServiceCollectionExtensions
             builder.Logging.AddOpenTelemetry(logging =>
             {
                 logging.IncludeFormattedMessage = true;
-                logging.IncludeScopes = true;
+                // Scope capture + serialization runs on every log record and sits on the per-request
+                // path. The gateway's useful context (route_id, path) is stamped straight onto records
+                // by the plugins that need it (e.g. body-capture's PerRouteBodyLimitInterceptor via
+                // AddParameter), not through the ASP.NET scope stack — so this drops cost, not signal.
+                logging.IncludeScopes = false;
                 // Batch export (the SDK default): spans/logs are queued and flushed in the
                 // background instead of a synchronous network call per item — Simple is a
                 // dev/debug setting and this export sits on a per-request latency path.

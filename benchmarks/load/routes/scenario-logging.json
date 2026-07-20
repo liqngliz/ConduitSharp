@@ -12,7 +12,7 @@
         }
       },
       "plugins": [
-        { "name": "custom", "variant": "body-capture-streaming" }
+        { "name": "custom", "variant": "body-capture-streaming", "config": { "maxSize": 4096 } }
       ]
     }
   ]

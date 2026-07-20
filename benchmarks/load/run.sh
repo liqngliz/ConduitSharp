@@ -288,6 +288,10 @@ ensure_payload_24kb() {
     [ -f payload/24kb.bin ] || dd if=/dev/urandom of=payload/24kb.bin bs=1k count=24 2>/dev/null \
         || dd if=/dev/urandom of=payload/24kb.bin bs=1K count=24
 }
+ensure_payload_4kb() {
+    [ -f payload/4kb.bin ] || dd if=/dev/urandom of=payload/4kb.bin bs=1k count=4 2>/dev/null \
+        || dd if=/dev/urandom of=payload/4kb.bin bs=1K count=4
+}
 
 # Bytes written to storage by everything in a container — the ground truth for "did it allocate a
 # buffer?". A gateway that streams writes ~nothing; one that buffers writes about a copy of every
@@ -512,10 +516,17 @@ s4_buffered() {
 }
 
 s6_logging() {
-    ensure_payload_24kb
-    echo "" | tee -a "$RESULTS"
-    echo "== s6: logging + body capture — 24 KB POST, to Loki ==" | tee -a "$RESULTS"
+    header "s6: logging + body capture — 4 KB POST, to Loki"
+    echo "== s6: logging + body capture — 4 KB POST, to Loki ==" | tee -a "$RESULTS"
+    # Wait for the observability stack to come up so logs don't just drop, skewing the timing.
+    # Loki port 3100, OTel port 4317.
+    sleep 3
 
+    ensure_payload_4kb
+
+    # We do NOT run the shedding baseline here (s3) because these pipelines buffer the body
+    # to Loki, so the 1G heap cap will be hit regardless — the comparison is between the proxies.
+    
     # Compile the plugin and place it in the mounted plugins directory
     dotnet publish ../../examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release -o plugins/bench-logging
 
@@ -523,19 +534,19 @@ s6_logging() {
     "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml up -d loki otel-collector tempo promtail
 
     LOG_LEVEL=Information OTEL_ENDPOINT="http://otel-collector:4317" up scenario-logging
-    bench_shape "s6 conduitsharp (capture plugin -> OTLP -> Loki)" gateway POST "$GATEWAY_URL" /payload/24kb.bin 0.024
+    bench_shape "s6 conduitsharp (capture plugin -> OTLP -> Loki)" gateway POST "$GATEWAY_URL" /payload/4kb.bin 0.004
     "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
 
     OCELOT_CAPTURE_BODY=1 OTEL_ENDPOINT="http://otel-collector:4317" up_competitor ocelot "http://127.0.0.1:8083/bench"
-    bench_shape "s6 ocelot (custom middleware -> OTLP -> Loki)" ocelot POST "$OCELOT_URL" /payload/24kb.bin 0.024
+    bench_shape "s6 ocelot (custom middleware -> OTLP -> Loki)" ocelot POST "$OCELOT_URL" /payload/4kb.bin 0.004
     "${COMPOSE[@]}" stop ocelot >/dev/null 2>&1 || true
 
     up_apisix apisix-logging config-default
-    bench_shape "s6 apisix (loki-logger plugin -> Loki)" apisix POST "$APISIX_URL" /payload/24kb.bin 0.024
+    bench_shape "s6 apisix (loki-logger plugin -> Loki)" apisix POST "$APISIX_URL" /payload/4kb.bin 0.004
     "${COMPOSE[@]}" stop apisix >/dev/null 2>&1 || true
 
     up_envoy envoy-logging
-    bench_shape "s6 envoy (tap filter -> Promtail -> Loki)" envoy POST "$ENVOY_URL" /payload/24kb.bin 0.024
+    bench_shape "s6 envoy (tap filter -> Promtail -> Loki)" envoy POST "$ENVOY_URL" /payload/4kb.bin 0.004
     "${COMPOSE[@]}" stop envoy >/dev/null 2>&1 || true
     
     "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml stop loki otel-collector tempo promtail
