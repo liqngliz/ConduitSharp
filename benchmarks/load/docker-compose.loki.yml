@@ -43,7 +43,7 @@ services:
     image: grafana/promtail:latest
     volumes:
       - ./observability/promtail.yaml:/etc/promtail/promtail.yaml
-      - /tmp/envoy-logs:/tmp/envoy-logs
+      - envoy-logs:/tmp/envoy-logs
     command: -config.file=/etc/promtail/promtail.yaml
     depends_on:
       - loki

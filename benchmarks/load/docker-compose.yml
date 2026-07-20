@@ -102,8 +102,7 @@ services:
     mem_limit: ${GW_MEM:-1g}
     volumes:
       - ./envoy/${ENVOY_CONF:-envoy-stream}.yaml:/etc/envoy/envoy.yaml:ro
-    tmpfs:
-      - /tmp/envoy-logs:size=${TMPFS_SIZE:-512m},mode=1777
+      - envoy-logs:/tmp/envoy-logs
     ports:
       - "127.0.0.1:10080:10080"
     depends_on:
@@ -121,3 +120,11 @@ volumes:
   # the container's /tmp on purpose: /tmp is tmpfs on many images, and spilling to RAM would
   # defeat the whole point of having a disk tier.
   spill:
+
+  # Shared tmpfs volume so Promtail can actually read Envoy's dumped logs
+  envoy-logs:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=${TMPFS_SIZE:-512m},mode=1777
