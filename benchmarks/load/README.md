@@ -337,3 +337,41 @@ measuring the mechanism, not throughput. Leave it at the default to compare serv
 
 Runtime config pinned for fairness: ServerGC on, plain HTTP, logging at Warning.
 The jwt-auth signing key in scenario-b is a public bench-only secret.
+
+## Observability & Custom Code additions (`s6`)
+
+For the `s6` logging scenario, body capture and observability logging was added to Ocelot and Envoy:
+
+### Ocelot Custom Middleware
+To capture bodies in Ocelot, we had to introduce a custom ASP.NET Core middleware in `ocelot/Program.cs` that explicitly enables buffering and reads the stream. This forces Ocelot to buffer the body in RAM/Disk:
+```csharp
+app.Use(async (context, next) =>
+{
+    context.Request.EnableBuffering();
+    using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+    var body = await reader.ReadToEndAsync();
+    context.Request.Body.Position = 0;
+    
+    // Log the body via OpenTelemetry to Loki
+    app.Logger.LogInformation("Request Body: {Body}", body);
+    await next(context);
+});
+```
+
+### Envoy Tap Filter
+For Envoy, we used the native HTTP tap filter in `envoy/envoy-logging.yaml` to dump the raw HTTP exchange directly to disk, which Promtail then ships to Loki:
+```yaml
+http_filters:
+  - name: envoy.filters.http.tap
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.tap.v3.Tap
+      common_config:
+        static_config:
+          match_config:
+            any_match: true
+          output_config:
+            sinks:
+              - format: JSON_BODY_AS_STRING
+                file_per_tap:
+                  path_prefix: /tmp/envoy-logs/tap
+```

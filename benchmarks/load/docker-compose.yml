@@ -33,10 +33,12 @@ services:
       # which would make the "disk" tier RAM and quietly turn the step-down into an OOM.
       Gateway__RequestLimits__SpillDirectory: ${SPILL_DIR:-/spill}
       DOTNET_gcServer: "1"
-      Logging__LogLevel__Default: Warning
+      Logging__LogLevel__Default: ${LOG_LEVEL:-Warning}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
+      OTEL_RESOURCE_ATTRIBUTES: service.name=conduitsharp-gateway
     volumes:
       - ./routes:/config:ro
-      - spill:/spill
+      - ./plugins:/app/plugins:ro
     # RAM-backed spill for s5, sized explicitly. Three limits can stop a tmpfs spill and only one
     # of them is graceful, so they must be ordered:
     #   MaxTotalBufferedBodyBytes (503) < tmpfs size= (ENOSPC -> 500) < mem_limit (OOM-kill)
@@ -44,7 +46,7 @@ services:
     # an earlier spill-heavy run looked fast while actually returning 85% 500s. tmpfs pages are
     # charged to the container's cgroup, so GW_MEM must cover this mount PLUS the heap.
     tmpfs:
-      - /spill-tmpfs:size=${TMPFS_SIZE:-512m},mode=1777
+      - /spill:size=${TMPFS_SIZE:-512m},mode=1777
     ports:
       - "127.0.0.1:8080:8080" # host-side health checks / debugging only
     depends_on:
@@ -61,6 +63,8 @@ services:
       # AddPolly<TProvider> — the documented seam — so the retry scenarios can measure Ocelot
       # rather than skip it. See ocelot/RetryQoSProvider.cs for what it does and does not buy.
       OCELOT_RETRY: ${OCELOT_RETRY:-0}
+      OCELOT_CAPTURE_BODY: ${OCELOT_CAPTURE_BODY:-0}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
     ports:
       - "127.0.0.1:8083:8080"
     depends_on:
@@ -89,6 +93,19 @@ services:
       - ./apisix/${APISIX_CONF:-config-default}.yaml:/conf-template/config.yaml:ro
     ports:
       - "127.0.0.1:9080:9080"
+    depends_on:
+      - upstream
+
+  envoy:
+    image: envoyproxy/envoy:v1.31.0
+    profiles: [compare]
+    mem_limit: ${GW_MEM:-1g}
+    volumes:
+      - ./envoy/${ENVOY_CONF:-envoy-stream}.yaml:/etc/envoy/envoy.yaml:ro
+    tmpfs:
+      - /tmp/envoy-logs:size=${TMPFS_SIZE:-512m},mode=1777
+    ports:
+      - "127.0.0.1:10080:10080"
     depends_on:
       - upstream
 

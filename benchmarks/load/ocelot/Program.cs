@@ -7,6 +7,8 @@ using Ocelot.Bench;
 using Ocelot.DependencyInjection;
 using Ocelot.Middleware;
 using Ocelot.Provider.Polly;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Resources;
 
 var withRetry = Environment.GetEnvironmentVariable("OCELOT_RETRY") is "1" or "broken";
 
@@ -23,8 +25,35 @@ if (withRetry)
         ? new BufferingPollyHandler(route, new RetryQoSProvider())
         : new NonBufferingPollyHandler(route, new RetryQoSProvider()));
 }
-builder.Logging.SetMinimumLevel(LogLevel.Warning);
+builder.Logging.SetMinimumLevel(LogLevel.Information);
+
+builder.Logging.AddOpenTelemetry(options =>
+{
+    var endpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+    if (!string.IsNullOrEmpty(endpoint))
+    {
+        options.SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("ocelot-gateway"));
+        options.AddOtlpExporter(otlpOptions => otlpOptions.Endpoint = new Uri(endpoint));
+    }
+});
 
 var app = builder.Build();
+
+app.Use(async (context, next) =>
+{
+    if (Environment.GetEnvironmentVariable("OCELOT_CAPTURE_BODY") == "1")
+    {
+        context.Request.EnableBuffering();
+        using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        context.Request.Body.Position = 0;
+        
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        var traceId = System.Diagnostics.Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier;
+        logger.LogInformation("Request Body: {Body}, TraceId: {TraceId}", body, traceId);
+    }
+    await next();
+});
+
 await app.UseOcelot();
 app.Run();
