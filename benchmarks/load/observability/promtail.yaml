@@ -22,5 +22,4 @@ scrape_configs:
           stages:
             - regex:
                 expression: '.*"x-request-id":"(?P<trace_id>[^"]+)".*'
-            - labels:
-                traceID: trace_id
+            # Removed traceID label to prevent high cardinality streams

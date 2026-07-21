@@ -516,40 +516,140 @@ s4_buffered() {
 }
 
 s6_logging() {
-    header "s6: logging + body capture — 4 KB POST, to Loki"
-    echo "== s6: logging + body capture — 4 KB POST, to Loki ==" | tee -a "$RESULTS"
-    # Wait for the observability stack to come up so logs don't just drop, skewing the timing.
-    # Loki port 3100, OTel port 4317.
-    sleep 3
+    local S6_REQS="${S6_REQS:-5000}"
+    local S6_CONNS="${S6_CONNS:-50}"
+
+    header "s6: logging — $S6_REQS fixed requests, 4 KB POST, to Loki"
+    echo "== s6: logging — $S6_REQS fixed requests, 4 KB POST, to Loki ==" | tee -a "$RESULTS"
 
     ensure_payload_4kb
-
-    # We do NOT run the shedding baseline here (s3) because these pipelines buffer the body
-    # to Loki, so the 1G heap cap will be hit regardless — the comparison is between the proxies.
-    
-    # Compile the plugin and place it in the mounted plugins directory
     dotnet publish ../../examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release -o plugins/bench-logging
 
-    # Spin up observability stack
-    "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml up -d loki otel-collector tempo promtail
+    # Loki log counter helper — reads loki_distributor_lines_received_total from :3100/metrics
+    loki_count() {
+        python3 -c "
+import urllib.request
+try:
+    lines = urllib.request.urlopen('http://127.0.0.1:3100/metrics').read().decode().splitlines()
+    print(int(sum(float(l.split()[1]) for l in lines if l.startswith('loki_distributor_lines_received_total{'))))
+except Exception:
+    print(-1)
+" 2>/dev/null
+    }
 
-    LOG_LEVEL=Information OTEL_ENDPOINT="http://otel-collector:4317" up scenario-logging
-    bench_shape "s6 conduitsharp (capture plugin -> OTLP -> Loki)" gateway POST "$GATEWAY_URL" /payload/4kb.bin 0.004
+    # Drain: wait until Loki's received counter stops growing (collector queue flushed). Cap 120s.
+    drain_loki() {
+        echo "   draining otel-collector queue to Loki ..."
+        local waited=0 prev=-1 stable=0
+        while [ "$waited" -lt 120 ]; do
+            sleep 5; waited=$((waited + 5))
+            local cur; cur=$(loki_count)
+            if [ "$prev" != "-1" ] && [ "$cur" != "-1" ]; then
+                local delta=$((cur - prev))
+                echo "   drain: +${delta} logs in last 5s (total ${cur})"
+                if [ "$delta" -lt 100 ]; then
+                    stable=$((stable + 1)); [ "$stable" -ge 2 ] && break
+                else stable=0; fi
+            fi
+            prev=$cur
+        done
+    }
+
+    # One fixed-count arm: start gateway, send N requests, drain, report ingestion %.
+    # $1=label $2=service $3=url
+    bench_logging_arm() {
+        local label="$1" svc="$2" url="$3"
+        rig_gate
+
+        # Warmup, then drain so warmup logs don't leak into the measurement
+        "${COMPOSE[@]}" run --rm -T --quiet-pull load --print r --format json -l \
+            -c "$S6_CONNS" -n 500 -m POST -f /payload/4kb.bin -H "Content-Type: application/octet-stream" "$url" \
+            >/dev/null 2>&1 || true
+        echo "   draining warmup logs..."
+        drain_loki
+
+        local before_loki; before_loki=$(loki_count)
+
+        echo ">> $label [$S6_REQS reqs, c=$S6_CONNS]"
+        local json; json=$(mktemp)
+        "${COMPOSE[@]}" run --rm -T --quiet-pull load --print r --format json -l \
+            -c "$S6_CONNS" -n "$S6_REQS" -m POST -f /payload/4kb.bin -H "Content-Type: application/octet-stream" "$url" \
+            > "$json" 2>/dev/null || true
+
+        drain_loki
+        local after_loki; after_loki=$(loki_count)
+
+        # Extract results from bombardier JSON
+        python3 - "$label" "$json" "$before_loki" "$after_loki" "$S6_REQS" "$RESULTS" <<'PY'
+import json, sys
+
+label, jpath, before_s, after_s, total_reqs_s, results_file = sys.argv[1:]
+before, after = int(before_s), int(after_s)
+total_reqs = int(total_reqs_s)
+
+try:
+    data = json.load(open(jpath))["result"]
+    qps    = data["rps"]["mean"]
+    lat_ms = data["latency"]["mean"] / 1e3   # us -> ms
+    p50_ms = data["latency"]["percentiles"]["50"] / 1e3
+    p99_ms = data["latency"]["percentiles"]["99"] / 1e3
+    ok_2xx = data.get("req2xx", 0)
+    elapsed = total_reqs / qps if qps > 0 else 0
+except Exception as e:
+    print(f"   ERROR parsing {jpath}: {e}", file=sys.stderr)
+    qps = lat_ms = p50_ms = p99_ms = ok_2xx = elapsed = 0
+
+ingested = (after - before) if before >= 0 and after >= 0 else -1
+generated = total_reqs  # 1 log per request
+pct = f"{ingested / generated * 100:.1f}%" if ingested >= 0 and generated > 0 else "n/a"
+
+print(f"    -> {label}: {ok_2xx}/{total_reqs} requests OK in {elapsed:.1f}s ({qps:.0f} QPS)")
+print(f"    -> {label}: p50 {p50_ms:.2f} ms, p99 {p99_ms:.2f} ms")
+print(f"    -> {label}: logs generated {generated:,} / ingested {ingested:,} = {pct} completion")
+
+with open(results_file, "a") as f:
+    f.write(f"    -> {label}: {ok_2xx}/{total_reqs} OK in {elapsed:.1f}s ({qps:.0f} QPS), "
+            f"p50 {p50_ms:.2f}ms p99 {p99_ms:.2f}ms, "
+            f"logs {ingested:,}/{generated:,} = {pct}\n")
+PY
+        rm -f "$json"
+    }
+
+    # Fresh observability stack per arm — isolates Loki counters
+    reset_obs() {
+        echo "   resetting observability stack..."
+        "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml down -v --remove-orphans >/dev/null 2>&1 || true
+        docker volume rm load_envoy-logs >/dev/null 2>&1 || true
+        docker system prune -f --volumes >/dev/null 2>&1 || true
+        "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml up -d loki otel-collector tempo promtail >/dev/null 2>&1
+        sleep 5
+    }
+
+    # --- Conduit ---
+    reset_obs
+    LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up scenario-logging
+    bench_logging_arm "s6 conduitsharp (capture plugin -> OTLP -> Loki)" gateway "$GATEWAY_URL"
     "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
 
-    OCELOT_CAPTURE_BODY=1 OTEL_ENDPOINT="http://otel-collector:4317" up_competitor ocelot "http://127.0.0.1:8083/bench"
-    bench_shape "s6 ocelot (custom middleware -> OTLP -> Loki)" ocelot POST "$OCELOT_URL" /payload/4kb.bin 0.004
+    # --- Ocelot ---
+    reset_obs
+    OCELOT_CAPTURE_BODY=1 LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up_competitor ocelot "http://127.0.0.1:8083/bench"
+    bench_logging_arm "s6 ocelot (custom middleware -> OTLP -> Loki)" ocelot "$OCELOT_URL"
     "${COMPOSE[@]}" stop ocelot >/dev/null 2>&1 || true
 
+    # --- APISIX ---
+    reset_obs
     up_apisix apisix-logging config-default
-    bench_shape "s6 apisix (loki-logger plugin -> Loki)" apisix POST "$APISIX_URL" /payload/4kb.bin 0.004
+    bench_logging_arm "s6 apisix (loki-logger plugin -> Loki)" apisix "$APISIX_URL"
     "${COMPOSE[@]}" stop apisix >/dev/null 2>&1 || true
 
+    # --- Envoy ---
+    reset_obs
     up_envoy envoy-logging
-    bench_shape "s6 envoy (tap filter -> Promtail -> Loki)" envoy POST "$ENVOY_URL" /payload/4kb.bin 0.004
+    bench_logging_arm "s6 envoy (tap filter -> Promtail -> Loki)" envoy "$ENVOY_URL"
     "${COMPOSE[@]}" stop envoy >/dev/null 2>&1 || true
-    
-    "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml stop loki otel-collector tempo promtail
+
+    "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml stop loki otel-collector tempo promtail >/dev/null 2>&1 || true
 }
 
 # Phase 3: long fixed-rate soak; RSS at start vs end ≈ no leak.

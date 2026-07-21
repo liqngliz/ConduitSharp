@@ -25,7 +25,7 @@ if (withRetry)
         ? new BufferingPollyHandler(route, new RetryQoSProvider())
         : new NonBufferingPollyHandler(route, new RetryQoSProvider()));
 }
-builder.Logging.SetMinimumLevel(LogLevel.Information);
+builder.Logging.SetMinimumLevel(LogLevel.Warning);
 
 builder.Logging.AddOpenTelemetry(options =>
 {
@@ -50,7 +50,7 @@ app.Use(async (context, next) =>
         
         var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
         var traceId = System.Diagnostics.Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier;
-        logger.LogInformation("Request Body: {Body}, TraceId: {TraceId}", body, traceId);
+        logger.LogWarning("Request Body: {Body}, TraceId: {TraceId}", body, traceId);
     }
     await next();
 });

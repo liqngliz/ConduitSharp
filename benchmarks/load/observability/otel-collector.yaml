@@ -22,6 +22,7 @@ exporters:
 
   otlphttp/loki:
     endpoint: http://loki:3100/otlp
+    timeout: 30s
     tls:
       insecure: true
 
