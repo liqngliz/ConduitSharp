@@ -153,11 +153,11 @@
       ]
     },
     {
-      "id": "finance-margin-report",
-      "description": "ERP finance report — JWT auth + role-based access, rate limited, cached 60s, executed via PowerShell plugin",
+      "id": "erp-report",
+      "description": "ERP erp report — JWT auth + role-based access, rate limited, cached 60s, executed via PowerShell plugin",
       "route": {
         "match": {
-          "path": "/api/finance/reports/margin",
+          "path": "/api/erp/reports/summary",
           "methods": [
             "GET"
           ]
@@ -165,7 +165,7 @@
       },
       "cluster": null,
       "swagger": {
-        "specFile": "specs/finance-margin-report.json"
+        "specFile": "specs/erp-report.json"
       },
       "plugins": [
         {
@@ -181,7 +181,7 @@
                 "claim": "role",
                 "anyOf": [
                   "analyst",
-                  "finance-admin"
+                  "erp-admin"
                 ]
               }
             ]
@@ -210,7 +210,7 @@
           "order": 99,
           "enabled": true,
           "config": {
-            "scriptPath": "scripts/Get-MarginReport.ps1"
+            "scriptPath": "scripts/Get-ErpReport.ps1"
           }
         }
       ]

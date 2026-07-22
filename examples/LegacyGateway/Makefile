@@ -27,10 +27,10 @@ build:
 	@dotnet publish ../SharedServices/OrderService -c Release -o $(BIN)/order-svc -v q
 	@echo "▶ Building GreeterService (gRPC)..."
 	@dotnet publish ../SharedServices/GreeterService -c Release -o $(BIN)/greeter-svc -v q
-	@echo "▶ Building PowerShell plugin → gateway/plugins/finance-margin-report/ ..."
+	@echo "▶ Building PowerShell plugin → gateway/plugins/erp-report/ ..."
 	@dotnet publish $(ROOT)/../ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell -c Release \
 		-r $$(dotnet --info 2>/dev/null | awk '/^[[:space:]]*RID:/{print $$2; exit}') --no-self-contained \
-		-o $(ROOT)/gateway/plugins/finance-margin-report -v q
+		-o $(ROOT)/gateway/plugins/erp-report -v q
 	@echo "▶ Building BodyCapture plugin → gateway/plugins/body-capture/ ..."
 	@dotnet publish $(ROOT)/../ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release \
 		-o $(ROOT)/gateway/plugins/body-capture -v q
@@ -88,7 +88,7 @@ run: build
 	echo " curl http://localhost:5050/health"; \
 	echo " curl http://localhost:5050/api/inventory -H 'X-Api-Key: demo-api-key-conduitsharp-example'"; \
 	echo " curl http://localhost:5050/api/orders -H \"Authorization: Bearer $$JWT\""; \
-	echo " curl http://localhost:5050/finance/reports/margin -H \"Authorization: Bearer $$JWT\""; \
+	echo " curl http://localhost:5050/erp/reports/summary -H \"Authorization: Bearer $$JWT\""; \
 	echo ""; \
 	echo " Logs: $(LOGS)/   Stop: make stop"; \
 	echo ""
@@ -136,7 +136,7 @@ docker-up:
 	echo " curl http://localhost:5050/health"; \
 	echo " curl http://localhost:5050/api/inventory -H 'X-Api-Key: demo-api-key-conduitsharp-example'"; \
 	echo " curl http://localhost:5050/api/orders -H \"Authorization: Bearer $$JWT\""; \
-	echo " curl http://localhost:5050/finance/reports/margin -H \"Authorization: Bearer $$JWT\""; \
+	echo " curl http://localhost:5050/erp/reports/summary -H \"Authorization: Bearer $$JWT\""; \
 	echo ""; \
 	echo " Traces visible in Aspire Dashboard → Traces tab"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -165,7 +165,7 @@ docker-grafana:
 	echo " curl http://localhost:5050/health"; \
 	echo " curl http://localhost:5050/api/inventory -H 'X-Api-Key: demo-api-key-conduitsharp-example'"; \
 	echo " curl http://localhost:5050/api/orders -H \"Authorization: Bearer $$JWT\""; \
-	echo " curl http://localhost:5050/finance/reports/margin -H \"Authorization: Bearer $$JWT\""; \
+	echo " curl http://localhost:5050/erp/reports/summary -H \"Authorization: Bearer $$JWT\""; \
 	echo ""; \
 	echo " Signals: Traces → Tempo  |  Metrics → Prometheus  |  Logs → Loki"; \
 	echo " Stop: make docker-grafana-down"; \

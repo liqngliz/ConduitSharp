@@ -62,7 +62,7 @@ if ($DockerUp) {
     Write-Host "  curl http://localhost:5050/health"
     Write-Host "  curl http://localhost:5050/api/inventory -H 'X-Api-Key: $ApiKey'"
     Write-Host "  curl http://localhost:5050/api/orders    -H `"Authorization: Bearer `$JWT`""
-    Write-Host "  curl http://localhost:5050/finance/reports/margin -H `"Authorization: Bearer `$JWT`""
+    Write-Host "  curl http://localhost:5050/erp/reports/summary -H `"Authorization: Bearer `$JWT`""
     Write-Host ""
     Write-Host "  Traces visible in Aspire Dashboard → Traces tab"
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Yellow
@@ -133,7 +133,7 @@ dotnet publish "$Root/../SharedServices/GreeterService" -c Release -o "$BinDir/g
 Write-Ok "GreeterService → $BinDir/greeter-svc"
 
 Write-Step "Building PowerShell plugin..."
-$PluginOut = Join-Path $Root "gateway" "plugins" "finance-margin-report"
+$PluginOut = Join-Path $Root "gateway" "plugins" "erp-report"
 $null = New-Item -ItemType Directory -Path $PluginOut -Force
 $rid = (dotnet --info 2>$null | Select-String 'RID:' | Select-Object -First 1) -replace '.*RID:\s*', ''
 dotnet publish "$Root/../ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell" -c Release -r $rid --no-self-contained -o $PluginOut -v q
@@ -253,7 +253,7 @@ Write-Host ""
 Write-Host "  curl http://localhost:5050/health"
 Write-Host "  curl http://localhost:5050/api/inventory -H 'X-Api-Key: $ApiKey'"
 Write-Host "  curl http://localhost:5050/api/orders    -H `"Authorization: Bearer `$JWT`""
-Write-Host "  curl http://localhost:5050/finance/reports/margin -H `"Authorization: Bearer `$JWT`""
+Write-Host "  curl http://localhost:5050/erp/reports/summary -H `"Authorization: Bearer `$JWT`""
 Write-Host ""
 Write-Host "  Logs:       $LogDir"
 Write-Host "  OTel traces: $(Join-Path $LogDir 'otel-traces.jsonl')"

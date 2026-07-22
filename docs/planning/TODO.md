@@ -10,8 +10,8 @@
   - Gotchas: (1) **groups overage** — >200 groups drops the `groups` claim entirely and emits `_claim_names`/`_claim_sources` (Graph pointer) the plugin can't resolve; recommend app roles (below) or `"ApplicationGroup"` instead. (2) **v1 vs v2** issuer/audience mismatch → 401.
 
   **B) App roles** — gate on `roles` claim (preferred — no overage, readable values):
-  - Config: `requiredClaims: [{ "claim": "roles", "anyOf": ["Finance.Admin", "Finance.Reader"] }]`.
-  - Entra side: define `appRoles` in the API app registration manifest, then assign users/groups to them in the Enterprise App. The `roles` claim is emitted **by default** for the app (no `groupMembershipClaims`-style toggle) as an array of role **value strings** (e.g. `"Finance.Admin"`), not GUIDs.
+  - Config: `requiredClaims: [{ "claim": "roles", "anyOf": ["Admin", "Read"] }]`.
+  - Entra side: define `appRoles` in the API app registration manifest, then assign users/groups to them in the Enterprise App. The `roles` claim is emitted **by default** for the app (no `groupMembershipClaims`-style toggle) as an array of role **value strings** (e.g. `"Admin"`), not GUIDs.
   - Advantage over groups: stable readable values, no 200-role overage, decoupled from directory group sprawl.
 
 ## Release 1.0.0 (branch `release/1.0.0`, from `1.0.0-rc.1`)

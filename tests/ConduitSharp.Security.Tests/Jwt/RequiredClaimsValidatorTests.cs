@@ -76,15 +76,15 @@ public sealed class RequiredClaimsValidatorTests
     [Fact]
     public void Validate_AnyOf_ArrayClaimIntersects_ReturnsNull()
     {
-        var rules = new[] { new RequiredClaim { Claim = "roles", AnyOf = ["Finance.Reader", "Finance.Admin"] } };
+        var rules = new[] { new RequiredClaim { Claim = "roles", AnyOf = ["Read", "Admin"] } };
         Assert.Null(RequiredClaimsValidator.Validate(
-            Claims("""{"roles":["Other","Finance.Admin"]}"""), rules));
+            Claims("""{"roles":["Other","Admin"]}"""), rules));
     }
 
     [Fact]
     public void Validate_AnyOf_ArrayClaimNoOverlap_ReturnsError()
     {
-        var rules = new[] { new RequiredClaim { Claim = "roles", AnyOf = ["Finance.Reader"] } };
+        var rules = new[] { new RequiredClaim { Claim = "roles", AnyOf = ["Read"] } };
         Assert.Equal("Claim 'roles' does not include any of the required values.",
             RequiredClaimsValidator.Validate(Claims("""{"roles":["Other"]}"""), rules));
     }
@@ -142,15 +142,15 @@ public sealed class RequiredClaimsValidatorTests
     [Fact]
     public void Validate_NestedPath_ResolvesThroughObjectGraph()
     {
-        var rules = new[] { new RequiredClaim { Claim = "realm_access.roles", AnyOf = ["finance"] } };
+        var rules = new[] { new RequiredClaim { Claim = "realm_access.roles", AnyOf = ["erp"] } };
         Assert.Null(RequiredClaimsValidator.Validate(
-            Claims("""{"realm_access":{"roles":["finance","other"]}}"""), rules));
+            Claims("""{"realm_access":{"roles":["erp","other"]}}"""), rules));
     }
 
     [Fact]
     public void Validate_NestedPath_IntermediateSegmentMissing_ReturnsMissingClaim()
     {
-        var rules = new[] { new RequiredClaim { Claim = "realm_access.roles", AnyOf = ["finance"] } };
+        var rules = new[] { new RequiredClaim { Claim = "realm_access.roles", AnyOf = ["erp"] } };
         Assert.Equal("Missing required claim 'realm_access.roles'.",
             RequiredClaimsValidator.Validate(Claims("""{"sub":"u1"}"""), rules));
     }

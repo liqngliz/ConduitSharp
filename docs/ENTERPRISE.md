@@ -32,8 +32,8 @@ curl http://localhost:5050/health
 curl http://localhost:5050/api/inventory \
      -H "X-Api-Key: demo-api-key-conduitsharp-example"
 
-# Finance report — JWT (token printed by make docker-up)
-curl http://localhost:5050/finance/reports/margin \
+# ERP report — JWT (token printed by make docker-up)
+curl http://localhost:5050/erp/reports/summary \
      -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -46,7 +46,7 @@ flowchart LR
     gw --> ord["OrderService\njwt-auth"]
     gw --> grt["GreeterService (gRPC, h2c)\nhttp-proxy — HTTP/2 verbatim"]
     gw --> upl["OrderService (upload)\nstreamOnly — zero-alloc passthrough"]
-    gw --> fin["jwt-auth + rate-limit + cache + power-shell\nGet-MarginReport.ps1"]
+    gw --> fin["jwt-auth + rate-limit + cache + power-shell\nGet-ErpReport.ps1"]
 
     gw -.OTLP.-> choice{"observability stack"}
 
@@ -89,7 +89,7 @@ flowchart TB
             r1auth --> r1rbac --> r1rl --> r1cache --> r1fwd
         end
 
-        subgraph route2 ["/finance/reports — legacy modernization"]
+        subgraph route2 ["/erp/reports — legacy modernization"]
             direction LR
             r2auth["jwt-auth"]
             r2rbac["requiredClaims RBAC"]
@@ -136,9 +136,9 @@ Data Product, each with its own small `routes.json`, behind one shared edge gate
 ```mermaid
 flowchart LR
     client(["Callers"]) --> edge["Edge — Azure APIM / APISIX"]
-    edge --> gwA["ConduitSharp — Finance"]
+    edge --> gwA["ConduitSharp — ERP"]
     edge --> gwB["ConduitSharp — Identity"]
-    edge --> gwC["ConduitSharp — ..."]
+    edge --> gwC["ConduitSharp — CRM"]
 ```
 
 One external contract, one org-wide policy point at the edge; every team below it owns a
@@ -190,9 +190,9 @@ ConduitSharp offers a different answer: **put a gateway in front**. The existing
 
 The same problem appears in every large organisation. A critical process runs on a schedule, on someone's laptop, or only when the right person is available. It has no HTTP interface, no authentication, and no observability. The only way to call it is to know it exists.
 
-### Scenario 1 — ERP data products: finance domain reporting
+### Scenario 1 — ERP data products: legacy report extraction
 
-Finance analysts pull margin data from the ERP system using PowerShell scripts on an AD-joined on-prem Windows server. The scripts work because of the on-prem stack: Windows-integrated auth, OLEDB drivers, Kerberos tickets, and direct network access to the ERP database. There is no abstraction layer and no documented contract — just a dependency on infrastructure that no longer exists once cloud migration begins.
+ERP analysts pull report data from the ERP system using PowerShell scripts on an AD-joined on-prem Windows server. The scripts work because of the on-prem stack: Windows-integrated auth, OLEDB drivers, Kerberos tickets, and direct network access to the ERP database. There is no abstraction layer and no documented contract — just a dependency on infrastructure that no longer exists once cloud migration begins.
 
 New workloads on Azure VMs or containers are not domain-joined, cannot acquire Kerberos tickets, and have no OLEDB drivers. The scripts cannot be moved. There is no API surface to migrate to. ConduitSharp solves this in two phases — consumers see the same HTTP contract throughout.
 
@@ -205,8 +205,8 @@ sequenceDiagram
     participant Azure as Azure workload
     participant CS as ConduitSharp (on-prem Windows Server, AD-joined)
 
-    Azure->>CS: GET /finance/reports/margin<br/>Authorization: Bearer <jwt>
-    Note over CS: jwt-auth → validates token<br/>rate-limit → enforces quota<br/>power-shell → Get-MarginReport.ps1<br/>↳ OLEDB → ERP (on-prem SQL)
+    Azure->>CS: GET /erp/reports/summary<br/>Authorization: Bearer <jwt>
+    Note over CS: jwt-auth → validates token<br/>rate-limit → enforces quota<br/>power-shell → Get-ErpReport.ps1<br/>↳ OLEDB → ERP (on-prem SQL)
     CS-->>Azure: 200 JSON
 ```
 
@@ -219,8 +219,8 @@ sequenceDiagram
     participant Azure as Azure workload
     participant CS as ConduitSharp (Cloud VM or Container — same config, same contract)
 
-    Azure->>CS: GET /finance/reports/margin<br/>Authorization: Bearer <jwt>
-    Note over CS: jwt-auth → validates token<br/>rate-limit → enforces quota<br/>power-shell → Get-MarginReport.ps1<br/>↳ Managed Identity → SQL PaaS
+    Azure->>CS: GET /erp/reports/summary<br/>Authorization: Bearer <jwt>
+    Note over CS: jwt-auth → validates token<br/>rate-limit → enforces quota<br/>power-shell → Get-ErpReport.ps1<br/>↳ Managed Identity → SQL PaaS
     CS-->>Azure: 200 JSON
 ```
 
@@ -228,14 +228,14 @@ The gateway is the strangler seam. Modernise the edge first; migrate the infrast
 
 ```json
 {
-  "id": "erp-margin-report",
-  "route": { "match": { "path": "/finance/reports/margin", "methods": ["GET"] } },
+  "id": "erp-report",
+  "route": { "match": { "path": "/erp/reports/summary", "methods": ["GET"] } },
   "cluster": null,
   "plugins": [
     { "name": "jwks-jwt-auth", "order": 1, "config": { "jwksUri": "https://login.microsoftonline.com/{tenant}/discovery/v2.0/keys" } },
     { "name": "rate-limit",    "order": 2, "config": { "windowSeconds": 3600, "maxRequests": 100 } },
     { "name": "cache",         "order": 3, "config": { "ttlSeconds": 900 } },
-    { "name": "custom", "variant": "power-shell", "order": 99, "config": { "scriptPath": "scripts/Get-MarginReport.ps1" } }
+    { "name": "custom", "variant": "power-shell", "order": 99, "config": { "scriptPath": "scripts/Get-ErpReport.ps1" } }
   ]
 }
 ```
@@ -371,8 +371,8 @@ own auth/rate-limit middleware enforces them:
 
 ```json
 "route": {
-  "match": { "path": "/finance/{**rest}" },
-  "authorizationPolicy": "finance-readers"     // your AddAuthorization policy, enforced by ASP.NET Core
+  "match": { "path": "/erp/{**rest}" },
+  "authorizationPolicy": "erp-readers"     // your AddAuthorization policy, enforced by ASP.NET Core
 }
 ```
 
@@ -408,11 +408,11 @@ Incoming request → ASP.NET Core Endpoint Routing
                             to the gateway, and the forwarder sustains the multiplexed
                             h2c streams
 
-  /finance/reports/margin                 No upstream — script produces response directly
+  /erp/reports/summary                 No upstream — script produces response directly
     [1]  jwks-jwt-auth   →  401 if invalid (validates against Azure AD JWKS)
     [2]  rate-limit      →  429 if quota exceeded
     [3]  cache           →  serve cached body if fresh, else continue
-    [99] power-shell     →  Get-MarginReport.ps1                   →  response
+    [99] power-shell     →  Get-ErpReport.ps1                   →  response
 
   /health                                 Passthrough — no auth, no policies
     [99] http-proxy      →  upstream:8080                          →  response
@@ -446,14 +446,14 @@ flowchart TB
     edge --> gwA
     edge --> gwB
 
-    subgraph gwA ["ConduitSharp — Finance Data Product"]
+    subgraph gwA ["ConduitSharp — ERP Data Product"]
         rA["routes.json — 5-6 routes"]
     end
     subgraph gwB ["ConduitSharp — Identity Data Product"]
         rB["routes.json — 5-8 routes"]
     end
 
-    rA --> svcA["finance microservices"]
+    rA --> svcA["erp microservices"]
     rB --> svcB["identity microservices"]
 ```
 

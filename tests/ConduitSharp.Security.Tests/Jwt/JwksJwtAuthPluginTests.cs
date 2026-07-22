@@ -174,7 +174,7 @@ public sealed class JwksJwtAuthPluginTests
     {
         var config = DefaultConfig with
         {
-            RequiredClaims = [new RequiredClaim { Claim = "roles", AnyOf = ["Finance.Admin"] }]
+            RequiredClaims = [new RequiredClaim { Claim = "roles", AnyOf = ["Admin"] }]
         };
         var plugin  = new JwksJwtAuthPlugin(RsaHandler());
         var context = HttpContextBuilder.WithAuth(ValidBearer("""{"roles":["Other"]}"""));
@@ -189,10 +189,10 @@ public sealed class JwksJwtAuthPluginTests
     {
         var config = DefaultConfig with
         {
-            RequiredClaims = [new RequiredClaim { Claim = "roles", AnyOf = ["Finance.Admin"] }]
+            RequiredClaims = [new RequiredClaim { Claim = "roles", AnyOf = ["Admin"] }]
         };
         var plugin            = new JwksJwtAuthPlugin(RsaHandler());
-        var context           = HttpContextBuilder.WithAuth(ValidBearer("""{"roles":["Finance.Admin"]}"""));
+        var context           = HttpContextBuilder.WithAuth(ValidBearer("""{"roles":["Admin"]}"""));
         var (next, wasCalled) = HttpContextBuilder.TrackingNext();
 
         await plugin.ExecuteAsync(context, Configured(config), next);

@@ -28,7 +28,7 @@ flowchart TB
             r1auth --> r1rbac --> r1rl --> r1cache --> r1fwd
         end
 
-        subgraph route2 ["/finance/reports — legacy modernization"]
+        subgraph route2 ["/erp/reports — legacy modernization"]
             direction LR
             r2auth["jwt-auth"]
             r2rbac["requiredClaims RBAC"]
@@ -157,14 +157,14 @@ flowchart TB
     edge --> gwA
     edge --> gwB
 
-    subgraph gwA ["ConduitSharp — Finance Data Product\nnamespace: finance"]
+    subgraph gwA ["ConduitSharp — ERP Data Product\nnamespace: erp"]
         rA["routes.json — 5-6 routes"]
     end
     subgraph gwB ["ConduitSharp — Identity Data Product\nnamespace: identity"]
         rB["routes.json — 5-8 routes"]
     end
 
-    rA --> svcA1["finance svc 1"] & svcA2["finance svc 2"] & svcAn["... up to ~6"]
+    rA --> svcA1["erp svc 1"] & svcA2["erp svc 2"] & svcAn["... up to ~6"]
     rB --> svcB1["identity svc 1"] & svcB2["identity svc 2"] & svcBn["... up to ~8"]
 ```
 
@@ -186,9 +186,9 @@ In Grafana Tempo, a single trace waterfall shows every hop:
 ```
 Trace: a3f8c1...
 
-  edge gateway           GET /finance/reports/margin    12ms   OK
+  edge gateway           GET /erp/reports/summary    12ms   OK
     │
-    └─ PS ERP wrapper    GET /finance/reports/margin   450ms   ERROR  502
+    └─ PS ERP wrapper    GET /erp/reports/summary   450ms   ERROR  502
 ```
 
 You see exactly which instance failed, at what latency, with the route ID tagged. If the PowerShell script times out behind its sidecar you know it in milliseconds — not after the on-call engineer checks the server at 9am Monday.

@@ -67,8 +67,8 @@ curl http://localhost:5050/health
 curl http://localhost:5050/api/inventory \
      -H "X-Api-Key: demo-api-key-conduitsharp-example"
 
-# Finance report — JWT (token printed by make docker-up)
-curl http://localhost:5050/finance/reports/margin \
+# ERP report — JWT (token printed by make docker-up)
+curl http://localhost:5050/erp/reports/summary \
      -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -178,13 +178,13 @@ The `jwks-jwt-auth` plugin validates RS/ES Bearer JWTs against **any** OIDC prov
     "issuer":   "https://login.microsoftonline.com/{tenantId}/v2.0",
     "audience": "{api-app-client-id}",
     "requiredClaims": [
-      { "claim": "roles", "anyOf": ["Finance.Admin", "Finance.Reader"] }
+      { "claim": "roles", "anyOf": ["Admin", "Read"] }
     ]
   }
 }
 ```
 
-- **App roles** (above — recommended). Gate on the `roles` claim. Define `appRoles` in the API app registration, then assign users/groups in the Enterprise App; Entra emits `roles` **by default** as readable value strings (e.g. `"Finance.Admin"`). No size limit.
+- **App roles** (above — recommended). Gate on the `roles` claim. Define `appRoles` in the API app registration, then assign users/groups in the Enterprise App; Entra emits `roles` **by default** as readable value strings (e.g. `"Admin"`). No size limit.
 - **Security groups.** Swap the rule for `{ "claim": "groups", "anyOf": ["<group-object-id-guid>"] }`. Requires `"groupMembershipClaims": "SecurityGroup"` in the app manifest; values are group **object-id GUIDs** (on-prem AD groups synced via Entra Connect appear as their Entra object IDs). Caveat: a user in **>200 groups** gets no `groups` claim at all — Entra emits a Graph pointer the plugin can't resolve — so prefer app roles at that scale.
 
 `anyOf` = member of any listed value (403 otherwise); use `allOf` to require every one. The endpoints above are v2; a v1-token app uses `https://sts.windows.net/{tenantId}/` as the issuer.
@@ -312,7 +312,7 @@ flowchart LR
         gw --> ord["OrderService\njwt-auth"]
         gw --> grt["GreeterService (gRPC, h2c)\nhttp-proxy — HTTP/2 verbatim"]
         gw --> upl["OrderService (upload)\nstreamOnly — zero-alloc passthrough"]
-        gw --> fin["jwt-auth + rate-limit + cache + power-shell\nGet-MarginReport.ps1"]
+        gw --> fin["jwt-auth + rate-limit + cache + power-shell\nGet-ErpReport.ps1"]
     end
 
     gw -.OTLP.-> choice{"observability stack"}

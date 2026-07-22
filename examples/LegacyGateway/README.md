@@ -5,7 +5,7 @@ Runs the routes from the README "At a glance" diagram as working services.
 ```
 /api/inventory/{**rest}   → api-key-auth + rate-limit + http-proxy (RoundRobin 5101/5102)
 /api/orders/{**rest}      → jwt-auth + http-proxy (5201)
-/finance/reports/margin   → jwt-auth + rate-limit + cache + power-shell (PS script, no upstream)
+/erp/reports/summary   → jwt-auth + rate-limit + cache + power-shell (PS script, no upstream)
 /health                   → http-proxy passthrough (5101)
 ```
 
@@ -65,7 +65,7 @@ curl http://localhost:5050/api/inventory \
 curl http://localhost:5050/api/inventory/1 \
      -H "X-Api-Key: demo-api-key-conduitsharp-example"
 
-# Orders + Finance — JWT (generate a 60-minute demo token first)
+# Orders + ERP — JWT (generate a 60-minute demo token first)
 TOKEN=$(pwsh generate-token.ps1)
 
 curl http://localhost:5050/api/orders \
@@ -74,8 +74,8 @@ curl http://localhost:5050/api/orders \
 curl http://localhost:5050/api/orders/ORD-002 \
      -H "Authorization: Bearer $TOKEN"
 
-# Finance report — JWT + cache (60s TTL) + PowerShell ERP script
-curl http://localhost:5050/finance/reports/margin \
+# ERP report — JWT + cache (60s TTL) + PowerShell ERP script
+curl http://localhost:5050/erp/reports/summary \
      -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -103,7 +103,7 @@ gateway/
     routes.json       Four-route pipeline configuration
     appsettings.json  Kestrel + logging settings
   scripts/
-    Get-MarginReport.ps1   Demo ERP margin report (mock data)
+    Get-ErpReport.ps1   Demo ERP value report (mock data)
   plugins/            Built plugin DLLs are copied here by the launcher
 logs/                 One log file per service + gateway (created at runtime)
 generate-token.ps1    Generates a signed demo JWT matching routes.json
@@ -116,14 +116,14 @@ start.bat             Windows double-click wrapper for start.ps1
 
 The `PowerShellPlugin` is built as a class library and dropped into `gateway/plugins/`.
 ConduitSharp scans that directory at startup and registers any `IPipelinePlugin` it finds.
-The finance route never reaches an upstream — the PS plugin short-circuits with a 200 response
+The erp route never reaches an upstream — the PS plugin short-circuits with a 200 response
 after running the script.
 
 Set `Gateway__PluginsPath` to point to any directory with plugin DLLs.
 
 ## JWT details
 
-Both the `order-service` and `finance-margin-report` routes use HS256 with:
+Both the `order-service` and `erp-report` routes use HS256 with:
 
 | Field      | Value                                        |
 |------------|----------------------------------------------|
@@ -134,8 +134,8 @@ Both the `order-service` and `finance-margin-report` routes use HS256 with:
 **Never use these credentials in production.** Replace with a strong random key and
 a proper issuer in your own `routes.json`.
 
-The `finance-margin-report` route additionally requires a `role` claim of `analyst` or
-`finance-admin` (`jwt-auth`'s `requiredClaims` — see the main [README](../../docs/AUTHORIZATION.md#claim-based-authorization-rbac)).
+The `erp-report` route additionally requires a `role` claim of `analyst` or
+`erp-admin` (`jwt-auth`'s `requiredClaims` — see the main [README](../../docs/AUTHORIZATION.md#claim-based-authorization-rbac)).
 The demo token from `generate-token.sh`/`.ps1` already carries `"role": "analyst"`, so the
 quick-start `curl` command above works unchanged. A structurally valid token missing that
 role gets `403 Forbidden`, not `401` — the token itself is fine, the caller just lacks

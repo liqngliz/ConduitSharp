@@ -18,9 +18,9 @@ identity provider issues:
     "issuer":  "...",
     "audience": "...",
     "requiredClaims": [
-      { "claim": "roles", "anyOf": ["Finance.Reader", "Finance.Admin"] },
+      { "claim": "roles", "anyOf": ["Read", "Admin"] },
       { "claim": "scp", "allOf": ["reports.read"], "delimiter": " " },
-      { "claim": "realm_access.roles", "anyOf": ["finance"] },
+      { "claim": "realm_access.roles", "anyOf": ["erp"] },
       { "claim": "https://example.com/roles", "anyOf": ["admin"] },
       { "claim": "email_verified", "equals": "true" },
       { "claim": "hd" }
@@ -43,7 +43,7 @@ Each rule names a `claim` plus at most one matcher:
 | `allOf`  | The claim's value set must contain every entry in this list — typical for OAuth scopes |
 
 The claim's value becomes a set before matching: a JSON array becomes the set of its
-members (Entra app roles: `"roles": ["Finance.Admin"]`); a single string becomes a
+members (Entra app roles: `"roles": ["Admin"]`); a single string becomes a
 one-element set, unless `"delimiter"` is set, which splits it first (Entra/Okta's
 space-delimited `scp`/`scope`: `"scp": "reports.read reports.write"`); a boolean or number
 becomes its string form (Google's `"email_verified": true`).
@@ -78,7 +78,7 @@ The plugin will evaluate the token against each provider sequentially. If *any* 
       {
         "jwksUri": "https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys",
         "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
-        "requiredClaims": [ { "claim": "roles", "anyOf": ["finance.user"] } ]
+        "requiredClaims": [ { "claim": "roles", "anyOf": ["erp.user"] } ]
       }
     ]
   }
@@ -87,12 +87,12 @@ The plugin will evaluate the token against each provider sequentially. If *any* 
 
 ### Microsoft Entra ID (Azure AD) — v2.0 token, app-role RBAC
 
-Locking a route to a single Entra app role (`finance.user`) end to end:
+Locking a route to a single Entra app role (`erp.user`) end to end:
 
 ```jsonc
 {
-  "id": "finance-api-route",
-  "route": { "match": { "path": "/api/finance/{**catch-all}", "methods": ["GET", "POST", "PUT", "DELETE"] } },
+  "id": "erp-api-route",
+  "route": { "match": { "path": "/api/erp/{**catch-all}", "methods": ["GET", "POST", "PUT", "DELETE"] } },
   "cluster": {
     "loadBalancingPolicy": "RoundRobin",
     "destinations": { "node-0": { "address": "https://my-backend.example.com" } },
@@ -108,7 +108,7 @@ Locking a route to a single Entra app role (`finance.user`) end to end:
         "issuer":   "https://login.microsoftonline.com/<tenant-id>/v2.0",
         "audience": "<api-client-id-guid>",
         "requiredClaims": [
-          { "claim": "roles", "anyOf": ["finance.user"] }
+          { "claim": "roles", "anyOf": ["erp.user"] }
         ]
       }
     }
@@ -127,18 +127,18 @@ mismatch 401s with `"Invalid issuer."` or `"Invalid audience."`.
 **Getting a token that actually carries the `roles` claim** (Entra portal steps, one-time setup):
 
 1. **Define the app role** on the *API's* app registration → **App roles** → **Create app role**.
-   Set **Value** to `finance.user` exactly — this is a case-sensitive string, and it's what
+   Set **Value** to `erp.user` exactly — this is a case-sensitive string, and it's what
    ends up in the token's `roles` array. Allowed member types: Users/Groups (or
    Applications, for service-to-service calls).
 2. **Assign the role** — API's app registration → **Enterprise applications** → find the
    same app → **Users and groups** → **Add assignment** → pick the user/group → select the
-   `finance.user` role. Without this step the token is still valid, it just won't carry
+   `erp.user` role. Without this step the token is still valid, it just won't carry
    `roles` at all (see below).
 3. **Client requests a token for this API's scope** — e.g.
    `az account get-access-token --resource api://<api-app-id-uri>` for a quick manual test,
    or an OAuth client-credentials/auth-code flow requesting
    `api://<api-app-id-uri>/.default` in production. The returned access token's payload now
-   includes `"roles": ["finance.user"]`.
+   includes `"roles": ["erp.user"]`.
 4. **Verify** — paste the token into [jwt.ms](https://jwt.ms) and confirm `iss`, `aud`, and
    `roles` all match what's in the route config above.
 
