@@ -35,13 +35,13 @@ SECTIONS = [
     ("s2", "s2 — streaming-only, optimized, 1 MB POST", "stream"),
     ("s4", "s4 — buffered on disk, 1 MB PUT", "buffer"),
     ("s5", "s5 — spill target is tmpfs, 1 MB PUT", "buffer"),
-    ("s6", "s6 — logging + body capture, 24 KB POST", "logging"),
+    ("s6", "s6 — logging + body capture, 64 KB POST", "logging"),
 ]
 
 GROUP_HEADINGS = {
     "stream": "#### Streaming path — a 1 MB body nobody needs to replay",
     "buffer": "#### Buffered path — a 1 MB PUT each side must replay (charted: the disk story)",
-    "logging": "#### Body Capture Logging — a 24 KB POST logged to Loki",
+    "logging": "#### Body Capture Logging — a 64 KB POST logged to Loki",
 }
 
 
@@ -181,8 +181,8 @@ if len(sys.argv) > 4:
             ("s4", "s4 — buffering forced onto disk, 1 MB PUT"),
             ("s5", "s5 — buffered, spill target is tmpfs, 1 MB PUT"),
         ]),
-        ("#### Body Capture Logging — a 24 KB POST logged to Loki", [
-            ("s6", "s6 — logging + body capture, 24 KB POST"),
+        ("#### Body Capture Logging — a 64 KB POST logged to Loki", [
+            ("s6", "s6 — logging + body capture, 64 KB POST"),
         ]),
     ]
 
@@ -229,26 +229,21 @@ if len(sys.argv) > 4:
                     "",
                 ]
 
-        # Buffered bar: ONE baseline — ConduitSharp forced to real disk (s4) = 1.00 — so all four
-        # bars share a y-axis and read as one story. Both gateways appear on disk (s4) and tmpfs (s5).
-        # APISIX barely moves disk→tmpfs (2.55→2.46: nginx writes client_body_temp inline either way),
-        # while ConduitSharp jumps (1.00→3.26: the RAM tier means the 1 MB body rarely reaches the
-        # spill file at all). Per-scenario baselines would have hidden this by giving each APISIX bar
-        # a different denominator — making nginx look like it slowed down when only our number moved.
+        # Buffered bar: tmpfs-only — the 1 MB PUT spill target with disk I/O removed (s5), baseline
+        # ConduitSharp on tmpfs = 1.00. The disk row (s4) stays in the table below with its
+        # write-ratio; the front-page chart shows the tmpfs speeds only.
         if group_heading.startswith("#### Buffered"):
-            s4 = [r for r in records if r.get("label", "").startswith("s4 ")]
             s5 = [r for r in records if r.get("label", "").startswith("s5 ")]
-            cs_disk, ap_disk, en_disk = find(s4, "conduitsharp"), find(s4, "apisix"), find(s4, "envoy")
             cs_tmpfs, ap_tmpfs, en_tmpfs = find(s5, "conduitsharp"), find(s5, "apisix"), find(s5, "envoy")
-            if cs_disk and ap_disk and cs_tmpfs and ap_tmpfs and en_disk and en_tmpfs:
-                base = cs_disk["qps"]
-                values = [1.0, ap_disk["qps"] / base, en_disk["qps"] / base, en_tmpfs["qps"] / base, ap_tmpfs["qps"] / base, cs_tmpfs["qps"] / base]
+            if cs_tmpfs and ap_tmpfs and en_tmpfs:
+                base = cs_tmpfs["qps"]
+                values = [1.0, ap_tmpfs["qps"] / base, en_tmpfs["qps"] / base]
                 s_parts += [
                     "```mermaid",
                     "xychart-beta",
-                    '    title "1 MB PUT, disk vs tmpfs spill: relative QPS (higher is faster)"',
-                    '    x-axis ["ConduitSharp — disk", "APISIX — disk", "Envoy — disk", "Envoy — tmpfs", "APISIX — tmpfs", "ConduitSharp — tmpfs"]',
-                    f'    y-axis "QPS vs ConduitSharp disk = 1.00" 0 --> {max(values) * 1.15:.2f}',
+                    '    title "1 MB PUT, tmpfs spill: relative QPS (higher is faster)"',
+                    '    x-axis ["ConduitSharp", "APISIX", "Envoy"]',
+                    f'    y-axis "QPS vs ConduitSharp tmpfs = 1.00" 0 --> {max(values) * 1.15:.2f}',
                     "    bar [{}]".format(", ".join(f"{v:.2f}" for v in values)),
                     "```",
                     "",
