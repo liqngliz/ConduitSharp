@@ -163,6 +163,35 @@ A route has two halves, and the split is deliberate:
 
 Write it all in camelCase; YARP's records bind case-insensitively. The full field reference — load balancing policies, retry/circuit-breaker fields, path & query syntax — is in the [in-depth docs](#-documentation).
 
+### Authorizing with Microsoft Entra ID (Azure AD)
+
+The `jwks-jwt-auth` plugin validates Entra tokens against the tenant JWKS endpoint and enforces membership with `requiredClaims` — no code, just config. The three connection fields are the same whether you gate on **app roles** or **security groups**; only the claim differs.
+
+```json
+{
+  "name": "jwks-jwt-auth",
+  "order": 1,
+  "config": {
+    "jwksUri":  "https://login.microsoftonline.com/{tenantId}/discovery/v2.0/keys",
+    "issuer":   "https://login.microsoftonline.com/{tenantId}/v2.0",
+    "audience": "{api-app-client-id}",
+    "requiredClaims": [
+      { "claim": "roles", "anyOf": ["Finance.Admin", "Finance.Reader"] }
+    ]
+  }
+}
+```
+
+- **App roles** (above — recommended). Gate on the `roles` claim. Define `appRoles` in the API app registration, then assign users/groups in the Enterprise App; Entra emits `roles` **by default** as readable value strings (e.g. `"Finance.Admin"`). No size limit.
+- **Security groups.** Swap the rule for `{ "claim": "groups", "anyOf": ["<group-object-id-guid>"] }`. Requires `"groupMembershipClaims": "SecurityGroup"` in the app manifest; values are group **object-id GUIDs** (on-prem AD groups synced via Entra Connect appear as their Entra object IDs). Caveat: a user in **>200 groups** gets no `groups` claim at all — Entra emits a Graph pointer the plugin can't resolve — so prefer app roles at that scale.
+
+`anyOf` = member of any listed value (403 otherwise); use `allOf` to require every one. The endpoints above are v2; a v1-token app uses `https://sts.windows.net/{tenantId}/` as the issuer.
+
+---
+
+## 🔌 Plugins
+Plugins implement one interface (`IPipelinePlugin`) and can be written in **C#, F#, VB.NET, or PowerShell.**
+
 ### Built-in plugins
 
 | Name | What it does |
@@ -176,7 +205,8 @@ Write it all in camelCase; YARP's records bind case-insensitively. The full fiel
 | `header-transform` | Add, remove, or rewrite request headers before forwarding upstream |
 | `http-proxy` | Not a plugin — names where in the chain YARP forwards upstream. Omit it and the forward is appended at the end of the chain |
 
-### Shipped example plugins
+
+## Shipped example plugins
 
 Runnable extensions under [examples/](examples/) — copy the source as a template, or reference the NuGet package directly:
 
@@ -188,11 +218,7 @@ Runnable extensions under [examples/](examples/) — copy the source as a templa
 | [ConduitSharp.RateLimit.RedisProtocol](examples/ConduitSharp.RateLimit.RedisProtocol) | `IRateLimitStore` seam | `ConduitSharp.RateLimit.RedisProtocol` | Swaps the in-memory `rate-limit` store for Redis/Valkey — shared quota across instances |
 | [ConduitSharp.RateLimit.SlidingWindow](examples/ConduitSharp.RateLimit.SlidingWindow) | `IRateLimiter` seam | `ConduitSharp.RateLimit.SlidingWindow` | Swaps the fixed-window *algorithm* for a sliding log — refuses the 2x burst a fixed window allows across its boundary. The algorithm and the store are separate seams |
 
----
-
-## 🔌 Writing a plugin
-
-Plugins implement one interface (`IPipelinePlugin`) and can be written in **C#, F#, VB.NET, or PowerShell** — not Lua.
+## Writing a custom plugin
 
 | Language | How |
 |---|---|

@@ -2,7 +2,7 @@
 
 ## Docs — additional examples
 
-- [ ] **Entra JWKS token authorization example — JSON config for both security groups AND app roles.** Document how to gate a route on Microsoft Entra (Azure AD) using the existing `jwks-jwt-auth` plugin — no code change needed, `requiredClaims` + `anyOf`/`allOf` already covers both. Add as sample route JSON and/or an Entra block in the plugin's XML doc. Shared config for both: `jwksUri` = `https://login.microsoftonline.com/{tenantId}/discovery/v2.0/keys`, `issuer` = `https://login.microsoftonline.com/{tenantId}/v2.0`, `audience` = API app client id.
+- [x] **Entra JWKS token authorization example — JSON config for both security groups AND app roles.** _Done — added to README → Configuring routes → "Authorizing with Microsoft Entra ID". Detail retained below as reference._ Document how to gate a route on Microsoft Entra (Azure AD) using the existing `jwks-jwt-auth` plugin — no code change needed, `requiredClaims` + `anyOf`/`allOf` already covers both. Add as sample route JSON and/or an Entra block in the plugin's XML doc. Shared config for both: `jwksUri` = `https://login.microsoftonline.com/{tenantId}/discovery/v2.0/keys`, `issuer` = `https://login.microsoftonline.com/{tenantId}/v2.0`, `audience` = API app client id.
 
   **A) Security groups** — gate on `groups` claim:
   - Config: `requiredClaims: [{ "claim": "groups", "anyOf": ["<group-object-id-guid>", ...] }]`.
