@@ -26,6 +26,7 @@ GATE_LOAD="${GATE_LOAD:-2.0}"  # refuse to bench while the Docker VM's 1-min loa
 GATE_WAIT="${GATE_WAIT:-300}"  # seconds to wait for the VM to settle before aborting
 export GW_MEM
 
+mkdir -p plugins
 COMPOSE=(docker compose)
 [ "${PIN:-0}" = "1" ] && COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.pin.yml)
 
