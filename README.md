@@ -60,16 +60,16 @@ Whether you embed it in a custom application or run it as a standalone appliance
 xychart-beta
     title "Relative QPS at 125 connections — higher is faster"
     x-axis ["ConduitSharp", "APISIX", "Ocelot", "no gateway (direct)"]
-    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 5.20
-    bar [1.00, 1.08, 0.65, 4.52]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 4.71
+    bar [1.00, 1.02, 0.68, 4.10]
 ```
 
 | gateway | QPS (relative) | p50 | p99 |
 |---|---:|---:|---:|
-| ConduitSharp | 1.00× | 3.31 ms | 12.82 ms |
-| APISIX | 1.08× | 3.26 ms | 8.95 ms |
-| Ocelot | 0.65× | 5.25 ms | 18.04 ms |
-| *(no gateway — direct to nginx)* | 4.52× | 0.72 ms | 2.98 ms |
+| ConduitSharp | 1.00× | 4.32 ms | 18.38 ms |
+| APISIX | 1.02× | 2.73 ms | 23.70 ms |
+| Ocelot | 0.68× | 6.76 ms | 23.02 ms |
+| *(no gateway — direct to nginx)* | 4.10× | 1.26 ms | 3.43 ms |
 
 #### 512 connections
 
@@ -77,20 +77,20 @@ xychart-beta
 xychart-beta
     title "Relative QPS at 512 connections — higher is faster"
     x-axis ["ConduitSharp", "APISIX", "Ocelot"]
-    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.18
-    bar [1.00, 1.03, 0.67]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.16
+    bar [1.00, 1.01, 0.70]
 ```
 
 | gateway | QPS (relative) | p50 | p99 |
 |---|---:|---:|---:|
-| ConduitSharp | 1.00× | 13.10 ms | 52.55 ms |
-| APISIX | 1.03× | 13.10 ms | 44.72 ms |
-| Ocelot | 0.67× | 21.14 ms | 67.53 ms |
+| ConduitSharp | 1.00× | 18.08 ms | 64.43 ms |
+| APISIX | 1.01× | 18.09 ms | 64.09 ms |
+| Ocelot | 0.70× | 27.39 ms | 80.31 ms |
 
 Pure proxy, 1 KB upstream response, bombardier, gateways benched sequentially on the
 identical rig. **Measured on shared GitHub Actions runners (4 vCPU) — only ratios are
 meaningful there; absolute QPS on shared CI is noise.** Raw figures for this exact run:
-[CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29898589358). Method & how to reproduce on pinned hardware:
+[CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29905486090). Method & how to reproduce on pinned hardware:
 [benchmarks/load](benchmarks/load/README.md).
 <!-- BENCH:END -->
 
