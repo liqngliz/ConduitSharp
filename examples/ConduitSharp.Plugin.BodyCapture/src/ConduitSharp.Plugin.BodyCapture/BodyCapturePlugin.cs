@@ -77,27 +77,7 @@ public sealed class BodyCapturePlugin(ILogger<BodyCapturePlugin> logger) : IPipe
             if (logger.IsEnabled(logLevel))
             {
                 var path = context.Request.Path.Value ?? string.Empty;
-                switch (logLevel)
-                {
-                    case LogLevel.Trace:
-                        logger.LogTrace("Captured request body for path {Path}: {Body}", path, body);
-                        break;
-                    case LogLevel.Debug:
-                        logger.LogDebug("Captured request body for path {Path}: {Body}", path, body);
-                        break;
-                    case LogLevel.Information:
-                        logger.LogInformation("Captured request body for path {Path}: {Body}", path, body);
-                        break;
-                    case LogLevel.Warning:
-                        logger.LogWarning("Captured request body for path {Path}: {Body}", path, body);
-                        break;
-                    case LogLevel.Error:
-                        logger.LogError("Captured request body for path {Path}: {Body}", path, body);
-                        break;
-                    case LogLevel.Critical:
-                        logger.LogCritical("Captured request body for path {Path}: {Body}", path, body);
-                        break;
-                }
+                logger.Log(logLevel, "Captured request body for path {Path}: {Body}", path, body);
             }
 
             await next(context);

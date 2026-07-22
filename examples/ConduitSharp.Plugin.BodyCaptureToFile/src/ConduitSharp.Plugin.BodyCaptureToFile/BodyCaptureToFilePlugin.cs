@@ -17,6 +17,9 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
     public bool ReadsRequestBody => true;
 
     private readonly Channel<(string time, string path, string traceId, byte[] buffer, int length, bool truncated)> _channel;
+    // ponytail: single sink path for the plugin instance. The plugin is a shared singleton, so if two
+    // routes set different logPath the last ValidateConfig wins for all. One file per gateway is the
+    // intended layout; per-route files would need the path carried per entry through the channel.
     private string _logPath = "/tmp/conduit-logs.json";
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _writeTask;
@@ -24,8 +27,12 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
     public BodyCaptureToFilePlugin(IConfiguration configuration)
     {
         int capacity = configuration.GetValue<int>("OTEL_BLRP_MAX_QUEUE_SIZE", 2048);
+        // DropWrite, not DropOldest: DropOldest silently evicts the queued entry whose byte[] is
+        // rented from ArrayPool, and there is no drop callback to return it — that leaks pooled
+        // buffers under exactly the backpressure this plugin is benchmarked at. DropWrite makes the
+        // full-channel case fall to TryWrite==false below, where the buffer IS returned.
         _channel = Channel.CreateBounded<(string time, string path, string traceId, byte[] buffer, int length, bool truncated)>(
-            new BoundedChannelOptions(capacity) { FullMode = BoundedChannelFullMode.DropOldest }
+            new BoundedChannelOptions(capacity) { FullMode = BoundedChannelFullMode.DropWrite }
         );
         _writeTask = Task.Run(ProcessQueueAsync);
     }
@@ -117,39 +124,51 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
                 
                 while (_channel.Reader.TryRead(out var entry))
                 {
-                    bufferWriter.Clear();
-                    
-                    using (var writer = new Utf8JsonWriter(bufferWriter))
+                    try
                     {
-                        writer.WriteStartObject();
-                        writer.WriteString("time", entry.time);
-                        writer.WriteString("path", entry.path);
-                        writer.WriteString("traceId", entry.traceId);
-                        
-                        var suffix = "... (truncated)".AsSpan();
-                        var charBuffer = ArrayPool<char>.Shared.Rent(entry.length + suffix.Length);
-                        var charCount = Encoding.UTF8.GetChars(entry.buffer, 0, entry.length, charBuffer, 0);
-                        
-                        if (entry.truncated)
+                        bufferWriter.Clear();
+
+                        using (var writer = new Utf8JsonWriter(bufferWriter))
                         {
-                            suffix.CopyTo(charBuffer.AsSpan(charCount));
-                            charCount += suffix.Length;
+                            writer.WriteStartObject();
+                            writer.WriteString("time", entry.time);
+                            writer.WriteString("path", entry.path);
+                            writer.WriteString("traceId", entry.traceId);
+
+                            // ponytail: a maxSize cut can split a multibyte UTF-8 char at the byte
+                            // boundary; GetChars emits U+FFFD for the partial tail. Fine for a debug
+                            // body dump — upgrade to a Decoder if exact truncation ever matters.
+                            var suffix = "... (truncated)".AsSpan();
+                            var charBuffer = ArrayPool<char>.Shared.Rent(entry.length + suffix.Length);
+                            var charCount = Encoding.UTF8.GetChars(entry.buffer, 0, entry.length, charBuffer, 0);
+
+                            if (entry.truncated)
+                            {
+                                suffix.CopyTo(charBuffer.AsSpan(charCount));
+                                charCount += suffix.Length;
+                            }
+
+                            writer.WriteString("body", charBuffer.AsSpan(0, charCount));
+                            ArrayPool<char>.Shared.Return(charBuffer);
+
+                            writer.WriteEndObject();
                         }
-                        
-                        writer.WriteString("body", charBuffer.AsSpan(0, charCount));
-                        ArrayPool<char>.Shared.Return(charBuffer);
-                        
-                        writer.WriteEndObject();
+
+                        bufferWriter.Write(new[] { (byte)'\n' });
+                        await stream.WriteAsync(bufferWriter.WrittenMemory);
                     }
-                    
-                    bufferWriter.Write(new[] { (byte)'\n' });
-                    await stream.WriteAsync(bufferWriter.WrittenMemory);
-                    
-                    ArrayPool<byte>.Shared.Return(entry.buffer);
+                    finally
+                    {
+                        // Return the pooled buffer even if the write throws, so an IO error can't
+                        // leak it out of the pool.
+                        ArrayPool<byte>.Shared.Return(entry.buffer);
+                    }
                 }
             }
         }
         catch (OperationCanceledException) { }
+        // ponytail: writer dies silently on a hard IO error (e.g. bad logPath) because the plugin
+        // has no ILogger. Acceptable for a debug capture sink; inject ILogger to make it visible.
         catch (Exception) { }
     }
 
