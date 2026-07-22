@@ -49,6 +49,304 @@ Whether you embed it in a custom application or run it as a standalone appliance
 
 ---
 
+## 🚀 Quick Start
+
+Run the bundled LegacyGateway example — a gateway with six routes, three upstream services (REST, gRPC, and a streamOnly upload), a PowerShell plugin, JWT + API-key auth, rate limiting, caching, and OpenTelemetry traces — all wired from `routes.json` with no code changes.
+
+```bash
+cd examples/LegacyGateway
+make docker-up            # macOS / Linux — Docker Compose + Aspire Dashboard
+pwsh start.ps1 -DockerUp  # Windows — same stack
+```
+
+```bash
+# Health check — no auth
+curl http://localhost:5050/health
+
+# Inventory — API key
+curl http://localhost:5050/api/inventory \
+     -H "X-Api-Key: demo-api-key-conduitsharp-example"
+
+# Finance report — JWT (token printed by make docker-up)
+curl http://localhost:5050/finance/reports/margin \
+     -H "Authorization: Bearer $TOKEN"
+```
+
+Open the **Aspire Dashboard** at http://localhost:18888 to see every request's trace. Prefer Grafana/Tempo/Prometheus/Loki? Run `make docker-grafana` and open http://localhost:3000. No Docker? `make run` (macOS/Linux) or `pwsh start.ps1` (Windows) runs the same example as local processes with file-based traces.
+
+---
+
+
+## 📦 Installation
+
+Pick by how you deploy. The embedded-library and Docker paths fit immutable-infrastructure workflows; the bare-metal / Windows Service / IIS options (the legacy-estate differentiator) live in the [in-depth docs](#-documentation).
+
+### Embedded library (NuGet) — recommended
+
+Host the gateway *inside your own ASP.NET Core app* — the YARP `AddReverseProxy()` / `MapReverseProxy()` model. Plugins arrive as NuGet packages registered in DI, so the whole deployment is one immutable, versioned build.
+
+```bash
+# --prerelease while 1.0.0-rc is the latest; drop it once a stable 1.0.0 ships
+dotnet add package ConduitSharp.Gateway.AspNetCore --prerelease
+```
+
+```csharp
+using ConduitSharp.Gateway;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.AddConduitSharpGateway(options =>
+{
+    options.PathPrefix = "/api";   // gateway owns /api/*; the rest of the app is yours
+});
+
+var app = builder.Build();
+app.MapGet("/hello", () => "served by the host app");   // coexists with the gateway
+app.UseConduitSharpGateway();
+app.Run();
+```
+
+### Docker
+
+```bash
+docker run -p 5050:5050 \
+  -v ./routes.json:/app/Configuration/routes.json \
+  ghcr.io/liqngliz/conduitsharp:latest
+```
+
+To ship plugins the immutable way, build your own image `FROM` this one and `COPY` the published plugin DLLs into `/app/plugins/`.
+
+### dotnet tool
+
+```bash
+# --prerelease while 1.0.0-rc is the latest; drop it once a stable 1.0.0 ships
+dotnet tool install -g ConduitSharp.Gateway --prerelease
+conduitsharp
+```
+
+Works on Windows, macOS, and Linux. Requires .NET 10 SDK.
+
+---
+
+## 🧭 Configuring routes
+
+All routing lives in `Configuration/routes.json` — no database, no admin UI, just a file you commit, review, and diff.
+
+```json
+{
+  "routes": [
+    {
+      "id": "user-service-route",
+      "route": {
+        "match": { "path": "/api/users/{**catch-all}", "methods": ["GET", "POST"] }
+      },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": { "address": "http://user-service-1:8080" },
+          "node-1": { "address": "http://user-service-2:8080" }
+        }
+      },
+      "retry":          { "maxAttempts": 2, "delayMs": 100 },
+      "circuitBreaker": { "threshold": 5, "cooldownMs": 10000 },
+      "plugins": [
+        { "name": "jwt-auth",   "order": 1, "config": { "issuer": "https://auth.example.com" } },
+        { "name": "rate-limit", "order": 2, "config": { "requestsPerWindow": 100 } },
+        { "name": "http-proxy", "order": 99 }
+      ]
+    }
+  ]
+}
+```
+
+A route has two halves, and the split is deliberate:
+
+- **`route` and `cluster` are YARP's own `RouteConfig` and `ClusterConfig`**, used verbatim — so *every* YARP feature (session affinity, active health checks, transforms, header/query matchers) is available the day YARP ships it. `routeId`, `clusterId`, and `order` are derived from the route's `id` and its position in the file, so you never type them.
+- **Everything else is ConduitSharp's** — `retry`, `circuitBreaker`, `plugins`, `swagger`, `maxRequestBodyBytes` — because YARP has no concept of any of them.
+
+Write it all in camelCase; YARP's records bind case-insensitively. The full field reference — load balancing policies, retry/circuit-breaker fields, path & query syntax — is in the [in-depth docs](#-documentation).
+
+### Built-in plugins
+
+| Name | What it does |
+| --- | --- |
+| `jwt-auth` | Validates HS256 Bearer JWTs; enforces exp, nbf, iss, aud, and optional claim-based RBAC (`requiredClaims`) |
+| `jwks-jwt-auth` | Validates RS/ES Bearer JWTs via a remote JWKS endpoint (Auth0, Azure AD, Google, Keycloak) |
+| `api-key-auth` | Validates API keys from a request header (plain-text comparison) |
+| `api-key-auth-hashed` | Validates API keys by comparing SHA-256 hash; keys never stored raw |
+| `rate-limit` | Fixed-window quota per route or per client header value |
+| `cache` | Response caching with configurable TTL and vary-by-header rules |
+| `header-transform` | Add, remove, or rewrite request headers before forwarding upstream |
+| `http-proxy` | Not a plugin — names where in the chain YARP forwards upstream. Omit it and the forward is appended at the end of the chain |
+
+### Shipped example plugins
+
+Runnable extensions under [examples/](examples/) — copy the source as a template, or reference the NuGet package directly:
+
+| Example | Kind | NuGet package | What it shows |
+| --- | --- | --- | --- |
+| [ConduitSharp.Plugin.PowerShell](examples/ConduitSharp.Plugin.PowerShell) | `IPipelinePlugin` (`custom` / `power-shell`) | `ConduitSharp.Plugin.PowerShell` | Runs an existing `.ps1` in-process via the embedded `Microsoft.PowerShell.SDK` — no system `pwsh` install |
+| [ConduitSharp.Plugin.BodyCapture](examples/ConduitSharp.Plugin.BodyCapture) | `IPipelinePlugin` (`custom` / `body-capture-streaming`, `body-capture`) | `ConduitSharp.Plugin.BodyCapture` | Logs request bodies two ways: a bounded prefix teed off the streaming path via ASP.NET Core `HttpLogging` (`ReadsRequestBody => false`, no buffering), or the whole body via the gateway's buffer (`ReadsRequestBody => true`) — the two patterns for a payload-inspecting plugin |
+| [ConduitSharp.Cache.RedisProtocol](examples/ConduitSharp.Cache.RedisProtocol) | `ICacheService` seam | `ConduitSharp.Cache.RedisProtocol` | Swaps the in-memory `cache` store for Redis/Valkey — shared response cache across instances |
+| [ConduitSharp.RateLimit.RedisProtocol](examples/ConduitSharp.RateLimit.RedisProtocol) | `IRateLimitStore` seam | `ConduitSharp.RateLimit.RedisProtocol` | Swaps the in-memory `rate-limit` store for Redis/Valkey — shared quota across instances |
+| [ConduitSharp.RateLimit.SlidingWindow](examples/ConduitSharp.RateLimit.SlidingWindow) | `IRateLimiter` seam | `ConduitSharp.RateLimit.SlidingWindow` | Swaps the fixed-window *algorithm* for a sliding log — refuses the 2x burst a fixed window allows across its boundary. The algorithm and the store are separate seams |
+
+---
+
+## 🔌 Writing a plugin
+
+Plugins implement one interface (`IPipelinePlugin`) and can be written in **C#, F#, VB.NET, or PowerShell** — not Lua.
+
+| Language | How |
+|---|---|
+| **C#** | Reference `ConduitSharp.Core`, implement `IPipelinePlugin`, drop the DLL in `plugins/` |
+| **F# / VB.NET** | Same as C# — they compile to identical .NET IL |
+| **PowerShell** | A C# shim hosts `Microsoft.PowerShell.SDK` and runs your `.ps1`; no rewrite of existing scripts |
+
+`IPipelinePlugin.ExecuteAsync` **is** the ASP.NET Core middleware signature — `HttpContext`, the plugin's JSON config, and `next`. To short-circuit, write the response and don't call `next()`:
+
+```csharp
+public sealed class PowerShellPlugin : IPipelinePlugin
+{
+    public PluginName Name    => PluginName.Custom;
+    public string?    Variant => "power-shell";
+    public string     Id      => "power-shell";
+
+    public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
+    {
+        var options = JsonSerializer.Deserialize<PsConfig>(config)
+            ?? throw new InvalidOperationException("PowerShell plugin config is null.");
+
+        using var ps = PowerShell.Create();
+        ps.AddScript("$ErrorActionPreference = 'Stop'"); // treat all errors as terminating
+        ps.AddScript(await File.ReadAllTextAsync(options.ScriptPath));
+        ps.AddParameter("Request", context.Request);
+
+        try
+        {
+            var results = await ps.InvokeAsync();
+            await context.Response.WriteAsync(string.Join("\n", results.Select(r => r.ToString())));
+        }
+        catch (RuntimeException ex) { context.Response.StatusCode = 500; await context.Response.WriteAsync(ex.Message); }
+        catch (ParseException)      { context.Response.StatusCode = 500; await context.Response.WriteAsync("PowerShell script configuration error."); }
+        // no next() — the script produced the response
+    }
+}
+```
+
+```json
+{ "name": "custom", "variant": "power-shell", "order": 99, "config": { "scriptPath": "scripts/MyReport.ps1" } }
+```
+
+A ready-to-use build of this pattern lives at [examples/ConduitSharp.Plugin.PowerShell](examples/ConduitSharp.Plugin.PowerShell). Runspace pooling, out-of-process execution, and production guidance are in the [in-depth docs](#-documentation).
+
+---
+
+## 🏗️ Architectural Choices & Trade-offs
+
+ConduitSharp makes deliberate architectural decisions to solve real-world gateway deployment problems. While some choices may seem unconventional at first glance, they are specifically engineered for flexibility and safety.
+
+### 1. Dynamic DLL Loading (The "Appliance" Model)
+
+**The Choice:** Allowing `.dll` files to be dropped into a `plugins/` directory for runtime loading.
+**Why:** This is an explicit *option* designed for the Strangler Fig pattern or legacy non-Kubernetes environments where you cannot easily deploy immutable containers. If your team uses modern immutable infrastructure (like Kubernetes), you simply set `options.EnablePluginDirectoryScan = false` and use standard ASP.NET Core Dependency Injection instead.
+
+### 2. Buffering Request Bodies
+
+**The Choice:** Buffer a request body *only when something consumes the buffer* — a retry policy or a body-inspecting plugin. Everything else streams, automatically.
+**Why:** **Upstream Retries** need a rewindable body, and plugins like HMAC verification or audit logging must inspect the payload. Those are the only consumers, so they are the only cases that pay:
+- **Method-aware:** retries apply to idempotent methods only (`GET`, `PUT`, …) — so a `POST` upload through a retry route still streams; its body could never be replayed anyway.
+- **Tiered, not a cliff:** a buffered body is held in RAM while the memory tier (`MaxMemoryBufferedBodyBytes`, default 64 MiB) has headroom — measured 3.3x faster than spilling for a 1 MB body. Once it is full, further bodies spill to a temp file, nginx-style (`proxy_request_buffering`), and are still served. Only when `MaxTotalBufferedBodyBytes` (RAM + spill) is gone does the gateway shed with a 503. Availability degrades in steps rather than falling over.
+- **Off-heap:** per-body RAM is capped at `MemoryBufferThresholdBytes` (default 1 MiB, clamped there because `FileBufferingReadStream` stops pooling above it). Large uploads never churn the .NET Large Object Heap.
+- **Safety:** buffering is enforced by a per-request limit (413) and the gateway-wide `RequestBodyBudget` (503 load-shed) to prevent memory exhaustion.
+- **Escape hatch:** `"streamOnly": true` still forces pure streaming and is validated at startup against retry policies and body-reading plugins.
+
+### 3. Stateful Hot-Reloading API
+
+**The Choice:** A `POST /admin/routes/reload` API that writes `routes.json` to local disk.
+**Why:** This provides zero-downtime updates for standalone VM/AppService deployments. However, it is **inert by default**. To prevent split-brain scenarios in Kubernetes clusters, you simply do not provide an `AdminKeyHash` in your configuration. This disables the API, allowing you to manage `routes.json` via a standard Kubernetes ConfigMap rollout.
+
+### 4. Custom JSON Plugin Pipeline vs. Standard Middleware
+
+**The Choice:** A custom `IPipelinePlugin` interface driven by JSON arrays instead of `app.Use()` middleware.
+**Why:** YARP natively runs a single, monolithic pipeline for all proxied routes. ConduitSharp solves this by dynamically compiling an isolated `IApplicationBuilder` pipeline *for every single route* defined in the JSON. This allows Route A to run Heavy Rate Limiting and JWT Auth, while Route B runs pure streaming with zero middleware overhead, all built using native Kestrel middleware primitives under the hood.
+
+---
+
+## 🚀 Two Paths for Hosting & Extension - Example Project
+
+ConduitSharp is designed to be flexible, supporting two distinct deployment models based on how you want to extend it. The provided example projects demonstrate these models side-by-side.
+
+```mermaid
+flowchart LR
+    subgraph deploy ["Deployed as a standalone binary or embedded"]
+        client(["Client"]) -->|HTTP| gw["ConduitSharp Gateway"]
+        gw --> inv["InventoryService x2\napi-key-auth + rate-limit"]
+        gw --> ord["OrderService\njwt-auth"]
+        gw --> grt["GreeterService (gRPC, h2c)\nhttp-proxy — HTTP/2 verbatim"]
+        gw --> upl["OrderService (upload)\nstreamOnly — zero-alloc passthrough"]
+        gw --> fin["jwt-auth + rate-limit + cache + power-shell\nGet-MarginReport.ps1"]
+    end
+
+    gw -.OTLP.-> choice{"observability stack"}
+
+    subgraph docker ["Available only when running the gateway in Docker for example"]
+        subgraph opt1 ["Option 1 — make docker-up"]
+            choice -.-> aspire["Aspire Dashboard\n:18888"]
+        end
+
+        subgraph opt2 ["Option 2 — make docker-grafana"]
+            choice -.-> collector["OTel Collector"]
+            collector --> tempo["Tempo (traces)"]
+            collector --> loki["Loki (logs)"]
+            collector --> prom["Prometheus (metrics)"]
+            tempo & loki & prom --> grafana["Grafana\n:3000"]
+        end
+    end
+```
+
+### Path 1: The Modern "Code-First" Gateway (Recommended)
+
+This approach treats ConduitSharp like a standard .NET library. It is ideal for mature engineering teams who prefer immutable infrastructure, infrastructure-as-code, and standard ASP.NET Core practices.
+
+**Why choose this path?**
+
+- **Standard Dependency Injection:**: Use (`builder.Services.AddSingleton<...>`) to register your custom plugins.
+- **Custom Plugins:** Written in C# alongside your gateway setup without managing separate `.dll` deployments. Plugins are available through nuget
+- **Standard ASP.NET**: Mix and match with standard ASP.NET Core middleware (`app.Use(...)`) and Minimal APIs.
+
+### Path 2: The Legacy "Appliance" Gateway
+
+This approach treats ConduitSharp like a standalone infrastructure appliance (similar to Kong or Envoy). It is ideal for Operations or DevOps teams who want to manage an API gateway without writing C# wrapper code.
+
+**Why choose this path?**
+
+- **Dynamic Plugin System:** Extend the gateway by dropping compiled `.dll` files into the `plugins/` directory. The gateway will automatically scan and load them at runtime.
+- **Zero Coding Required:** Deploy the pre-built ConduitSharp binary and run it purely via JSON.
+
+---
+
+
+## ⚖️ Compared to alternatives
+
+ConduitSharp can replace an existing gateway or sit behind one. Against Ocelot it competes directly. Rather than competing with YARP, it builds on top of it as the forwarding engine. Against Kong, APISIX, or Azure APIM it complements — those handle external edge traffic while ConduitSharp handles legacy workload execution and internal observability at the layer below.
+
+|  | ConduitSharp | Ocelot | YARP | Envoy | APISIX |
+| --- | --- | --- | --- | --- | --- |
+| **Language** | C# / .NET | C# / .NET | C# / .NET | C++ | Lua / Nginx |
+| **Plugin language** | **C# / F# / VB.NET / PowerShell**<br/> + ASP.NET middleware | None | ASP.NET middleware | C++ / Lua / WASM | Lua |
+| **PowerShell script execution** | ✅ Plugin | ❌ | ❌ | ❌ | ❌ |
+| **Per-route plugin pipeline** | ✅ | ⚠️ per-route hook <br/> (DelegatingHandler, code-registered) | ❌ | ✅ | ✅ |
+| **Drop-in external plugins** | ✅ | ❌ | ❌ | ✅ WASM | ✅ Lua |
+| **Plugin contract as NuGet** | ✅ | ❌ | ❌ | — | — |
+| **Unit-testable without HTTP** | ✅ | ❌ | ❌ | — | — |
+| **OpenTelemetry (traces + metrics)** | ✅ Built-in | ❌ | ✅ | ✅ Native | ✅ Plugin |
+| **Forwarding engine** | **YARP native** | Custom | YARP native | Envoy native | Nginx |
+| **Windows Service / IIS native** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Config format** | JSON file | JSON file | JSON / YAML | YAML / xDS | YAML / etcd |
+
+---
+
+
 ## 📊 Benchmarks
 
 <!-- BENCH:START -->
@@ -221,301 +519,6 @@ Full microbenchmark tables (routing, plugin dispatch, buffered-vs-stream allocat
 hot path) are published to [docs/benchmarks/micro.md](docs/benchmarks/micro.md); source in
 [benchmarks/ConduitSharp.Benchmarks](benchmarks/ConduitSharp.Benchmarks), load rig and
 method in [benchmarks/load](benchmarks/load/README.md).
-
----
-
-## 🚀 Quick Start
-
-Run the bundled LegacyGateway example — a gateway with six routes, three upstream services (REST, gRPC, and a streamOnly upload), a PowerShell plugin, JWT + API-key auth, rate limiting, caching, and OpenTelemetry traces — all wired from `routes.json` with no code changes.
-
-```bash
-cd examples/LegacyGateway
-make docker-up            # macOS / Linux — Docker Compose + Aspire Dashboard
-pwsh start.ps1 -DockerUp  # Windows — same stack
-```
-
-```bash
-# Health check — no auth
-curl http://localhost:5050/health
-
-# Inventory — API key
-curl http://localhost:5050/api/inventory \
-     -H "X-Api-Key: demo-api-key-conduitsharp-example"
-
-# Finance report — JWT (token printed by make docker-up)
-curl http://localhost:5050/finance/reports/margin \
-     -H "Authorization: Bearer $TOKEN"
-```
-
-Open the **Aspire Dashboard** at http://localhost:18888 to see every request's trace. Prefer Grafana/Tempo/Prometheus/Loki? Run `make docker-grafana` and open http://localhost:3000. No Docker? `make run` (macOS/Linux) or `pwsh start.ps1` (Windows) runs the same example as local processes with file-based traces.
-
----
-
-## 🏗️ Architectural Choices & Trade-offs
-
-ConduitSharp makes deliberate architectural decisions to solve real-world gateway deployment problems. While some choices may seem unconventional at first glance, they are specifically engineered for flexibility and safety.
-
-### 1. Dynamic DLL Loading (The "Appliance" Model)
-
-**The Choice:** Allowing `.dll` files to be dropped into a `plugins/` directory for runtime loading.
-**Why:** This is an explicit *option* designed for the Strangler Fig pattern or legacy non-Kubernetes environments where you cannot easily deploy immutable containers. If your team uses modern immutable infrastructure (like Kubernetes), you simply set `options.EnablePluginDirectoryScan = false` and use standard ASP.NET Core Dependency Injection instead.
-
-### 2. Buffering Request Bodies
-
-**The Choice:** Buffer a request body *only when something consumes the buffer* — a retry policy or a body-inspecting plugin. Everything else streams, automatically.
-**Why:** **Upstream Retries** need a rewindable body, and plugins like HMAC verification or audit logging must inspect the payload. Those are the only consumers, so they are the only cases that pay:
-- **Method-aware:** retries apply to idempotent methods only (`GET`, `PUT`, …) — so a `POST` upload through a retry route still streams; its body could never be replayed anyway.
-- **Tiered, not a cliff:** a buffered body is held in RAM while the memory tier (`MaxMemoryBufferedBodyBytes`, default 64 MiB) has headroom — measured 3.3x faster than spilling for a 1 MB body. Once it is full, further bodies spill to a temp file, nginx-style (`proxy_request_buffering`), and are still served. Only when `MaxTotalBufferedBodyBytes` (RAM + spill) is gone does the gateway shed with a 503. Availability degrades in steps rather than falling over.
-- **Off-heap:** per-body RAM is capped at `MemoryBufferThresholdBytes` (default 1 MiB, clamped there because `FileBufferingReadStream` stops pooling above it). Large uploads never churn the .NET Large Object Heap.
-- **Safety:** buffering is enforced by a per-request limit (413) and the gateway-wide `RequestBodyBudget` (503 load-shed) to prevent memory exhaustion.
-- **Escape hatch:** `"streamOnly": true` still forces pure streaming and is validated at startup against retry policies and body-reading plugins.
-
-### 3. Stateful Hot-Reloading API
-
-**The Choice:** A `POST /admin/routes/reload` API that writes `routes.json` to local disk.
-**Why:** This provides zero-downtime updates for standalone VM/AppService deployments. However, it is **inert by default**. To prevent split-brain scenarios in Kubernetes clusters, you simply do not provide an `AdminKeyHash` in your configuration. This disables the API, allowing you to manage `routes.json` via a standard Kubernetes ConfigMap rollout.
-
-### 4. Custom JSON Plugin Pipeline vs. Standard Middleware
-
-**The Choice:** A custom `IPipelinePlugin` interface driven by JSON arrays instead of `app.Use()` middleware.
-**Why:** YARP natively runs a single, monolithic pipeline for all proxied routes. ConduitSharp solves this by dynamically compiling an isolated `IApplicationBuilder` pipeline *for every single route* defined in the JSON. This allows Route A to run Heavy Rate Limiting and JWT Auth, while Route B runs pure streaming with zero middleware overhead, all built using native Kestrel middleware primitives under the hood.
-
----
-
-## 🚀 Two Paths for Hosting & Extension - Example Project
-
-ConduitSharp is designed to be flexible, supporting two distinct deployment models based on how you want to extend it. The provided example projects demonstrate these models side-by-side.
-
-```mermaid
-flowchart LR
-    subgraph deploy ["Deployed as a standalone binary or embedded"]
-        client(["Client"]) -->|HTTP| gw["ConduitSharp Gateway"]
-        gw --> inv["InventoryService x2\napi-key-auth + rate-limit"]
-        gw --> ord["OrderService\njwt-auth"]
-        gw --> grt["GreeterService (gRPC, h2c)\nhttp-proxy — HTTP/2 verbatim"]
-        gw --> upl["OrderService (upload)\nstreamOnly — zero-alloc passthrough"]
-        gw --> fin["jwt-auth + rate-limit + cache + power-shell\nGet-MarginReport.ps1"]
-    end
-
-    gw -.OTLP.-> choice{"observability stack"}
-
-    subgraph docker ["Available only when running the gateway in Docker for example"]
-        subgraph opt1 ["Option 1 — make docker-up"]
-            choice -.-> aspire["Aspire Dashboard\n:18888"]
-        end
-
-        subgraph opt2 ["Option 2 — make docker-grafana"]
-            choice -.-> collector["OTel Collector"]
-            collector --> tempo["Tempo (traces)"]
-            collector --> loki["Loki (logs)"]
-            collector --> prom["Prometheus (metrics)"]
-            tempo & loki & prom --> grafana["Grafana\n:3000"]
-        end
-    end
-```
-
-### Path 1: The Modern "Code-First" Gateway (Recommended)
-
-This approach treats ConduitSharp like a standard .NET library. It is ideal for mature engineering teams who prefer immutable infrastructure, infrastructure-as-code, and standard ASP.NET Core practices.
-
-**Why choose this path?**
-
-- **Standard Dependency Injection:**: Use (`builder.Services.AddSingleton<...>`) to register your custom plugins.
-- **Custom Plugins:** Written in C# alongside your gateway setup without managing separate `.dll` deployments. Plugins are available through nuget
-- **Standard ASP.NET**: Mix and match with standard ASP.NET Core middleware (`app.Use(...)`) and Minimal APIs.
-
-### Path 2: The Legacy "Appliance" Gateway
-
-This approach treats ConduitSharp like a standalone infrastructure appliance (similar to Kong or Envoy). It is ideal for Operations or DevOps teams who want to manage an API gateway without writing C# wrapper code.
-
-**Why choose this path?**
-
-- **Dynamic Plugin System:** Extend the gateway by dropping compiled `.dll` files into the `plugins/` directory. The gateway will automatically scan and load them at runtime.
-- **Zero Coding Required:** Deploy the pre-built ConduitSharp binary and run it purely via JSON.
-
----
-
-## 📦 Installation
-
-Pick by how you deploy. The embedded-library and Docker paths fit immutable-infrastructure workflows; the bare-metal / Windows Service / IIS options (the legacy-estate differentiator) live in the [in-depth docs](#-documentation).
-
-### Embedded library (NuGet) — recommended
-
-Host the gateway *inside your own ASP.NET Core app* — the YARP `AddReverseProxy()` / `MapReverseProxy()` model. Plugins arrive as NuGet packages registered in DI, so the whole deployment is one immutable, versioned build.
-
-```bash
-# --prerelease while 1.0.0-rc is the latest; drop it once a stable 1.0.0 ships
-dotnet add package ConduitSharp.Gateway.AspNetCore --prerelease
-```
-
-```csharp
-using ConduitSharp.Gateway;
-
-var builder = WebApplication.CreateBuilder(args);
-builder.AddConduitSharpGateway(options =>
-{
-    options.PathPrefix = "/api";   // gateway owns /api/*; the rest of the app is yours
-});
-
-var app = builder.Build();
-app.MapGet("/hello", () => "served by the host app");   // coexists with the gateway
-app.UseConduitSharpGateway();
-app.Run();
-```
-
-### Docker
-
-```bash
-docker run -p 5050:5050 \
-  -v ./routes.json:/app/Configuration/routes.json \
-  ghcr.io/liqngliz/conduitsharp:latest
-```
-
-To ship plugins the immutable way, build your own image `FROM` this one and `COPY` the published plugin DLLs into `/app/plugins/`.
-
-### dotnet tool
-
-```bash
-# --prerelease while 1.0.0-rc is the latest; drop it once a stable 1.0.0 ships
-dotnet tool install -g ConduitSharp.Gateway --prerelease
-conduitsharp
-```
-
-Works on Windows, macOS, and Linux. Requires .NET 10 SDK.
-
----
-
-## 🧭 Configuring routes
-
-All routing lives in `Configuration/routes.json` — no database, no admin UI, just a file you commit, review, and diff.
-
-```json
-{
-  "routes": [
-    {
-      "id": "user-service-route",
-      "route": {
-        "match": { "path": "/api/users/{**catch-all}", "methods": ["GET", "POST"] }
-      },
-      "cluster": {
-        "loadBalancingPolicy": "RoundRobin",
-        "destinations": {
-          "node-0": { "address": "http://user-service-1:8080" },
-          "node-1": { "address": "http://user-service-2:8080" }
-        }
-      },
-      "retry":          { "maxAttempts": 2, "delayMs": 100 },
-      "circuitBreaker": { "threshold": 5, "cooldownMs": 10000 },
-      "plugins": [
-        { "name": "jwt-auth",   "order": 1, "config": { "issuer": "https://auth.example.com" } },
-        { "name": "rate-limit", "order": 2, "config": { "requestsPerWindow": 100 } },
-        { "name": "http-proxy", "order": 99 }
-      ]
-    }
-  ]
-}
-```
-
-A route has two halves, and the split is deliberate:
-
-- **`route` and `cluster` are YARP's own `RouteConfig` and `ClusterConfig`**, used verbatim — so *every* YARP feature (session affinity, active health checks, transforms, header/query matchers) is available the day YARP ships it. `routeId`, `clusterId`, and `order` are derived from the route's `id` and its position in the file, so you never type them.
-- **Everything else is ConduitSharp's** — `retry`, `circuitBreaker`, `plugins`, `swagger`, `maxRequestBodyBytes` — because YARP has no concept of any of them.
-
-Write it all in camelCase; YARP's records bind case-insensitively. The full field reference — load balancing policies, retry/circuit-breaker fields, path & query syntax — is in the [in-depth docs](#-documentation).
-
-### Built-in plugins
-
-| Name | What it does |
-| --- | --- |
-| `jwt-auth` | Validates HS256 Bearer JWTs; enforces exp, nbf, iss, aud, and optional claim-based RBAC (`requiredClaims`) |
-| `jwks-jwt-auth` | Validates RS/ES Bearer JWTs via a remote JWKS endpoint (Auth0, Azure AD, Google, Keycloak) |
-| `api-key-auth` | Validates API keys from a request header (plain-text comparison) |
-| `api-key-auth-hashed` | Validates API keys by comparing SHA-256 hash; keys never stored raw |
-| `rate-limit` | Fixed-window quota per route or per client header value |
-| `cache` | Response caching with configurable TTL and vary-by-header rules |
-| `header-transform` | Add, remove, or rewrite request headers before forwarding upstream |
-| `http-proxy` | Not a plugin — names where in the chain YARP forwards upstream. Omit it and the forward is appended at the end of the chain |
-
-### Shipped example plugins
-
-Runnable extensions under [examples/](examples/) — copy the source as a template, or reference the NuGet package directly:
-
-| Example | Kind | NuGet package | What it shows |
-| --- | --- | --- | --- |
-| [ConduitSharp.Plugin.PowerShell](examples/ConduitSharp.Plugin.PowerShell) | `IPipelinePlugin` (`custom` / `power-shell`) | `ConduitSharp.Plugin.PowerShell` | Runs an existing `.ps1` in-process via the embedded `Microsoft.PowerShell.SDK` — no system `pwsh` install |
-| [ConduitSharp.Plugin.BodyCapture](examples/ConduitSharp.Plugin.BodyCapture) | `IPipelinePlugin` (`custom` / `body-capture-streaming`, `body-capture`) | `ConduitSharp.Plugin.BodyCapture` | Logs request bodies two ways: a bounded prefix teed off the streaming path via ASP.NET Core `HttpLogging` (`ReadsRequestBody => false`, no buffering), or the whole body via the gateway's buffer (`ReadsRequestBody => true`) — the two patterns for a payload-inspecting plugin |
-| [ConduitSharp.Cache.RedisProtocol](examples/ConduitSharp.Cache.RedisProtocol) | `ICacheService` seam | `ConduitSharp.Cache.RedisProtocol` | Swaps the in-memory `cache` store for Redis/Valkey — shared response cache across instances |
-| [ConduitSharp.RateLimit.RedisProtocol](examples/ConduitSharp.RateLimit.RedisProtocol) | `IRateLimitStore` seam | `ConduitSharp.RateLimit.RedisProtocol` | Swaps the in-memory `rate-limit` store for Redis/Valkey — shared quota across instances |
-| [ConduitSharp.RateLimit.SlidingWindow](examples/ConduitSharp.RateLimit.SlidingWindow) | `IRateLimiter` seam | `ConduitSharp.RateLimit.SlidingWindow` | Swaps the fixed-window *algorithm* for a sliding log — refuses the 2x burst a fixed window allows across its boundary. The algorithm and the store are separate seams |
-
----
-
-## 🔌 Writing a plugin
-
-Plugins implement one interface (`IPipelinePlugin`) and can be written in **C#, F#, VB.NET, or PowerShell** — not Lua.
-
-| Language | How |
-|---|---|
-| **C#** | Reference `ConduitSharp.Core`, implement `IPipelinePlugin`, drop the DLL in `plugins/` |
-| **F# / VB.NET** | Same as C# — they compile to identical .NET IL |
-| **PowerShell** | A C# shim hosts `Microsoft.PowerShell.SDK` and runs your `.ps1`; no rewrite of existing scripts |
-
-`IPipelinePlugin.ExecuteAsync` **is** the ASP.NET Core middleware signature — `HttpContext`, the plugin's JSON config, and `next`. To short-circuit, write the response and don't call `next()`:
-
-```csharp
-public sealed class PowerShellPlugin : IPipelinePlugin
-{
-    public PluginName Name    => PluginName.Custom;
-    public string?    Variant => "power-shell";
-    public string     Id      => "power-shell";
-
-    public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
-    {
-        var options = JsonSerializer.Deserialize<PsConfig>(config)
-            ?? throw new InvalidOperationException("PowerShell plugin config is null.");
-
-        using var ps = PowerShell.Create();
-        ps.AddScript("$ErrorActionPreference = 'Stop'"); // treat all errors as terminating
-        ps.AddScript(await File.ReadAllTextAsync(options.ScriptPath));
-        ps.AddParameter("Request", context.Request);
-
-        try
-        {
-            var results = await ps.InvokeAsync();
-            await context.Response.WriteAsync(string.Join("\n", results.Select(r => r.ToString())));
-        }
-        catch (RuntimeException ex) { context.Response.StatusCode = 500; await context.Response.WriteAsync(ex.Message); }
-        catch (ParseException)      { context.Response.StatusCode = 500; await context.Response.WriteAsync("PowerShell script configuration error."); }
-        // no next() — the script produced the response
-    }
-}
-```
-
-```json
-{ "name": "custom", "variant": "power-shell", "order": 99, "config": { "scriptPath": "scripts/MyReport.ps1" } }
-```
-
-A ready-to-use build of this pattern lives at [examples/ConduitSharp.Plugin.PowerShell](examples/ConduitSharp.Plugin.PowerShell). Runspace pooling, out-of-process execution, and production guidance are in the [in-depth docs](#-documentation).
-
----
-
-## ⚖️ Compared to alternatives
-
-ConduitSharp can replace an existing gateway or sit behind one. Against Ocelot it competes directly. Rather than competing with YARP, it builds on top of it as the forwarding engine. Against Kong, APISIX, or Azure APIM it complements — those handle external edge traffic while ConduitSharp handles legacy workload execution and internal observability at the layer below.
-
-|  | ConduitSharp | Ocelot | YARP | Kong | APISIX |
-| --- | --- | --- | --- | --- | --- |
-| **Language** | C# / .NET | C# / .NET | C# / .NET | Lua / Nginx | Lua / Nginx |
-| **Plugin language** | **C# / F# / VB.NET / PowerShell**<br/> + ASP.NET middleware | None | ASP.NET middleware | Lua | Lua |
-| **PowerShell script execution** | ✅ Plugin | ❌ | ❌ | ❌ | ❌ |
-| **Per-route plugin pipeline** | ✅ | ⚠️ per-route hook <br/> (DelegatingHandler, code-registered) | ❌ | ✅ | ✅ |
-| **Drop-in external plugins** | ✅ | ❌ | ❌ | ✅ Lua | ✅ Lua |
-| **Plugin contract as NuGet** | ✅ | ❌ | ❌ | — | — |
-| **Unit-testable without HTTP** | ✅ | ❌ | ❌ | — | — |
-| **OpenTelemetry (traces + metrics)** | ✅ Built-in | ❌ | ✅ | ✅ Plugin | ✅ Plugin |
-| **Forwarding engine** | **YARP native** | Custom | YARP native | Nginx | Nginx |
-| **Windows Service / IIS native** | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Config format** | JSON file | JSON file | JSON / YAML | Database | YAML / etcd |
 
 ---
 
