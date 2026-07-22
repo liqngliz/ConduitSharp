@@ -12,7 +12,7 @@
         }
       },
       "plugins": [
-        { "name": "custom", "variant": "body-capture", "config": { "maxSize": 4096 } }
+        { "name": "custom", "variant": "body-capture", "config": { "maxSize": 4096, "logLevel": "Warning" } }
       ]
     }
   ]
