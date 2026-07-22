@@ -103,16 +103,16 @@ meaningful there; absolute QPS on shared CI is noise.** Raw figures for this exa
 xychart-beta
     title "Allocated per request, N routes configured — lower is better"
     x-axis ["ConduitSharp N=1", "ConduitSharp N=500", "Ocelot N=1", "Ocelot N=500"]
-    y-axis "KB / request" 0 --> 182.01
-    bar [14.40, 14.41, 25.96, 158.27]
+    y-axis "KB / request" 0 --> 181.84
+    bar [14.18, 14.09, 25.55, 158.12]
 ```
 
-| Method     | Gateway      | RouteCount | Mean     | Error    | StdDev   | Gen0    | Allocated |
-|----------- |------------- |----------- |---------:|---------:|---------:|--------:|----------:|
-| **ProxiedGet** | **ConduitSharp** | **1**          | **231.4 μs** | **603.5 μs** | **33.08 μs** |  **1.4648** |   **14.4 KB** |
-| **ProxiedGet** | **ConduitSharp** | **500**        | **242.2 μs** | **308.6 μs** | **16.92 μs** |  **1.4648** |  **14.41 KB** |
-| **ProxiedGet** | **Ocelot**       | **1**          | **374.6 μs** | **592.0 μs** | **32.45 μs** |  **1.9531** |  **25.96 KB** |
-| **ProxiedGet** | **Ocelot**       | **500**        | **469.1 μs** | **193.7 μs** | **10.62 μs** | **16.6016** | **158.27 KB** |
+| Method     | Gateway      | RouteCount | Mean     | Error     | StdDev   | Gen0    | Allocated |
+|----------- |------------- |----------- |---------:|----------:|---------:|--------:|----------:|
+| **ProxiedGet** | **ConduitSharp** | **1**          | **170.6 μs** | **391.41 μs** | **21.45 μs** |  **0.9766** |  **14.18 KB** |
+| **ProxiedGet** | **ConduitSharp** | **500**        | **186.2 μs** | **414.77 μs** | **22.73 μs** |  **0.9766** |  **14.09 KB** |
+| **ProxiedGet** | **Ocelot**       | **1**          | **184.5 μs** | **342.80 μs** | **18.79 μs** |  **2.4414** |  **25.55 KB** |
+| **ProxiedGet** | **Ocelot**       | **500**        | **422.3 μs** |  **49.43 μs** |  **2.71 μs** | **15.6250** | **158.12 KB** |
 
 ConduitSharp rides ASP.NET endpoint routing's DFA: flat time and allocations at any
 route count. Ocelot's route finder scans templates per request — cost grows with N.
@@ -123,14 +123,14 @@ route count. Ocelot's route finder scans templates per request — cost grows wi
 xychart-beta
     title "Allocated per request — JWT + rate limit, lower is better"
     x-axis ["ConduitSharp", "Ocelot"]
-    y-axis "KB / request" 0 --> 43.17
-    bar [20.92, 37.54]
+    y-axis "KB / request" 0 --> 43.21
+    bar [20.80, 37.57]
 ```
 
 | Method    | Gateway      | Mean     | Error    | StdDev   | Gen0   | Allocated |
 |---------- |------------- |---------:|---------:|---------:|-------:|----------:|
-| **AuthedGet** | **ConduitSharp** | **452.5 μs** | **419.6 μs** | **23.00 μs** | **1.9531** |  **20.92 KB** |
-| **AuthedGet** | **Ocelot**       | **489.4 μs** | **828.0 μs** | **45.38 μs** | **2.9297** |  **37.54 KB** |
+| **AuthedGet** | **ConduitSharp** | **256.8 μs** | **699.4 μs** | **38.33 μs** | **1.9531** |   **20.8 KB** |
+| **AuthedGet** | **Ocelot**       | **480.0 μs** | **383.0 μs** | **20.99 μs** | **2.9297** |  **37.57 KB** |
 
 #### Upload bodies — POST (streamed) and PUT on a retry route (buffered)
 
@@ -138,20 +138,20 @@ xychart-beta
 xychart-beta
     title "Allocated per request, 10 MB body — lower is better"
     x-axis ["ConduitSharp", "ConduitSharp-retry", "Ocelot", "Ocelot-retry"]
-    y-axis "KB / request" 0 --> 23357.45
-    bar [10043.69, 10118.78, 10056.69, 20310.83]
+    y-axis "KB / request" 0 --> 23355.89
+    bar [10043.85, 10257.19, 10056.77, 20309.47]
 ```
 
-| Method   | Gateway            | BodyKB | Mean        | Error       | StdDev    | Gen0     | Gen1     | Gen2     | Allocated   |
-|--------- |------------------- |------- |------------:|------------:|----------:|---------:|---------:|---------:|------------:|
-| **PostBody** | **ConduitSharp**       | **1**      |    **248.6 μs** |    **349.8 μs** |  **19.18 μs** |   **1.4648** |        **-** |        **-** |    **16.01 KB** |
-| **PostBody** | **ConduitSharp**       | **10240**  | **15,933.5 μs** | **13,202.0 μs** | **723.65 μs** | **343.7500** | **312.5000** |        **-** | **10043.69 KB** |
-| **PostBody** | **ConduitSharp-retry** | **1**      |    **407.8 μs** |    **372.7 μs** |  **20.43 μs** |   **0.9766** |        **-** |        **-** |    **17.66 KB** |
-| **PostBody** | **ConduitSharp-retry** | **10240**  | **23,346.3 μs** | **12,523.8 μs** | **686.47 μs** | **312.5000** | **187.5000** |        **-** | **10118.78 KB** |
-| **PostBody** | **Ocelot**             | **1**      |    **420.7 μs** |    **374.3 μs** |  **20.52 μs** |   **1.9531** |        **-** |        **-** |    **29.19 KB** |
-| **PostBody** | **Ocelot**             | **10240**  | **16,785.0 μs** | **11,937.9 μs** | **654.36 μs** | **375.0000** | **343.7500** |        **-** | **10056.69 KB** |
-| **PostBody** | **Ocelot-retry**       | **1**      |    **490.8 μs** |    **674.5 μs** |  **36.97 μs** |   **3.9063** |        **-** |        **-** |    **41.44 KB** |
-| **PostBody** | **Ocelot-retry**       | **10240**  | **19,207.3 μs** | **14,671.1 μs** | **804.17 μs** | **625.0000** | **593.7500** | **312.5000** | **20310.83 KB** |
+| Method   | Gateway            | BodyKB | Mean            | Error       | StdDev    | Gen0     | Gen1     | Gen2     | Allocated   |
+|--------- |------------------- |------- |----------------:|------------:|----------:|---------:|---------:|---------:|------------:|
+| **PostBody** | **ConduitSharp**       | **1**      |        **212.3 μs** |    **402.5 μs** |  **22.06 μs** |   **1.4648** |        **-** |        **-** |    **15.93 KB** |
+| **PostBody** | **ConduitSharp**       | **10240**  |     **11,665.4 μs** |  **6,639.3 μs** | **363.92 μs** | **343.7500** | **296.8750** |        **-** | **10043.85 KB** |
+| **PostBody** | **ConduitSharp-retry** | **1**      |        **226.1 μs** |    **693.4 μs** |  **38.01 μs** |   **1.4648** |        **-** |        **-** |    **17.31 KB** |
+| **PostBody** | **ConduitSharp-retry** | **10240**  | **70,982,521.2 μs** | **17,831.0 μs** | **977.38 μs** | **343.7500** | **281.2500** |        **-** | **10257.19 KB** |
+| **PostBody** | **Ocelot**             | **1**      |        **199.5 μs** |    **188.4 μs** |  **10.33 μs** |   **2.9297** |        **-** |        **-** |     **28.9 KB** |
+| **PostBody** | **Ocelot**             | **10240**  |     **11,550.9 μs** |  **9,959.3 μs** | **545.90 μs** | **312.5000** | **265.6250** |        **-** | **10056.77 KB** |
+| **PostBody** | **Ocelot-retry**       | **1**      |        **438.3 μs** |  **1,410.1 μs** |  **77.29 μs** |   **3.9063** |        **-** |        **-** |    **41.39 KB** |
+| **PostBody** | **Ocelot-retry**       | **10240**  |     **17,053.2 μs** | **16,950.9 μs** | **929.14 μs** | **625.0000** | **531.2500** | **312.5000** | **20309.47 KB** |
 
 Both gateways stream a POST upload — retries never apply to a POST, whose body could not
 be safely replayed, so neither side allocates a buffer. Identical work: the delta is
@@ -171,7 +171,7 @@ Both gateways in-proc (TestServer), forwarding over a real loopback socket to th
 **Allocated per request is deterministic — compare that column;** time columns are
 trend-only on shared CI runners. APISIX is nginx/Lua and cannot be micro-benched
 in-process; its comparison is the throughput ratio table above. Full tables:
-[docs/benchmarks/micro.md](docs/benchmarks/micro.md) · [source run](https://github.com/liqngliz/ConduitSharp/actions/runs/29898589358)
+[docs/benchmarks/micro.md](docs/benchmarks/micro.md) · [source run](https://github.com/liqngliz/ConduitSharp/actions/runs/29905486090)
 <!-- BENCH-MICRO:END -->
 
 <!-- BENCH-MATRIX-SUMMARY:START -->
