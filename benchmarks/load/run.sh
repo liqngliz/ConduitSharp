@@ -289,8 +289,10 @@ ensure_payload_24kb() {
         || dd if=/dev/urandom of=payload/24kb.bin bs=1K count=24
 }
 ensure_payload_4kb() {
-    [ -f payload/4kb.bin ] || dd if=/dev/urandom of=payload/4kb.bin bs=1k count=4 2>/dev/null \
-        || dd if=/dev/urandom of=payload/4kb.bin bs=1K count=4
+    [ -s payload/4kb.bin ] || dd if=/dev/urandom of=payload/4kb.bin bs=1024 count=4 >/dev/null 2>&1
+}
+ensure_payload_64kb() {
+    [ -s payload/64kb.bin ] || dd if=/dev/urandom of=payload/64kb.bin bs=1024 count=64 >/dev/null 2>&1
 }
 
 # Bytes written to storage by everything in a container — the ground truth for "did it allocate a
@@ -516,13 +518,10 @@ s4_buffered() {
 }
 
 s6_logging() {
-    local S6_REQS="${S6_REQS:-5000}"
-    local S6_CONNS="${S6_CONNS:-50}"
+    export S6_REQS=${S6_REQS:-30000} S6_CONNS=${S6_CONNS:-50}
+    echo "== s6: logging — $S6_REQS fixed requests, 64 KB POST, to Loki ==" | tee -a "$RESULTS"
 
-    header "s6: logging — $S6_REQS fixed requests, 4 KB POST, to Loki"
-    echo "== s6: logging — $S6_REQS fixed requests, 4 KB POST, to Loki ==" | tee -a "$RESULTS"
-
-    ensure_payload_4kb
+    ensure_payload_64kb
     dotnet publish ../../examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release -o plugins/bench-logging
 
     # Loki log counter helper — reads loki_distributor_lines_received_total from :3100/metrics
@@ -563,27 +562,33 @@ except Exception:
 
         # Warmup, then drain so warmup logs don't leak into the measurement
         "${COMPOSE[@]}" run --rm -T --quiet-pull load --print r --format json -l \
-            -c "$S6_CONNS" -n 500 -m POST -f /payload/4kb.bin -H "Content-Type: application/octet-stream" "$url" \
+            -c "$S6_CONNS" -n 500 -m POST -f /payload/64kb.bin -H "Content-Type: application/octet-stream" "$url" \
             >/dev/null 2>&1 || true
         echo "   draining warmup logs..."
         drain_loki
 
         local before_loki; before_loki=$(loki_count)
 
+        local flag mem; flag=$(mktemp); mem=$(mktemp)
+        sample_mem "$svc" "$flag" "$mem" &
+
         echo ">> $label [$S6_REQS reqs, c=$S6_CONNS]"
         local json; json=$(mktemp)
         "${COMPOSE[@]}" run --rm -T --quiet-pull load --print r --format json -l \
-            -c "$S6_CONNS" -n "$S6_REQS" -m POST -f /payload/4kb.bin -H "Content-Type: application/octet-stream" "$url" \
+            -c "$S6_CONNS" -n "$S6_REQS" -m POST -f /payload/64kb.bin -H "Content-Type: application/octet-stream" "$url" \
             > "$json" 2>/dev/null || true
 
+        rm -f "$flag"
+        local peak_mem; peak_mem=$(cat "$mem" 2>/dev/null || echo "0")
+        
         drain_loki
         local after_loki; after_loki=$(loki_count)
 
         # Extract results from bombardier JSON
-        python3 - "$label" "$json" "$before_loki" "$after_loki" "$S6_REQS" "$RESULTS" <<'PY'
+        python3 - "$label" "$json" "$before_loki" "$after_loki" "$S6_REQS" "$peak_mem" "$RESULTS" <<'PY'
 import json, sys
 
-label, jpath, before_s, after_s, total_reqs_s, results_file = sys.argv[1:]
+label, jpath, before_s, after_s, total_reqs_s, peak_mem, results_file = sys.argv[1:]
 before, after = int(before_s), int(after_s)
 total_reqs = int(total_reqs_s)
 
@@ -619,6 +624,7 @@ PY
     reset_obs() {
         echo "   resetting observability stack..."
         "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml down -v --remove-orphans >/dev/null 2>&1 || true
+        docker rm -f $(docker ps -aq --filter volume=load_envoy-logs) >/dev/null 2>&1 || true
         docker volume rm load_envoy-logs >/dev/null 2>&1 || true
         docker system prune -f --volumes >/dev/null 2>&1 || true
         "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml up -d loki otel-collector tempo promtail >/dev/null 2>&1
@@ -626,6 +632,15 @@ PY
     }
 
     # --- Conduit ---
+    reset_obs
+    pushd "../../examples/ConduitSharp.Plugin.BodyCaptureToFile/src/ConduitSharp.Plugin.BodyCaptureToFile" >/dev/null
+    dotnet publish -c Release -o "../../../../benchmarks/load/plugins/bench-logging-file" >/dev/null
+    popd >/dev/null
+    
+    GATE_PLUGINS="bench-logging-file" GATE_CFG="scenario-logging-file.json" up scenario-logging-file
+    bench_logging_arm "s6 conduitsharp (capture plugin -> tmpfs -> promtail -> Loki)" gateway "$GATEWAY_URL"
+    "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
+
     reset_obs
     LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up scenario-logging
     bench_logging_arm "s6 conduitsharp (capture plugin -> OTLP -> Loki)" gateway "$GATEWAY_URL"

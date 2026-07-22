@@ -297,16 +297,13 @@ public static class GatewayServiceCollectionExtensions
         GatewayRoutesConfiguration gatewayRoutes)
     {
         // External plugins — one subdirectory per route under the plugins root (organizational
-        // only; discovery is gateway-wide). SyncPluginDirectories creates missing per-route
-        // folders and leaves everything else in place. DiscoverPluginTypes then scans each
+        // only; discovery is gateway-wide). DiscoverPluginTypes scans each
         // subdirectory for IPipelinePlugin implementations.
         var pluginsDir = gatewayOptions.PluginsPath;
 
         using var bootstrap = LoggerFactory.Create(b => b.AddConsole());
         var bootstrapLogger = bootstrap.CreateLogger<PluginAssemblyLoader>();
         var loader = new PluginAssemblyLoader(bootstrapLogger);
-
-        loader.SyncPluginDirectories(pluginsDir, gatewayRoutes.Routes);
 
         foreach (var type in loader.DiscoverPluginTypes(pluginsDir))
             services.AddSingleton(typeof(IPipelinePlugin), type);

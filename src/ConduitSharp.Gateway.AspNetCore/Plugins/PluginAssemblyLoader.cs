@@ -58,46 +58,6 @@ internal sealed class PluginAssemblyLoader(ILogger<PluginAssemblyLoader> logger)
         return null;
     }
 
-    /// <summary>
-    /// Ensures the plugins root and a subdirectory per route exist, so users know where
-    /// to drop plugin DLLs. Subdirectories that no longer match a route are left alone —
-    /// they may hold user-deployed DLLs (the layout is organizational only; discovery is
-    /// gateway-wide) — and are merely logged so a renamed route is noticeable.
-    /// Call this once at startup, before <see cref="DiscoverPluginTypes"/>.
-    /// </summary>
-    public void SyncPluginDirectories(string pluginsRoot, IReadOnlyList<GatewayRoute> routes)
-    {
-        if (!Directory.Exists(pluginsRoot))
-        {
-            Directory.CreateDirectory(pluginsRoot);
-            _logger.LogInformation("Created plugins root directory '{Dir}'.", pluginsRoot);
-        }
-
-        var routeIds = routes.Select(r => r.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var routeId in routeIds)
-        {
-            var dir = Path.Combine(pluginsRoot, routeId);
-            if (!Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-                _logger.LogInformation(
-                    "Created plugin directory '{Dir}' for route '{RouteId}'.", dir, routeId);
-            }
-        }
-
-        // Never delete: the gateway does not own these directories, and a route rename
-        // must not silently rm -rf user-deployed plugin DLLs. Plugins in them still load
-        // (discovery is gateway-wide), so this is informational only.
-        foreach (var subDir in Directory.GetDirectories(pluginsRoot))
-        {
-            var name = Path.GetFileName(subDir);
-            if (!routeIds.Contains(name))
-                _logger.LogInformation(
-                    "Plugin directory '{Dir}' matches no current route id — leaving it in place " +
-                    "(its plugins still load; the folder layout is organizational only).", subDir);
-        }
-    }
 
     /// <summary>
     /// Scans every route subdirectory under <paramref name="pluginsRoot"/> for

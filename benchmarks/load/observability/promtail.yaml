@@ -15,7 +15,7 @@ scrape_configs:
           - localhost
         labels:
           job: envoy-tap
-          __path__: /tmp/envoy-logs/*.json
+          __path__: /tmp/envoy-logs/access.json
     pipeline_stages:
       - match:
           selector: '{job="envoy-tap"}'
@@ -23,3 +23,11 @@ scrape_configs:
             - regex:
                 expression: '.*"x-request-id":"(?P<trace_id>[^"]+)".*'
             # Removed traceID label to prevent high cardinality streams
+
+  - job_name: conduit-file
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: conduit-file
+          __path__: /tmp/envoy-logs/conduit.json

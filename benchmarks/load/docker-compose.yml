@@ -21,6 +21,7 @@ services:
     # 4 GB GitHub Actions runner.
     mem_limit: ${GW_MEM:-1g}
     environment:
+      OTEL_BLRP_MAX_QUEUE_SIZE: 20000
       Gateway__RoutesPath: /config/${SCENARIO:-scenario-a}.json
       # Phase 3 flood: lower the global buffered-body budget to force 503 load-shed.
       Gateway__RequestLimits__MaxTotalBufferedBodyBytes: ${MAX_TOTAL_BUFFERED:-134217728}
@@ -39,6 +40,7 @@ services:
     volumes:
       - ./routes:/config:ro
       - ./plugins:/app/plugins:ro
+      - envoy-logs:/tmp/envoy-logs
     # RAM-backed spill for s5, sized explicitly. Three limits can stop a tmpfs spill and only one
     # of them is graceful, so they must be ordered:
     #   MaxTotalBufferedBodyBytes (503) < tmpfs size= (ENOSPC -> 500) < mem_limit (OOM-kill)

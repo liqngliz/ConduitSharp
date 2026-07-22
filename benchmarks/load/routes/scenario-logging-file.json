@@ -1,8 +1,8 @@
 {
   "routes": [
     {
-      "id": "bench-logging",
-      "description": "Logging benchmark — captures request body to Loki.",
+      "id": "bench-logging-file",
+      "description": "Logging benchmark — captures request body to file asynchronously.",
       "route": { "match": { "path": "/{**catch-all}" } },
       "cluster": {
         "loadBalancingPolicy": "RoundRobin",
@@ -12,7 +12,7 @@
         }
       },
       "plugins": [
-        { "name": "custom", "variant": "body-capture", "config": { "maxSize": 4096 } }
+        { "name": "custom", "variant": "body-capture-file", "config": { "logPath": "/tmp/envoy-logs/conduit.json", "maxSize": 4096 } }
       ]
     }
   ]
