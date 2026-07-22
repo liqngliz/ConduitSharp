@@ -2,10 +2,17 @@
 
 ## Docs — additional examples
 
-- [ ] **Entra security-group authorization example.** Document how to gate a route on Microsoft Entra (Azure AD) security-group membership using the existing `jwks-jwt-auth` plugin — no code change needed, `requiredClaims` + `anyOf` on the `groups` claim already covers it. Add as a sample route JSON and/or an Entra block in the plugin's XML doc.
-  - Config: `jwksUri` = `https://login.microsoftonline.com/{tenantId}/discovery/v2.0/keys`, `issuer` = `https://login.microsoftonline.com/{tenantId}/v2.0`, `audience` = API app client id; `requiredClaims: [{ "claim": "groups", "anyOf": ["<group-object-id-guid>", ...] }]`.
+- [ ] **Entra JWKS token authorization example — JSON config for both security groups AND app roles.** Document how to gate a route on Microsoft Entra (Azure AD) using the existing `jwks-jwt-auth` plugin — no code change needed, `requiredClaims` + `anyOf`/`allOf` already covers both. Add as sample route JSON and/or an Entra block in the plugin's XML doc. Shared config for both: `jwksUri` = `https://login.microsoftonline.com/{tenantId}/discovery/v2.0/keys`, `issuer` = `https://login.microsoftonline.com/{tenantId}/v2.0`, `audience` = API app client id.
+
+  **A) Security groups** — gate on `groups` claim:
+  - Config: `requiredClaims: [{ "claim": "groups", "anyOf": ["<group-object-id-guid>", ...] }]`.
   - Entra side: set `"groupMembershipClaims": "SecurityGroup"` in the app manifest so `groups` is emitted (array of group **object-id GUIDs**, not names). On-prem/Windows AD groups synced via Entra Connect appear as their Entra object IDs.
-  - Must document two gotchas: (1) **groups overage** — >200 groups drops the `groups` claim entirely and emits `_claim_names`/`_claim_sources` (Graph pointer) which the plugin cannot resolve; recommend `"ApplicationGroup"` or app roles instead. (2) **v1 vs v2** issuer/audience mismatch → 401.
+  - Gotchas: (1) **groups overage** — >200 groups drops the `groups` claim entirely and emits `_claim_names`/`_claim_sources` (Graph pointer) the plugin can't resolve; recommend app roles (below) or `"ApplicationGroup"` instead. (2) **v1 vs v2** issuer/audience mismatch → 401.
+
+  **B) App roles** — gate on `roles` claim (preferred — no overage, readable values):
+  - Config: `requiredClaims: [{ "claim": "roles", "anyOf": ["Finance.Admin", "Finance.Reader"] }]`.
+  - Entra side: define `appRoles` in the API app registration manifest, then assign users/groups to them in the Enterprise App. The `roles` claim is emitted **by default** for the app (no `groupMembershipClaims`-style toggle) as an array of role **value strings** (e.g. `"Finance.Admin"`), not GUIDs.
+  - Advantage over groups: stable readable values, no 200-role overage, decoupled from directory group sprawl.
 
 ## Release 1.0.0 (branch `release/1.0.0`, from `1.0.0-rc.1`)
 
