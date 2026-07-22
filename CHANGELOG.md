@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-07-23
+
+First stable release — promotes `1.0.0-rc.1` to GA.
+
+### Added
+- **File body-capture example plugin** (`ConduitSharp.Plugin.BodyCaptureToFile`) — zero-allocation
+  request-body capture to a JSONL sink via a bounded channel + pooled buffers (used by the s6
+  logging benchmark; not published to NuGet).
+- **PowerShell plugin cancellation + timeout** — a hung `.ps1` no longer blocks its thread; the
+  script observes `RequestAborted` and a configurable `timeoutMs` (default 30s, `504` on timeout).
+
+### Fixed
+- **ArrayPool leak in the file body-capture plugin** — `DropOldest` silently evicted queued
+  entries without returning their pooled buffer under backpressure; switched to `DropWrite` with
+  guaranteed buffer return.
+- **Observability logging cost** — `IncludeScopes` disabled on the OpenTelemetry logging path
+  (per-request serialization with no added signal); body-capture plugin log level is configurable.
+
 ## [1.0.0-rc.1] — 2026-07-19
 
 ### Fixed
