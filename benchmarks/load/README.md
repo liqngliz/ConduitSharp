@@ -104,45 +104,49 @@ both sides buffer every upload to disk and serve it. No budget advantage, no pol
 
 | s1 — out of the box: retries set, 1 MB POST | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (retry route, POST is method-aware) | 771 | 407 | 0.00x | no |
-| ocelot (retry via official Polly seam: buffers every body) | 669 | 245 | 0.00x | no |
-| apisix (retries=2, buffers POST regardless) | 453 | 384 | 1.81x | **yes** |
+| conduitsharp (retry route, POST is method-aware) | 1314 | 177 | 0.00x | no |
+| ocelot (retry via official Polly seam: buffers every body) | 1088 | 133 | 0.00x | no |
+| apisix (retries=2, buffers POST regardless) | 645 | 299 | 1.94x | **yes** |
+| envoy (retries=2, buffers POST regardless) | 2049 | 94 | 0.00x | no |
 
 | s2 — streaming-only, optimized, 1 MB POST | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (stream) | 745 | 207 | 0.00x | no |
-| ocelot (stream) | 736 | 419 | 0.00x | no |
-| apisix (proxy_request_buffering off — non-default, forfeits retry) | 541 | 382 | 0.13x | no |
+| conduitsharp (stream) | 1325 | 203 | 0.00x | no |
+| ocelot (stream) | 1254 | 191 | 0.00x | no |
+| apisix (proxy_request_buffering off — non-default, forfeits retry) | 713 | 355 | 0.13x | no |
+| envoy (stream) | 1873 | 122 | 0.00x | no |
 
 #### Buffered path — a 1 MB PUT each side must replay (charted: the disk story)
 
 ```mermaid
 xychart-beta
     title "s4 — throughput, 1 MB PUT (higher is faster)"
-    x-axis ["conduitsharp (retry, 16k threshold, no budget cap)", "apisix (retries=2, stock buffering)"]
-    y-axis "QPS (med/3)" 0 --> 504
-    bar [132, 438]
+    x-axis ["conduitsharp (retry, 16k threshold, no budget cap)", "apisix (retries=2, stock buffering)", "envoy (retries=2, stock buffering)"]
+    y-axis "QPS (med/3)" 0 --> 2414
+    bar [895, 644, 2099]
 ```
 
 | s4 — buffered on disk, 1 MB PUT | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (retry, 16k threshold, no budget cap) | 132 | 1152 | 1.00x | **yes** |
-| apisix (retries=2, stock buffering) | 438 | 398 | 1.80x | **yes** |
+| conduitsharp (retry, 16k threshold, no budget cap) | 895 | 177 | 1.00x | **yes** |
+| apisix (retries=2, stock buffering) | 644 | 291 | 1.94x | **yes** |
+| envoy (retries=2, stock buffering) | 2099 | 96 | 0.00x | no |
 
 ```mermaid
 xychart-beta
     title "s5 — throughput, 1 MB PUT (higher is faster)"
-    x-axis ["conduitsharp (spill -> tmpfs)", "apisix (client_body_temp -> tmpfs)"]
-    y-axis "QPS (med/3)" 0 --> 764
-    bar [665, 436]
+    x-axis ["conduitsharp (spill -> tmpfs)", "apisix (client_body_temp -> tmpfs)", "envoy (buffers entirely in RAM)"]
+    y-axis "QPS (med/3)" 0 --> 2357
+    bar [1265, 641, 2049]
 ```
 
 | s5 — spill target is tmpfs, 1 MB PUT | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (spill -> tmpfs) | 665 | 235 | 0.08x | no |
-| apisix (client_body_temp -> tmpfs) | 436 | 398 | 1.81x | **yes** |
+| conduitsharp (spill -> tmpfs) | 1265 | 177 | 0.00x | no |
+| apisix (client_body_temp -> tmpfs) | 641 | 303 | 1.92x | **yes** |
+| envoy (buffers entirely in RAM) | 2049 | 96 | 0.00x | no |
 
-Median of 3 runs at c=96 on a shared GitHub Actions runner (4 vCPU), each behind the rig gate and a discarded warmup — see [What makes a run of this matrix valid](#what-makes-a-run-of-this-matrix-valid). **Ratios travel; absolute QPS on shared CI does not.** written÷uploaded measures writes to *storage*: a 0.00x row did not touch disk, which is not the same as not buffering — an in-RAM buffer (Ocelot's LoadIntoBufferAsync) is invisible to it and shows as its throughput cost instead. Raw figures: [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29659383588).
+Median of 3 runs at c=96 on a shared GitHub Actions runner (4 vCPU), each behind the rig gate and a discarded warmup — see [What makes a run of this matrix valid](#what-makes-a-run-of-this-matrix-valid). **Ratios travel; absolute QPS on shared CI does not.** written÷uploaded measures writes to *storage*: a 0.00x row did not touch disk, which is not the same as not buffering — an in-RAM buffer (Ocelot's LoadIntoBufferAsync) is invisible to it and shows as its throughput cost instead. Raw figures: [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29905486090).
 <!-- BENCH-MATRIX:END -->
 
 s3 is absent from that table on purpose: its result is categorical (shed vs die — RSS bound, 5xx

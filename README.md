@@ -182,32 +182,37 @@ in-process; its comparison is the throughput ratio table above. Full tables:
 ```mermaid
 xychart-beta
     title "s1 — out of the box, retries set, 1 MB POST: relative QPS (higher is faster)"
-    x-axis ["ConduitSharp", "Ocelot", "APISIX"]
-    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.15
-    bar [1.00, 0.87, 0.59]
+    x-axis ["ConduitSharp", "Ocelot", "APISIX", "Envoy"]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.79
+    bar [1.00, 0.83, 0.49, 1.56]
 ```
 
-| scenario (c=96) | ConduitSharp | Ocelot | APISIX |
-|---|---:|---:|---:|
-| s1 — retries configured, 1 MB POST (ConduitSharp streams it: method-aware) | 1.00× | 0.87× | 0.59× (1.8x to disk) |
-| s2 — pure streaming, 1 MB POST (APISIX de-tuned to qualify, forfeiting retry) | 1.00× | 0.99× | 0.73× |
+| scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
+|---|---:|---:|---:|---:|
+| s1 — retries configured, 1 MB POST (ConduitSharp streams it: method-aware) | 1.00× | 0.83× | 0.49× (1.9x to disk) | 1.56× |
+| s2 — pure streaming, 1 MB POST (APISIX de-tuned to qualify, forfeiting retry) | 1.00× | 0.95× | 0.54× | 1.41× |
 
 #### Buffered path — forced to disk (s4), and tmpfs as the answer (s5)
 
 ```mermaid
 xychart-beta
     title "1 MB PUT, disk vs tmpfs spill: relative QPS (higher is faster)"
-    x-axis ["ConduitSharp — disk", "APISIX — disk", "APISIX — tmpfs", "ConduitSharp — tmpfs"]
-    y-axis "QPS vs ConduitSharp disk = 1.00" 0 --> 5.81
-    bar [1.00, 3.33, 3.31, 5.05]
+    x-axis ["ConduitSharp — disk", "APISIX — disk", "Envoy — disk", "Envoy — tmpfs", "APISIX — tmpfs", "ConduitSharp — tmpfs"]
+    y-axis "QPS vs ConduitSharp disk = 1.00" 0 --> 2.70
+    bar [1.00, 0.72, 2.35, 2.29, 0.72, 1.41]
 ```
 
-| scenario (c=96) | ConduitSharp | Ocelot | APISIX |
-|---|---:|---:|---:|
-| s4 — buffering forced onto disk, 1 MB PUT | 1.00× (1.0x to disk) | — | 3.33× (1.8x to disk) |
-| s5 — buffered, spill target is tmpfs, 1 MB PUT | 1.00× | — | 0.66× (1.8x to disk) |
+| scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
+|---|---:|---:|---:|---:|
+| s4 — buffering forced onto disk, 1 MB PUT | 1.00× (1.0x to disk) | — | 0.72× (1.9x to disk) | 2.35× |
+| s5 — buffered, spill target is tmpfs, 1 MB PUT | 1.00× | — | 0.51× (1.9x to disk) | 1.62× |
 
-Structured comparison: each scenario fixes the shape of the work, then compares gateways doing that shape, with bytes-written-to-storage measured rather than assumed. s4 is the honest row: forced entirely onto disk, nginx wins — the design's answer is s5 and the RAM tier that makes disk rare. Full tables, method, and the parts that hurt: [benchmarks/load](benchmarks/load/README.md#structured-comparison--measured-not-hand-typed) · [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29659383588).
+#### Body Capture Logging — a 24 KB POST logged to Loki
+
+| scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
+|---|---:|---:|---:|---:|
+
+Structured comparison: each scenario fixes the shape of the work, then compares gateways doing that shape, with bytes-written-to-storage measured rather than assumed. s4 is the honest row: forced entirely onto disk, nginx wins — the design's answer is s5 and the RAM tier that makes disk rare. Full tables, method, and the parts that hurt: [benchmarks/load](benchmarks/load/README.md#structured-comparison--measured-not-hand-typed) · [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29905486090).
 <!-- BENCH-MATRIX-SUMMARY:END -->
 
 Full microbenchmark tables (routing, plugin dispatch, buffered-vs-stream allocations, JWT
