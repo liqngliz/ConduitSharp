@@ -80,11 +80,11 @@ dedicated-box run) while its write ratio stayed at 0.00x.
 
 | | Load | Config | Question |
 |---|---|---|---|
-| **s1** | 1 MB POST, retries configured | ConduitSharp stock (`retry.maxAttempts: 2`); Ocelot's retry built on its official `Ocelot.Provider.Polly` seam (`AddPolly<TProvider>` — the package ships breaker + timeout, the retry policy is ours) | What does each gateway do with a POST it can never replay? |
-| **s2** | 1 MB POST, no retries | streaming-only, optimized: APISIX needs non-default `proxy_request_buffering off`, which **forfeits retry entirely** | Pure streaming ceiling — nobody may buffer |
+| **s1** | 1 MB POST, retries configured | ConduitSharp stock (`retry.maxAttempts: 2`); Ocelot's retry built on its official `Ocelot.Provider.Polly` seam; Envoy buffers POST regardless (`envoy.filters.http.buffer`) | What does each gateway do with a POST it can never replay? |
+| **s2** | 1 MB POST, no retries | streaming-only, optimized: APISIX needs non-default `proxy_request_buffering off`, which **forfeits retry entirely**; Envoy streams natively (no buffer filter) | Pure streaming ceiling — nobody may buffer |
 | **s3** | 1 MB PUT ramp | ConduitSharp only, tight budget vs a `GW_MEM` pod | Does it shed (503) or die (OOM)? |
-| **s4** | 1 MB PUT | ConduitSharp configured *like APISIX's defaults* | Buffered path on disk, like-for-like |
-| **s5** | 1 MB PUT | both spill to an identically sized `tmpfs`, RAM tier left at default | Buffered path with the disk I/O removed from both |
+| **s4** | 1 MB PUT | ConduitSharp configured *like APISIX's defaults*; Envoy stock buffering (in RAM) | Buffered path on disk, like-for-like |
+| **s5** | 1 MB PUT | ConduitSharp/APISIX spill to `tmpfs`, Envoy buffers entirely in RAM | Buffered path with the disk I/O removed |
 
 **s1's retry is on the route, and ConduitSharp applies it only to idempotent methods** — `GET`,
 `PUT`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`. A `POST` on that same route streams and is never
@@ -163,15 +163,16 @@ investigation, the rig it ran on is named.
 - **s1 — out of the box — is the design win, and ConduitSharp is fastest in it.** Buffering is
   method-aware: a POST on a retry route can never be safely replayed, so it streams and writes
   nothing (0.00x) at full streaming speed — ~25% ahead of Ocelot in the latest matrix. APISIX
-  buffers it anyway (~1.8–1.9x written, every run) and pays roughly a third of its throughput
-  plus the worst p99 of the three for a replay that will never happen. nginx cannot retry
-  without buffering and does not special-case the method.
+  and Envoy buffer it anyway, paying throughput and latency for a replay that will never happen
+  (APISIX buffers to disk ~1.8–1.9x written; Envoy buffers entirely in RAM). nginx and Envoy
+  do not special-case the method natively when their retry/buffer features are enabled.
 - **s2 — streaming-only — needed APISIX de-tuned to even qualify**: `proxy_request_buffering off`
   is a non-default `nginx_config` snippet, and an APISIX configured this way **cannot do retry
-  routes at all** (nginx documents that an unbuffered request cannot be retried). All three
-  stream within the same band; which one leads has not survived across rigs — an earlier
-  dedicated-box run read APISIX ahead, the latest CI matrix reads it ~20% behind — so the only
-  durable claims are the band and the caveat APISIX paid to enter it.
+  routes at all** (nginx documents that an unbuffered request cannot be retried). Envoy achieves
+  this by omitting the buffer filter entirely. All gateways stream within the same band; which
+  one leads has not survived across rigs — an earlier dedicated-box run read APISIX ahead,
+  the latest CI matrix reads it ~20% behind — so the only durable claims are the band and
+  the caveat APISIX paid to enter it.
 - **A retry route does not slow ConduitSharp's streamed POSTs** — settled by an A/B/A run on the
   earlier dedicated-box rig (plain route, retry route, plain route again, back to back in one
   gated VM window): plain 6896/6892/6802, retry 6179/6236/6392, plain again 6333/6506/6635.
