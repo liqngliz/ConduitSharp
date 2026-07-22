@@ -547,7 +547,11 @@ except Exception:
             if [ "$prev" != "-1" ] && [ "$cur" != "-1" ]; then
                 local delta=$((cur - prev))
                 echo "   drain: +${delta} logs in last 5s (total ${cur})"
-                if [ "$delta" -lt 100 ]; then
+                # "Stable" only counts once ingestion has actually started (cur>0). A batched
+                # exporter (OTLP, apisix loki-logger) can sit at 0 for the first polls before its
+                # first batch ships; treating 0→0 as stable exited the drain before any log landed
+                # and reported 0% for a gateway that logged fine. The 120s cap still bounds the wait.
+                if [ "$cur" -gt 0 ] && [ "$delta" -lt 100 ]; then
                     stable=$((stable + 1)); [ "$stable" -ge 2 ] && break
                 else stable=0; fi
             fi
