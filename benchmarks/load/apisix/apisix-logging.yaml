@@ -1,0 +1,17 @@
+routes:
+  - uri: /*
+    plugins:
+      opentelemetry:
+        sampler:
+          name: always_on
+      loki-logger:
+        endpoint_addrs:
+          - "http://loki:3100"
+        include_req_body: true
+        include_resp_body: false
+    upstream:
+      type: roundrobin
+      nodes:
+        "upstream:8081": 1
+        "upstream:8082": 1
+#END

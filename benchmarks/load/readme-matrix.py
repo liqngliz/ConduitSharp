@@ -35,11 +35,13 @@ SECTIONS = [
     ("s2", "s2 — streaming-only, optimized, 1 MB POST", "stream"),
     ("s4", "s4 — buffered on disk, 1 MB PUT", "buffer"),
     ("s5", "s5 — spill target is tmpfs, 1 MB PUT", "buffer"),
+    ("s6", "s6 — logging + body capture, 64 KB POST", "logging"),
 ]
 
 GROUP_HEADINGS = {
     "stream": "#### Streaming path — a 1 MB body nobody needs to replay",
     "buffer": "#### Buffered path — a 1 MB PUT each side must replay (charted: the disk story)",
+    "logging": "#### Body Capture Logging — a 64 KB POST logged to Loki",
 }
 
 
@@ -104,21 +106,35 @@ for scenario, heading, group in SECTIONS:
     if group == "buffer":
         parts += bar(f"{scenario} — throughput, 1 MB PUT (higher is faster)", "QPS (med/{})".format(rows[0].get("reps", "?")),
                      [gateway_of(r["label"]) for r in rows], [r["qps"] for r in rows])
-    parts += [f"| {heading} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | written÷uploaded | spilled to disk? |",
-              "|---|---:|---:|---:|---|"]
-    for r in rows:
-        ratio = r.get("write_ratio")
-        # A record without the ratio predates it being recorded; say so rather than print a 0.00x
-        # that would read as proof of streaming.
-        ratio_cell = f"{ratio:.2f}x" if ratio is not None else "—"
-        # Derive from the ratio, never from a stored bool: the ratio is the measurement, the bool
-        # is a convenience that a record written before the field was named this way will not have
-        # — and a missing bool would silently render "no" over a 1.96x row.
-        spilled = "—" if ratio is None else ("**yes**" if ratio > 0.5 else "no")
-        spread = r.get("spread_pct")
-        noisy = " ⚠️" if spread is not None and spread > 15 else ""
-        parts.append(f"| {gateway_of(r['label'])} | {r['qps']:.0f}{noisy} | {r['p99_ms']:.0f} "
-                     f"| {ratio_cell} | {spilled} |")
+    if group == "logging":
+        parts += [f"| {heading} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | peak mem | % ingested |",
+                  "|---|---:|---:|---:|---:|"]
+        for r in rows:
+            peak = r.get("peak_mem_kb", "—")
+            peak_cell = f"{peak} KB" if peak != "—" else peak
+            pct = "—"
+            if "ingested" in r and "generated" in r and r["generated"] > 0 and r["ingested"] >= 0:
+                pct = f"{r['ingested'] / r['generated'] * 100:.1f}%"
+            spread = r.get("spread_pct")
+            noisy = " ⚠️" if spread is not None and spread > 15 else ""
+            parts.append(f"| {gateway_of(r['label'])} | {r['qps']:.0f}{noisy} | {r['p99_ms']:.0f} "
+                         f"| {peak_cell} | {pct} |")
+    else:
+        parts += [f"| {heading} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | written÷uploaded | spilled to disk? |",
+                  "|---|---:|---:|---:|---|"]
+        for r in rows:
+            ratio = r.get("write_ratio")
+            # A record without the ratio predates it being recorded; say so rather than print a 0.00x
+            # that would read as proof of streaming.
+            ratio_cell = f"{ratio:.2f}x" if ratio is not None else "—"
+            # Derive from the ratio, never from a stored bool: the ratio is the measurement, the bool
+            # is a convenience that a record written before the field was named this way will not have
+            # — and a missing bool would silently render "no" over a 1.96x row.
+            spilled = "—" if ratio is None else ("**yes**" if ratio > 0.5 else "no")
+            spread = r.get("spread_pct")
+            noisy = " ⚠️" if spread is not None and spread > 15 else ""
+            parts.append(f"| {gateway_of(r['label'])} | {r['qps']:.0f}{noisy} | {r['p99_ms']:.0f} "
+                         f"| {ratio_cell} | {spilled} |")
     parts.append("")
     rendered += 1
 
@@ -165,6 +181,9 @@ if len(sys.argv) > 4:
             ("s4", "s4 — buffering forced onto disk, 1 MB PUT"),
             ("s5", "s5 — buffered, spill target is tmpfs, 1 MB PUT"),
         ]),
+        ("#### Body Capture Logging — a 64 KB POST logged to Loki", [
+            ("s6", "s6 — logging + body capture, 64 KB POST"),
+        ]),
     ]
 
     def find(rows, name):
@@ -194,7 +213,7 @@ if len(sys.argv) > 4:
             s1_cs = find(s1, "conduitsharp")
             if s1_cs is not None:
                 labels, values = [], []
-                for name, display in (("conduitsharp", "ConduitSharp"), ("ocelot", "Ocelot"), ("apisix", "APISIX")):
+                for name, display in (("conduitsharp", "ConduitSharp"), ("ocelot", "Ocelot"), ("apisix", "APISIX"), ("envoy", "Envoy")):
                     r = find(s1, name)
                     if r is not None:
                         labels.append(display)
@@ -210,33 +229,28 @@ if len(sys.argv) > 4:
                     "",
                 ]
 
-        # Buffered bar: ONE baseline — ConduitSharp forced to real disk (s4) = 1.00 — so all four
-        # bars share a y-axis and read as one story. Both gateways appear on disk (s4) and tmpfs (s5).
-        # APISIX barely moves disk→tmpfs (2.55→2.46: nginx writes client_body_temp inline either way),
-        # while ConduitSharp jumps (1.00→3.26: the RAM tier means the 1 MB body rarely reaches the
-        # spill file at all). Per-scenario baselines would have hidden this by giving each APISIX bar
-        # a different denominator — making nginx look like it slowed down when only our number moved.
+        # Buffered bar: tmpfs-only — the 1 MB PUT spill target with disk I/O removed (s5), baseline
+        # ConduitSharp on tmpfs = 1.00. The disk row (s4) stays in the table below with its
+        # write-ratio; the front-page chart shows the tmpfs speeds only.
         if group_heading.startswith("#### Buffered"):
-            s4 = [r for r in records if r.get("label", "").startswith("s4 ")]
             s5 = [r for r in records if r.get("label", "").startswith("s5 ")]
-            cs_disk, ap_disk = find(s4, "conduitsharp"), find(s4, "apisix")
-            cs_tmpfs, ap_tmpfs = find(s5, "conduitsharp"), find(s5, "apisix")
-            if cs_disk and ap_disk and cs_tmpfs and ap_tmpfs:
-                base = cs_disk["qps"]
-                values = [1.0, ap_disk["qps"] / base, ap_tmpfs["qps"] / base, cs_tmpfs["qps"] / base]
+            cs_tmpfs, ap_tmpfs, en_tmpfs = find(s5, "conduitsharp"), find(s5, "apisix"), find(s5, "envoy")
+            if cs_tmpfs and ap_tmpfs and en_tmpfs:
+                base = cs_tmpfs["qps"]
+                values = [1.0, ap_tmpfs["qps"] / base, en_tmpfs["qps"] / base]
                 s_parts += [
                     "```mermaid",
                     "xychart-beta",
-                    '    title "1 MB PUT, disk vs tmpfs spill: relative QPS (higher is faster)"',
-                    '    x-axis ["ConduitSharp — disk", "APISIX — disk", "APISIX — tmpfs", "ConduitSharp — tmpfs"]',
-                    f'    y-axis "QPS vs ConduitSharp disk = 1.00" 0 --> {max(values) * 1.15:.2f}',
+                    '    title "1 MB PUT, tmpfs spill: relative QPS (higher is faster)"',
+                    '    x-axis ["ConduitSharp", "APISIX", "Envoy"]',
+                    f'    y-axis "QPS vs ConduitSharp tmpfs = 1.00" 0 --> {max(values) * 1.15:.2f}',
                     "    bar [{}]".format(", ".join(f"{v:.2f}" for v in values)),
                     "```",
                     "",
                 ]
 
-        s_parts += [f"| scenario (c={conns}) | ConduitSharp | Ocelot | APISIX |",
-                    "|---|---:|---:|---:|"]
+        s_parts += [f"| scenario (c={conns}) | ConduitSharp | Ocelot | APISIX | Envoy |",
+                    "|---|---:|---:|---:|---:|"]
         for scenario, heading in group_rows:
             rows = [r for r in records if r.get("label", "").startswith(scenario + " ")]
             conduit = find(rows, "conduitsharp")
@@ -244,7 +258,7 @@ if len(sys.argv) > 4:
                 continue
             base = conduit["qps"]
             s_parts.append(f"| {heading} | {cell(conduit, base)} "
-                           f"| {cell(find(rows, 'ocelot'), base)} | {cell(find(rows, 'apisix'), base)} |")
+                           f"| {cell(find(rows, 'ocelot'), base)} | {cell(find(rows, 'apisix'), base)} | {cell(find(rows, 'envoy'), base)} |")
             s_rendered += 1
         s_parts.append("")
 

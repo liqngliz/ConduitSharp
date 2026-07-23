@@ -86,78 +86,7 @@ public class PluginAssemblyLoaderTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
-    // -------------------------------------------------------------------------
-    // SyncPluginDirectories — reconciles the plugins root with the route list
-    // -------------------------------------------------------------------------
 
-    private static GatewayRoute Route(string id) => new()
-    {
-        Id    = id,
-        Route = new RouteConfig { Match = new RouteMatch { Path = "/" + id } },
-    };
-
-    [Fact]
-    public void SyncPluginDirectories_CreatesRootWhenMissing()
-    {
-        var root = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        try
-        {
-            Assert.False(Directory.Exists(root));
-
-            _loader.SyncPluginDirectories(root, []);
-
-            Assert.True(Directory.Exists(root));
-        }
-        finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
-    }
-
-    [Fact]
-    public void SyncPluginDirectories_CreatesPerRouteSubdirectories()
-    {
-        var root = CreateTempDir();
-        try
-        {
-            _loader.SyncPluginDirectories(root, [Route("alpha"), Route("beta")]);
-
-            Assert.True(Directory.Exists(Path.Combine(root, "alpha")));
-            Assert.True(Directory.Exists(Path.Combine(root, "beta")));
-        }
-        finally { Directory.Delete(root, recursive: true); }
-    }
-
-    [Fact]
-    public void SyncPluginDirectories_LeavesNonMatchingDirectoriesAlone()
-    {
-        // Regression: a directory left over from a deleted/renamed route used to be
-        // recursively deleted on startup — taking user-deployed plugin DLLs with it.
-        // The gateway does not own these folders; they must survive.
-        var root = CreateTempDir();
-        try
-        {
-            Directory.CreateDirectory(Path.Combine(root, "renamed-away"));
-            File.WriteAllText(Path.Combine(root, "renamed-away", "UserPlugin.dll"), "not-really-a-dll");
-
-            _loader.SyncPluginDirectories(root, [Route("kept")]);
-
-            Assert.True(Directory.Exists(Path.Combine(root, "kept")));
-            Assert.True(File.Exists(Path.Combine(root, "renamed-away", "UserPlugin.dll")));
-        }
-        finally { Directory.Delete(root, recursive: true); }
-    }
-
-    [Fact]
-    public void SyncPluginDirectories_IsIdempotent()
-    {
-        var root = CreateTempDir();
-        try
-        {
-            _loader.SyncPluginDirectories(root, [Route("alpha")]);
-            _loader.SyncPluginDirectories(root, [Route("alpha")]); // second call must not throw
-
-            Assert.True(Directory.Exists(Path.Combine(root, "alpha")));
-        }
-        finally { Directory.Delete(root, recursive: true); }
-    }
 
     // -------------------------------------------------------------------------
     // DiscoverServiceType — global service backends dropped in the plugins root

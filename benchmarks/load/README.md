@@ -80,11 +80,11 @@ dedicated-box run) while its write ratio stayed at 0.00x.
 
 | | Load | Config | Question |
 |---|---|---|---|
-| **s1** | 1 MB POST, retries configured | ConduitSharp stock (`retry.maxAttempts: 2`); Ocelot's retry built on its official `Ocelot.Provider.Polly` seam (`AddPolly<TProvider>` — the package ships breaker + timeout, the retry policy is ours) | What does each gateway do with a POST it can never replay? |
-| **s2** | 1 MB POST, no retries | streaming-only, optimized: APISIX needs non-default `proxy_request_buffering off`, which **forfeits retry entirely** | Pure streaming ceiling — nobody may buffer |
+| **s1** | 1 MB POST, retries configured | ConduitSharp stock (`retry.maxAttempts: 2`); Ocelot's retry built on its official `Ocelot.Provider.Polly` seam; Envoy buffers POST regardless (`envoy.filters.http.buffer`) | What does each gateway do with a POST it can never replay? |
+| **s2** | 1 MB POST, no retries | streaming-only, optimized: APISIX needs non-default `proxy_request_buffering off`, which **forfeits retry entirely**; Envoy streams natively (no buffer filter) | Pure streaming ceiling — nobody may buffer |
 | **s3** | 1 MB PUT ramp | ConduitSharp only, tight budget vs a `GW_MEM` pod | Does it shed (503) or die (OOM)? |
-| **s4** | 1 MB PUT | ConduitSharp configured *like APISIX's defaults* | Buffered path on disk, like-for-like |
-| **s5** | 1 MB PUT | both spill to an identically sized `tmpfs`, RAM tier left at default | Buffered path with the disk I/O removed from both |
+| **s4** | 1 MB PUT | ConduitSharp configured *like APISIX's defaults*; Envoy stock buffering (in RAM) | Buffered path on disk, like-for-like |
+| **s5** | 1 MB PUT | ConduitSharp/APISIX spill to `tmpfs`, Envoy buffers entirely in RAM | Buffered path with the disk I/O removed |
 
 **s1's retry is on the route, and ConduitSharp applies it only to idempotent methods** — `GET`,
 `PUT`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`. A `POST` on that same route streams and is never
@@ -104,45 +104,49 @@ both sides buffer every upload to disk and serve it. No budget advantage, no pol
 
 | s1 — out of the box: retries set, 1 MB POST | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (retry route, POST is method-aware) | 771 | 407 | 0.00x | no |
-| ocelot (retry via official Polly seam: buffers every body) | 669 | 245 | 0.00x | no |
-| apisix (retries=2, buffers POST regardless) | 453 | 384 | 1.81x | **yes** |
+| conduitsharp (retry route, POST is method-aware) | 1301 | 198 | 0.00x | no |
+| ocelot (retry via official Polly seam: buffers every body) | 1098 | 134 | 0.00x | no |
+| apisix (retries=2, buffers POST regardless) | 646 | 291 | 1.93x | **yes** |
+| envoy (retries=2, buffers POST regardless) | 2046 | 97 | 0.00x | no |
 
 | s2 — streaming-only, optimized, 1 MB POST | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (stream) | 745 | 207 | 0.00x | no |
-| ocelot (stream) | 736 | 419 | 0.00x | no |
-| apisix (proxy_request_buffering off — non-default, forfeits retry) | 541 | 382 | 0.13x | no |
+| conduitsharp (stream) | 1261 | 191 | 0.00x | no |
+| ocelot (stream) | 1273 | 206 | 0.00x | no |
+| apisix (proxy_request_buffering off — non-default, forfeits retry) | 691 | 440 | 0.13x | no |
+| envoy (stream) | 1840 | 127 | 0.00x | no |
 
 #### Buffered path — a 1 MB PUT each side must replay (charted: the disk story)
 
 ```mermaid
 xychart-beta
     title "s4 — throughput, 1 MB PUT (higher is faster)"
-    x-axis ["conduitsharp (retry, 16k threshold, no budget cap)", "apisix (retries=2, stock buffering)"]
-    y-axis "QPS (med/3)" 0 --> 504
-    bar [132, 438]
+    x-axis ["conduitsharp (retry, 16k threshold, no budget cap)", "apisix (retries=2, stock buffering)", "envoy (retries=2, stock buffering)"]
+    y-axis "QPS (med/3)" 0 --> 2404
+    bar [837, 649, 2091]
 ```
 
 | s4 — buffered on disk, 1 MB PUT | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (retry, 16k threshold, no budget cap) | 132 | 1152 | 1.00x | **yes** |
-| apisix (retries=2, stock buffering) | 438 | 398 | 1.80x | **yes** |
+| conduitsharp (retry, 16k threshold, no budget cap) | 837 | 189 | 1.00x | **yes** |
+| apisix (retries=2, stock buffering) | 649 | 303 | 1.94x | **yes** |
+| envoy (retries=2, stock buffering) | 2091 | 85 | 0.00x | no |
 
 ```mermaid
 xychart-beta
     title "s5 — throughput, 1 MB PUT (higher is faster)"
-    x-axis ["conduitsharp (spill -> tmpfs)", "apisix (client_body_temp -> tmpfs)"]
-    y-axis "QPS (med/3)" 0 --> 764
-    bar [665, 436]
+    x-axis ["conduitsharp (spill -> tmpfs)", "apisix (client_body_temp -> tmpfs)", "envoy (buffers entirely in RAM)"]
+    y-axis "QPS (med/3)" 0 --> 2390
+    bar [1360, 651, 2078]
 ```
 
 | s5 — spill target is tmpfs, 1 MB PUT | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (spill -> tmpfs) | 665 | 235 | 0.08x | no |
-| apisix (client_body_temp -> tmpfs) | 436 | 398 | 1.81x | **yes** |
+| conduitsharp (spill -> tmpfs) | 1360 | 188 | 0.00x | no |
+| apisix (client_body_temp -> tmpfs) | 651 | 291 | 1.93x | **yes** |
+| envoy (buffers entirely in RAM) | 2078 | 89 | 0.00x | no |
 
-Median of 3 runs at c=96 on a shared GitHub Actions runner (4 vCPU), each behind the rig gate and a discarded warmup — see [What makes a run of this matrix valid](#what-makes-a-run-of-this-matrix-valid). **Ratios travel; absolute QPS on shared CI does not.** written÷uploaded measures writes to *storage*: a 0.00x row did not touch disk, which is not the same as not buffering — an in-RAM buffer (Ocelot's LoadIntoBufferAsync) is invisible to it and shows as its throughput cost instead. Raw figures: [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29659383588).
+Median of 3 runs at c=96 on a shared GitHub Actions runner (4 vCPU), each behind the rig gate and a discarded warmup — see [What makes a run of this matrix valid](#what-makes-a-run-of-this-matrix-valid). **Ratios travel; absolute QPS on shared CI does not.** written÷uploaded measures writes to *storage*: a 0.00x row did not touch disk, which is not the same as not buffering — an in-RAM buffer (Ocelot's LoadIntoBufferAsync) is invisible to it and shows as its throughput cost instead. Raw figures: [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29957816337).
 <!-- BENCH-MATRIX:END -->
 
 s3 is absent from that table on purpose: its result is categorical (shed vs die — RSS bound, 5xx
@@ -159,15 +163,16 @@ investigation, the rig it ran on is named.
 - **s1 — out of the box — is the design win, and ConduitSharp is fastest in it.** Buffering is
   method-aware: a POST on a retry route can never be safely replayed, so it streams and writes
   nothing (0.00x) at full streaming speed — ~25% ahead of Ocelot in the latest matrix. APISIX
-  buffers it anyway (~1.8–1.9x written, every run) and pays roughly a third of its throughput
-  plus the worst p99 of the three for a replay that will never happen. nginx cannot retry
-  without buffering and does not special-case the method.
+  and Envoy buffer it anyway, paying throughput and latency for a replay that will never happen
+  (APISIX buffers to disk ~1.8–1.9x written; Envoy buffers entirely in RAM). nginx and Envoy
+  do not special-case the method natively when their retry/buffer features are enabled.
 - **s2 — streaming-only — needed APISIX de-tuned to even qualify**: `proxy_request_buffering off`
   is a non-default `nginx_config` snippet, and an APISIX configured this way **cannot do retry
-  routes at all** (nginx documents that an unbuffered request cannot be retried). All three
-  stream within the same band; which one leads has not survived across rigs — an earlier
-  dedicated-box run read APISIX ahead, the latest CI matrix reads it ~20% behind — so the only
-  durable claims are the band and the caveat APISIX paid to enter it.
+  routes at all** (nginx documents that an unbuffered request cannot be retried). Envoy achieves
+  this by omitting the buffer filter entirely. All gateways stream within the same band; which
+  one leads has not survived across rigs — an earlier dedicated-box run read APISIX ahead,
+  the latest CI matrix reads it ~20% behind — so the only durable claims are the band and
+  the caveat APISIX paid to enter it.
 - **A retry route does not slow ConduitSharp's streamed POSTs** — settled by an A/B/A run on the
   earlier dedicated-box rig (plain route, retry route, plain route again, back to back in one
   gated VM window): plain 6896/6892/6802, retry 6179/6236/6392, plain again 6333/6506/6635.
@@ -337,3 +342,41 @@ measuring the mechanism, not throughput. Leave it at the default to compare serv
 
 Runtime config pinned for fairness: ServerGC on, plain HTTP, logging at Warning.
 The jwt-auth signing key in scenario-b is a public bench-only secret.
+
+## Observability & Custom Code additions (`s6`)
+
+For the `s6` logging scenario, body capture and observability logging was added to Ocelot and Envoy:
+
+### Ocelot Custom Middleware
+To capture bodies in Ocelot, we had to introduce a custom ASP.NET Core middleware in `ocelot/Program.cs` that explicitly enables buffering and reads the stream. This forces Ocelot to buffer the body in RAM/Disk:
+```csharp
+app.Use(async (context, next) =>
+{
+    context.Request.EnableBuffering();
+    using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+    var body = await reader.ReadToEndAsync();
+    context.Request.Body.Position = 0;
+    
+    // Log the body via OpenTelemetry to Loki
+    app.Logger.LogInformation("Request Body: {Body}", body);
+    await next(context);
+});
+```
+
+### Envoy Tap Filter
+For Envoy, we used the native HTTP tap filter in `envoy/envoy-logging.yaml` to dump the raw HTTP exchange directly to disk, which Promtail then ships to Loki:
+```yaml
+http_filters:
+  - name: envoy.filters.http.tap
+    typed_config:
+      "@type": type.googleapis.com/envoy.extensions.filters.http.tap.v3.Tap
+      common_config:
+        static_config:
+          match_config:
+            any_match: true
+          output_config:
+            sinks:
+              - format: JSON_BODY_AS_STRING
+                file_per_tap:
+                  path_prefix: /tmp/envoy-logs/tap
+```

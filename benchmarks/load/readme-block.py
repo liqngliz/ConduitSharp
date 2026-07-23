@@ -18,6 +18,7 @@ GATEWAYS = [
     ("scenario-a pure proxy", "ConduitSharp"),
     ("apisix pure proxy",     "APISIX"),
     ("ocelot pure proxy",     "Ocelot"),
+    ("envoy pure proxy",      "Envoy"),
     ("direct-to-upstream",    "*(no gateway — direct to nginx)*"),
 ]
 
