@@ -26,6 +26,7 @@ GATE_LOAD="${GATE_LOAD:-2.0}"  # refuse to bench while the Docker VM's 1-min loa
 GATE_WAIT="${GATE_WAIT:-300}"  # seconds to wait for the VM to settle before aborting
 export GW_MEM
 
+mkdir -p plugins
 COMPOSE=(docker compose)
 [ "${PIN:-0}" = "1" ] && COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.pin.yml)
 
@@ -33,6 +34,7 @@ GATEWAY_URL="http://gateway:8080/bench"
 DIRECT_URL="http://upstream:8081/bench"
 OCELOT_URL="http://ocelot:8080/bench"
 APISIX_URL="http://apisix:9080/bench"
+ENVOY_URL="http://envoy:10080/bench"
 
 # Bench-only HS256 token for scenario-b (secret is public, see scenario-b.json).
 jwt() {
@@ -150,6 +152,13 @@ scenario_apisix() {
     "${COMPOSE[@]}" stop apisix
 }
 
+scenario_envoy() {
+    up_envoy envoy-stream
+    bench "envoy pure proxy (max QPS)" -c "$CONNS" -d "$DUR" "$ENVOY_URL"
+    [ "$RATE" -gt 0 ] && bench "envoy pure proxy (rate=$RATE)" -c "$CONNS" -d "$DUR" --rate "$RATE" "$ENVOY_URL"
+    "${COMPOSE[@]}" stop envoy
+}
+
 # Phase 3: 6 MB uploads × 64 conns against a 32 MB global buffer budget.
 # Expected: 503 load-shed for most requests, gateway memory stays bounded.
 flood() {
@@ -257,6 +266,13 @@ ptf_apisix() {
     "${COMPOSE[@]}" stop apisix || true
 }
 
+ptf_envoy() {
+    ensure_payload
+    up_envoy envoy-retry
+    push_to_failure "push-to-failure envoy" "$ENVOY_URL" envoy
+    "${COMPOSE[@]}" stop envoy || true
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════════════════
 # Structured comparison, s1..s4. Each scenario fixes the SHAPE of the work first, then compares
 # gateways doing that shape — because a buffering gateway benched against a streaming one measures
@@ -267,6 +283,17 @@ ptf_apisix() {
 ensure_payload_1mb() {
     [ -f payload/1mb.bin ] || dd if=/dev/urandom of=payload/1mb.bin bs=1m count=1 2>/dev/null \
         || dd if=/dev/urandom of=payload/1mb.bin bs=1M count=1
+}
+
+ensure_payload_24kb() {
+    [ -f payload/24kb.bin ] || dd if=/dev/urandom of=payload/24kb.bin bs=1k count=24 2>/dev/null \
+        || dd if=/dev/urandom of=payload/24kb.bin bs=1K count=24
+}
+ensure_payload_4kb() {
+    [ -s payload/4kb.bin ] || dd if=/dev/urandom of=payload/4kb.bin bs=1024 count=4 >/dev/null 2>&1
+}
+ensure_payload_64kb() {
+    [ -s payload/64kb.bin ] || dd if=/dev/urandom of=payload/64kb.bin bs=1024 count=64 >/dev/null 2>&1
 }
 
 # Bytes written to storage by everything in a container — the ground truth for "did it allocate a
@@ -364,6 +391,12 @@ up_apisix() { # $1 = routes yaml basename, $2 = config yaml basename
     wait_url "http://127.0.0.1:9080/bench" apisix
 }
 
+up_envoy() { # $1 = config yaml basename
+    ENVOY_CONF="$1" TMPFS_SIZE="${TMPFS_SIZE:-512m}" \
+        "${COMPOSE[@]}" up -d --force-recreate upstream envoy >/dev/null 2>&1
+    wait_url "http://127.0.0.1:10080/bench" envoy
+}
+
 # ── s1: out of the box. Retries on idempotent paths, load is POST, stock configs all round. ───
 # The lead scenario because it is how each gateway actually ships. The question is what each does
 # with a POST it could never safely replay:
@@ -387,6 +420,10 @@ s1_out_of_box() {
     up_apisix apisix-retry config-default
     bench_shape "s1 apisix (retries=2, buffers POST regardless)" apisix POST "$APISIX_URL" /payload/1mb.bin 1
     "${COMPOSE[@]}" stop apisix >/dev/null 2>&1 || true
+
+    up_envoy envoy-retry
+    bench_shape "s1 envoy (retries=2, buffers POST regardless)" envoy POST "$ENVOY_URL" /payload/1mb.bin 1
+    "${COMPOSE[@]}" stop envoy >/dev/null 2>&1 || true
 }
 
 # ── s2: streaming-only, optimized. 1 MB POST, no retries anywhere, nobody may buffer. ─────────
@@ -409,6 +446,10 @@ s2_stream_optimized() {
     up_apisix apisix config-stream
     bench_shape "s2 apisix (proxy_request_buffering off — non-default, forfeits retry)" apisix POST "$APISIX_URL" /payload/1mb.bin 1
     "${COMPOSE[@]}" stop apisix >/dev/null 2>&1 || true
+
+    up_envoy envoy-stream
+    bench_shape "s2 envoy (stream)" envoy POST "$ENVOY_URL" /payload/1mb.bin 1
+    "${COMPOSE[@]}" stop envoy >/dev/null 2>&1 || true
 }
 
 # ── s5: the buffered head-to-head again, but with both sides spilling to RAM. ─────────────────
@@ -436,6 +477,10 @@ s5_tmpfs() {
     up_apisix apisix-retry config-default   # client_body_temp is tmpfs via compose
     bench_shape "s5 apisix (client_body_temp -> tmpfs)" apisix PUT "$APISIX_URL" /payload/1mb.bin 1
     "${COMPOSE[@]}" stop apisix >/dev/null 2>&1 || true
+
+    up_envoy envoy-retry
+    bench_shape "s5 envoy (buffers entirely in RAM)" envoy PUT "$ENVOY_URL" /payload/1mb.bin 1
+    "${COMPOSE[@]}" stop envoy >/dev/null 2>&1 || true
 }
 
 # ── s3: ConduitSharp alone — does the shed-vs-die config hold inside a GW_MEM pod? ────────────
@@ -467,6 +512,178 @@ s4_buffered() {
     up_apisix apisix-retry config-default
     bench_shape "s4 apisix (retries=2, stock buffering)" apisix PUT "$APISIX_URL" /payload/1mb.bin 1
     "${COMPOSE[@]}" stop apisix >/dev/null 2>&1 || true
+
+    up_envoy envoy-retry
+    bench_shape "s4 envoy (retries=2, stock buffering)" envoy PUT "$ENVOY_URL" /payload/1mb.bin 1
+    "${COMPOSE[@]}" stop envoy >/dev/null 2>&1 || true
+}
+
+s6_logging() {
+    export S6_REQS=${S6_REQS:-30000} S6_CONNS=${S6_CONNS:-50}
+    echo "== s6: logging — $S6_REQS fixed requests, 64 KB POST, to Loki ==" | tee -a "$RESULTS"
+
+    ensure_payload_64kb
+    dotnet publish ../../examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release -o plugins/bench-logging
+
+    # Loki log counter helper — reads loki_distributor_lines_received_total from :3100/metrics
+    loki_count() {
+        python3 -c "
+import urllib.request
+try:
+    lines = urllib.request.urlopen('http://127.0.0.1:3100/metrics').read().decode().splitlines()
+    print(int(sum(float(l.split()[1]) for l in lines if l.startswith('loki_distributor_lines_received_total{'))))
+except Exception:
+    print(-1)
+" 2>/dev/null
+    }
+
+    # Drain: wait until Loki's received counter stops growing (collector queue flushed). Cap 120s.
+    drain_loki() {
+        echo "   draining otel-collector queue to Loki ..."
+        local waited=0 prev=-1 stable=0
+        while [ "$waited" -lt 120 ]; do
+            sleep 5; waited=$((waited + 5))
+            local cur; cur=$(loki_count)
+            if [ "$prev" != "-1" ] && [ "$cur" != "-1" ]; then
+                local delta=$((cur - prev))
+                echo "   drain: +${delta} logs in last 5s (total ${cur})"
+                # "Stable" only counts once ingestion has actually started (cur>0). A batched
+                # exporter (OTLP, apisix loki-logger) can sit at 0 for the first polls before its
+                # first batch ships; treating 0→0 as stable exited the drain before any log landed
+                # and reported 0% for a gateway that logged fine. The 120s cap still bounds the wait.
+                if [ "$cur" -gt 0 ] && [ "$delta" -lt 100 ]; then
+                    stable=$((stable + 1)); [ "$stable" -ge 2 ] && break
+                else stable=0; fi
+            fi
+            prev=$cur
+        done
+    }
+
+    # One fixed-count arm: start gateway, send N requests, drain, report ingestion %.
+    # $1=label $2=service $3=url
+    bench_logging_arm() {
+        local label="$1" svc="$2" url="$3"
+        rig_gate
+
+        # Warmup, then drain so warmup logs don't leak into the measurement
+        "${COMPOSE[@]}" run --rm -T --quiet-pull load --print r --format json -l \
+            -c "$S6_CONNS" -n 500 -m POST -f /payload/64kb.bin -H "Content-Type: application/octet-stream" "$url" \
+            >/dev/null 2>&1 || true
+        echo "   draining warmup logs..."
+        drain_loki
+
+        local before_loki; before_loki=$(loki_count)
+
+        local flag mem; flag=$(mktemp); mem=$(mktemp)
+        sample_mem "$svc" "$flag" "$mem" &
+
+        echo ">> $label [$S6_REQS reqs, c=$S6_CONNS]"
+        local json; json=$(mktemp)
+        "${COMPOSE[@]}" run --rm -T --quiet-pull load --print r --format json -l \
+            -c "$S6_CONNS" -n "$S6_REQS" -m POST -f /payload/64kb.bin -H "Content-Type: application/octet-stream" "$url" \
+            > "$json" 2>/dev/null || true
+
+        rm -f "$flag"
+        local peak_mem; peak_mem=$(cat "$mem" 2>/dev/null || echo "0")
+        
+        drain_loki
+        local after_loki; after_loki=$(loki_count)
+
+        # Extract results from bombardier JSON
+        python3 - "$label" "$json" "$before_loki" "$after_loki" "$S6_REQS" "$peak_mem" "$RESULTS" "$JSONL" <<'PY'
+import json, sys
+
+label, jpath, before_s, after_s, total_reqs_s, peak_mem, results_file, jsonl_file = sys.argv[1:]
+before, after = int(before_s), int(after_s)
+total_reqs = int(total_reqs_s)
+
+try:
+    data = json.load(open(jpath))["result"]
+    qps    = data["rps"]["mean"]
+    lat_ms = data["latency"]["mean"] / 1e3   # us -> ms
+    p50_ms = data["latency"]["percentiles"]["50"] / 1e3
+    p99_ms = data["latency"]["percentiles"]["99"] / 1e3
+    ok_2xx = data.get("req2xx", 0)
+    elapsed = total_reqs / qps if qps > 0 else 0
+except Exception as e:
+    print(f"   ERROR parsing {jpath}: {e}", file=sys.stderr)
+    qps = lat_ms = p50_ms = p99_ms = ok_2xx = elapsed = 0
+
+ingested = (after - before) if before >= 0 and after >= 0 else -1
+generated = total_reqs  # 1 log per request
+pct = f"{ingested / generated * 100:.1f}%" if ingested >= 0 and generated > 0 else "n/a"
+
+print(f"    -> {label}: {ok_2xx}/{total_reqs} requests OK in {elapsed:.1f}s ({qps:.0f} QPS)")
+print(f"    -> {label}: p50 {p50_ms:.2f} ms, p99 {p99_ms:.2f} ms")
+print(f"    -> {label}: logs generated {generated:,} / ingested {ingested:,} = {pct} completion")
+
+with open(results_file, "a") as f:
+    f.write(f"    -> {label}: {ok_2xx}/{total_reqs} OK in {elapsed:.1f}s ({qps:.0f} QPS), "
+            f"p50 {p50_ms:.2f}ms p99 {p99_ms:.2f}ms, "
+            f"logs {ingested:,}/{generated:,} = {pct}\n")
+
+rec = {
+    "label": label,
+    "qps": qps,
+    "p50_ms": p50_ms,
+    "p99_ms": p99_ms,
+    "ok": ok_2xx,
+    "total": total_reqs,
+    "ingested": ingested,
+    "generated": generated,
+    "peak_mem_kb": peak_mem
+}
+with open(jsonl_file, "a") as f:
+    f.write(json.dumps(rec) + "\n")
+PY
+        rm -f "$json"
+    }
+
+    # Fresh observability stack per arm — isolates Loki counters
+    reset_obs() {
+        echo "   resetting observability stack..."
+        "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml down -v --remove-orphans >/dev/null 2>&1 || true
+        docker rm -f $(docker ps -aq --filter volume=load_envoy-logs) >/dev/null 2>&1 || true
+        docker volume rm load_envoy-logs >/dev/null 2>&1 || true
+        docker system prune -f --volumes >/dev/null 2>&1 || true
+        "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml up -d loki otel-collector tempo promtail >/dev/null 2>&1
+        sleep 5
+    }
+
+    # --- Conduit ---
+    reset_obs
+    pushd "../../examples/ConduitSharp.Plugin.BodyCaptureToFile/src/ConduitSharp.Plugin.BodyCaptureToFile" >/dev/null
+    dotnet publish -c Release -o "../../../../benchmarks/load/plugins/bench-logging-file" >/dev/null
+    popd >/dev/null
+    
+    GATE_PLUGINS="bench-logging-file" GATE_CFG="scenario-logging-file.json" up scenario-logging-file
+    bench_logging_arm "s6 conduitsharp (capture plugin -> tmpfs -> promtail -> Loki)" gateway "$GATEWAY_URL"
+    "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
+
+    reset_obs
+    LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up scenario-logging
+    bench_logging_arm "s6 conduitsharp (capture plugin -> OTLP -> Loki)" gateway "$GATEWAY_URL"
+    "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
+
+    # --- Ocelot ---
+    reset_obs
+    OCELOT_CAPTURE_BODY=1 LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up_competitor ocelot "http://127.0.0.1:8083/bench"
+    bench_logging_arm "s6 ocelot (custom middleware -> OTLP -> Loki)" ocelot "$OCELOT_URL"
+    "${COMPOSE[@]}" stop ocelot >/dev/null 2>&1 || true
+
+    # --- APISIX ---
+    reset_obs
+    up_apisix apisix-logging config-default
+    bench_logging_arm "s6 apisix (loki-logger plugin -> Loki)" apisix "$APISIX_URL"
+    "${COMPOSE[@]}" stop apisix >/dev/null 2>&1 || true
+
+    # --- Envoy ---
+    reset_obs
+    up_envoy envoy-logging
+    bench_logging_arm "s6 envoy (tap filter -> Promtail -> Loki)" envoy "$ENVOY_URL"
+    "${COMPOSE[@]}" stop envoy >/dev/null 2>&1 || true
+
+    "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml stop loki otel-collector tempo promtail >/dev/null 2>&1 || true
 }
 
 # Phase 3: long fixed-rate soak; RSS at start vs end ≈ no leak.
@@ -497,7 +714,7 @@ case "${1:-all}" in
     soak)       header; soak ;;
     # Ramp 6 MB uploads until each gateway breaks — 503 load-shed vs OOM, same mem_limit for all.
     # Grouped by what each does with the body; see the note above push_to_failure.
-    push-to-failure)  header; ptf_conduitsharp; ptf_ocelot ;;          # both stream
+    push-to-failure)  header; ptf_conduitsharp; ptf_ocelot; ptf_envoy ;;          # stream
     ptf-buffered)     header; ptf_conduitsharp_buffered; ptf_apisix ;; # both buffer to disk
     # The structured comparison. Each fixes the shape of the work, then compares gateways doing it.
     s1) header; s1_out_of_box ;;
@@ -505,16 +722,18 @@ case "${1:-all}" in
     s3) header; s3_shed ;;
     s4) header; s4_buffered ;;
     s5) header; s5_tmpfs ;;
-    matrix) header; s1_out_of_box; s2_stream_optimized; s3_shed; s4_buffered; s5_tmpfs ;;
+    s6) header; s6_logging ;;
+    matrix) header; s1_out_of_box; s2_stream_optimized; s3_shed; s4_buffered; s5_tmpfs; s6_logging ;;
     ptf-conduitsharp) header; ptf_conduitsharp ;;
     ptf-ocelot)       header; ptf_ocelot ;;
     ptf-apisix)       header; ptf_apisix ;;
+    ptf-envoy)        header; ptf_envoy ;;
     all)        header; scenario_direct; scenario_a; scenario_b; flood ;;
     # The money chart: every gateway benched sequentially on the same rig.
-    compare)    header; scenario_direct; scenario_a; scenario_ocelot; scenario_apisix ;;
+    compare)    header; scenario_direct; scenario_a; scenario_ocelot; scenario_apisix; scenario_envoy ;;
     # High-concurrency pass (tail-latency spread): CONNS=512 APPEND=1 ./run.sh compare-hc
-    compare-hc) header; scenario_a; scenario_ocelot; scenario_apisix ;;
-    *) echo "usage: $0 [all|direct|scenario-a|scenario-b|ocelot|apisix|flood|soak|compare|compare-hc|push-to-failure|ptf-conduitsharp|ptf-ocelot|ptf-apisix|ptf-buffered|s1|s2|s3|s4|s5|matrix]" >&2; exit 1 ;;
+    compare-hc) header; scenario_a; scenario_ocelot; scenario_apisix; scenario_envoy ;;
+    *) echo "usage: $0 [all|direct|scenario-a|scenario-b|ocelot|apisix|envoy|flood|soak|compare|compare-hc|push-to-failure|ptf-conduitsharp|ptf-ocelot|ptf-apisix|ptf-envoy|ptf-buffered|s1|s2|s3|s4|s5|s6|matrix]" >&2; exit 1 ;;
 esac
 
 "${COMPOSE[@]}" down

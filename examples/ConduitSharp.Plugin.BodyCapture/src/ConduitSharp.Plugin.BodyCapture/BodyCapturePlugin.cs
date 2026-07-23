@@ -68,8 +68,17 @@ public sealed class BodyCapturePlugin(ILogger<BodyCapturePlugin> logger) : IPipe
             
             context.Request.Body.Position = 0;
 
-            logger.LogInformation("Captured request body for path {Path}: {Body}", 
-                context.Request.Path, body);
+            var logLevel = LogLevel.Information;
+            if (config.ValueKind == JsonValueKind.Object && config.TryGetProperty("logLevel", out var logLevelProp) && Enum.TryParse<LogLevel>(logLevelProp.GetString(), true, out var parsedLevel))
+            {
+                logLevel = parsedLevel;
+            }
+
+            if (logger.IsEnabled(logLevel))
+            {
+                var path = context.Request.Path.Value ?? string.Empty;
+                logger.Log(logLevel, "Captured request body for path {Path}: {Body}", path, body);
+            }
 
             await next(context);
         }

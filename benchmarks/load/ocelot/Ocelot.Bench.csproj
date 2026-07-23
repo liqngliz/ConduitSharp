@@ -12,6 +12,8 @@
     <!-- Ocelot's QoS lives here, not in the core package. Needed to hand-register the retry Ocelot
          does not ship (see RetryQoSProvider) — OCELOT_RETRY=1 turns it on. -->
     <PackageReference Include="Ocelot.Provider.Polly" Version="24.0.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.10.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.10.0" />
   </ItemGroup>
 
   <ItemGroup>

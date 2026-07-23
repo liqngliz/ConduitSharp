@@ -36,6 +36,7 @@ public sealed class BodyCapturePluginTests
     public async Task ExecuteAsync_CapturesFullBody_WhenNoMaxSize()
     {
         var logger = Substitute.For<ILogger<BodyCapturePlugin>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var plugin = Build(logger);
         
         var context = new DefaultHttpContext();
@@ -55,19 +56,17 @@ public sealed class BodyCapturePluginTests
 
         Assert.True(nextCalled);
         
-        // NSubstitute check for LogInformation (which is an extension method over Log)
-        logger.Received().Log(
-            LogLevel.Information,
-            Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains("hello full body")),
-            null,
-            Arg.Any<Func<object, Exception?, string>>());
+        var logCalls = logger.ReceivedCalls().Where(c => c.GetMethodInfo().Name == "Log").ToList();
+        Assert.NotEmpty(logCalls);
+        var stateArg = logCalls.First().GetArguments()[2];
+        Assert.Contains("hello full body", stateArg?.ToString());
     }
 
     [Fact]
     public async Task ExecuteAsync_TruncatesBody_WhenExceedsMaxSize()
     {
         var logger = Substitute.For<ILogger<BodyCapturePlugin>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var plugin = Build(logger);
         
         var context = new DefaultHttpContext();
@@ -78,12 +77,10 @@ public sealed class BodyCapturePluginTests
 
         await plugin.ExecuteAsync(context, config, _ => Task.CompletedTask);
 
-        logger.Received().Log(
-            LogLevel.Information,
-            Arg.Any<EventId>(),
-            Arg.Is<object>(o => o.ToString()!.Contains("12345... (truncated)")),
-            null,
-            Arg.Any<Func<object, Exception?, string>>());
+        var logCalls = logger.ReceivedCalls().Where(c => c.GetMethodInfo().Name == "Log").ToList();
+        Assert.NotEmpty(logCalls);
+        var stateArg = logCalls.First().GetArguments()[2];
+        Assert.Contains("12345... (truncated)", stateArg?.ToString());
     }
 
     [Fact]
@@ -92,13 +89,8 @@ public sealed class BodyCapturePluginTests
     {
         // One singleton plugin instance, many parallel requests — a shared-state bug
         // (cached body/config on the instance) would pair a path with another request's body.
-        var lines  = new System.Collections.Concurrent.ConcurrentBag<string>();
         var logger = Substitute.For<ILogger<BodyCapturePlugin>>();
-        logger.When(l => l.Log(
-                Arg.Any<LogLevel>(), Arg.Any<EventId>(), Arg.Any<object>(),
-                Arg.Any<Exception?>(), Arg.Any<Func<object, Exception?, string>>()))
-            .Do(call => lines.Add(call.ArgAt<object>(2).ToString()!));
-
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var plugin = new BodyCapturePlugin(logger);
         var config = JsonDocument.Parse("{}").RootElement;
 
@@ -111,7 +103,9 @@ public sealed class BodyCapturePluginTests
             await plugin.ExecuteAsync(context, config, _ => Task.CompletedTask);
         })));
 
-        Assert.Equal(50, lines.Count);
+        var logCalls = logger.ReceivedCalls().Where(c => c.GetMethodInfo().Name == "Log").ToList();
+        Assert.Equal(50, logCalls.Count);
+        var lines = logCalls.Select(c => c.GetArguments()[2]?.ToString() ?? string.Empty).ToList();
         for (var i = 0; i < 50; i++)
             Assert.Contains(lines, l => l.Contains($"path /api/req-{i}: body-{i}"));
     }
