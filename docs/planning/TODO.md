@@ -23,7 +23,8 @@ Promoting the RC to GA. Done on the branch:
 
 Still to do:
 - [ ] **Merge `release/1.0.0` to `main`, THEN tag `v1.0.0`.** The tag (not the branch) triggers `release.yml` — publishes NuGet, GHCR image, and binaries. Do not tag from the branch pre-merge.
-- [ ] **NuGet publish gap — fix before tagging.** `release.yml` pushes only 3 example plugins (BodyCapture, Cache.RedisProtocol, RateLimit.RedisProtocol), but the README shipped-plugins table advertises NuGet packages for **5** — also PowerShell and SlidingWindow. Both are `IsPackable=true` with a `PackageId` but are **missing from the `dotnet pack` list in `release.yml`**. Either add them to the publish list (+ nuget.org Trusted Publisher setup per new PackageId) or drop the NuGet column for them in the README. `BodyCaptureToFile` is correctly `IsPackable=false` (bench-only), no action.
+- [x] **NuGet publish gap** — `release.yml` now packs/pushes all 5 advertised example plugins (added `ConduitSharp.Plugin.PowerShell` and `ConduitSharp.RateLimit.SlidingWindow` to the pack list). `BodyCaptureToFile` stays `IsPackable=false` (bench-only).
+- [ ] **nuget.org Trusted Publisher — manual, before tagging.** The two newly-added package IDs need a one-time Trusted Publishing entry on nuget.org or the `dotnet nuget push` 403s: for **`ConduitSharp.Plugin.PowerShell`** and **`ConduitSharp.RateLimit.SlidingWindow`**, add repo `liqngliz/ConduitSharp` + workflow `release.yml` (Profile → Trusted Publishing, per package ID).
 
 ## Post-1.0 features
 
