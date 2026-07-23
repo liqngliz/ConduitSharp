@@ -586,10 +586,10 @@ except Exception:
         local after_loki; after_loki=$(loki_count)
 
         # Extract results from bombardier JSON
-        python3 - "$label" "$json" "$before_loki" "$after_loki" "$S6_REQS" "$peak_mem" "$RESULTS" <<'PY'
+        python3 - "$label" "$json" "$before_loki" "$after_loki" "$S6_REQS" "$peak_mem" "$RESULTS" "$JSONL" <<'PY'
 import json, sys
 
-label, jpath, before_s, after_s, total_reqs_s, peak_mem, results_file = sys.argv[1:]
+label, jpath, before_s, after_s, total_reqs_s, peak_mem, results_file, jsonl_file = sys.argv[1:]
 before, after = int(before_s), int(after_s)
 total_reqs = int(total_reqs_s)
 
@@ -617,6 +617,20 @@ with open(results_file, "a") as f:
     f.write(f"    -> {label}: {ok_2xx}/{total_reqs} OK in {elapsed:.1f}s ({qps:.0f} QPS), "
             f"p50 {p50_ms:.2f}ms p99 {p99_ms:.2f}ms, "
             f"logs {ingested:,}/{generated:,} = {pct}\n")
+
+rec = {
+    "label": label,
+    "qps": qps,
+    "p50_ms": p50_ms,
+    "p99_ms": p99_ms,
+    "ok": ok_2xx,
+    "total": total_reqs,
+    "ingested": ingested,
+    "generated": generated,
+    "peak_mem_kb": peak_mem
+}
+with open(jsonl_file, "a") as f:
+    f.write(json.dumps(rec) + "\n")
 PY
         rm -f "$json"
     }

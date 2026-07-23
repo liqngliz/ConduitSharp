@@ -106,21 +106,35 @@ for scenario, heading, group in SECTIONS:
     if group == "buffer":
         parts += bar(f"{scenario} — throughput, 1 MB PUT (higher is faster)", "QPS (med/{})".format(rows[0].get("reps", "?")),
                      [gateway_of(r["label"]) for r in rows], [r["qps"] for r in rows])
-    parts += [f"| {heading} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | written÷uploaded | spilled to disk? |",
-              "|---|---:|---:|---:|---|"]
-    for r in rows:
-        ratio = r.get("write_ratio")
-        # A record without the ratio predates it being recorded; say so rather than print a 0.00x
-        # that would read as proof of streaming.
-        ratio_cell = f"{ratio:.2f}x" if ratio is not None else "—"
-        # Derive from the ratio, never from a stored bool: the ratio is the measurement, the bool
-        # is a convenience that a record written before the field was named this way will not have
-        # — and a missing bool would silently render "no" over a 1.96x row.
-        spilled = "—" if ratio is None else ("**yes**" if ratio > 0.5 else "no")
-        spread = r.get("spread_pct")
-        noisy = " ⚠️" if spread is not None and spread > 15 else ""
-        parts.append(f"| {gateway_of(r['label'])} | {r['qps']:.0f}{noisy} | {r['p99_ms']:.0f} "
-                     f"| {ratio_cell} | {spilled} |")
+    if group == "logging":
+        parts += [f"| {heading} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | peak mem | % ingested |",
+                  "|---|---:|---:|---:|---:|"]
+        for r in rows:
+            peak = r.get("peak_mem_kb", "—")
+            peak_cell = f"{peak} KB" if peak != "—" else peak
+            pct = "—"
+            if "ingested" in r and "generated" in r and r["generated"] > 0 and r["ingested"] >= 0:
+                pct = f"{r['ingested'] / r['generated'] * 100:.1f}%"
+            spread = r.get("spread_pct")
+            noisy = " ⚠️" if spread is not None and spread > 15 else ""
+            parts.append(f"| {gateway_of(r['label'])} | {r['qps']:.0f}{noisy} | {r['p99_ms']:.0f} "
+                         f"| {peak_cell} | {pct} |")
+    else:
+        parts += [f"| {heading} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | written÷uploaded | spilled to disk? |",
+                  "|---|---:|---:|---:|---|"]
+        for r in rows:
+            ratio = r.get("write_ratio")
+            # A record without the ratio predates it being recorded; say so rather than print a 0.00x
+            # that would read as proof of streaming.
+            ratio_cell = f"{ratio:.2f}x" if ratio is not None else "—"
+            # Derive from the ratio, never from a stored bool: the ratio is the measurement, the bool
+            # is a convenience that a record written before the field was named this way will not have
+            # — and a missing bool would silently render "no" over a 1.96x row.
+            spilled = "—" if ratio is None else ("**yes**" if ratio > 0.5 else "no")
+            spread = r.get("spread_pct")
+            noisy = " ⚠️" if spread is not None and spread > 15 else ""
+            parts.append(f"| {gateway_of(r['label'])} | {r['qps']:.0f}{noisy} | {r['p99_ms']:.0f} "
+                         f"| {ratio_cell} | {spilled} |")
     parts.append("")
     rendered += 1
 
