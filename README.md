@@ -503,7 +503,7 @@ in-process; its comparison is the throughput ratio table above. Full tables:
 <!-- BENCH-MICRO:END -->
 
 <!-- BENCH-MATRIX-SUMMARY:START -->
-### Body handling under load — the s1..s5 matrix (relative QPS, same rig)
+### Body handling under load — the s1..s6 matrix (relative QPS, same rig)
 
 #### Streaming path — a 1 MB body nobody needs to replay
 
@@ -537,11 +537,19 @@ xychart-beta
 
 #### Body Capture Logging — a 64 KB POST logged to Loki
 
+```mermaid
+xychart-beta
+    title "s6 — logging + body capture, 64 KB POST: relative QPS (higher is faster)"
+    x-axis ["ConduitSharp", "Ocelot", "APISIX", "Envoy"]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 2.71
+    bar [1.00, 0.10, 1.24, 2.36]
+```
+
 | scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
 |---|---:|---:|---:|---:|
 | s6 — logging + body capture, 64 KB POST | 1.00× | 0.10× | 1.24× | 2.36× |
 
-Structured comparison: each scenario fixes the shape of the work, then compares gateways doing that shape, with bytes-written-to-storage measured rather than assumed. s4 is the honest row: forced entirely onto disk, nginx wins — the design's answer is s5 and the RAM tier that makes disk rare. Full tables, method, and the parts that hurt: [benchmarks/load](benchmarks/load/README.md#structured-comparison--measured-not-hand-typed) · [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30066395757).
+Structured comparison: each scenario fixes the shape of the work, then compares gateways doing that shape, with bytes-written-to-storage measured rather than assumed. s4 is the honest row: forced entirely onto disk, nginx wins — the design's answer is s5 and the RAM tier that makes disk rare. s6 is the other honest row: capturing and shipping every body is real work, so APISIX and Envoy lead it while ConduitSharp buries Ocelot. Full tables, method, and the parts that hurt: [benchmarks/load](benchmarks/load/README.md#structured-comparison--measured-not-hand-typed) · [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30066395757).
 <!-- BENCH-MATRIX-SUMMARY:END -->
 
 Full microbenchmark tables (routing, plugin dispatch, buffered-vs-stream allocations, JWT

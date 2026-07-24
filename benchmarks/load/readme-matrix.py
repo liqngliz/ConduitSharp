@@ -35,13 +35,13 @@ SECTIONS = [
     ("s2", "s2 — streaming-only, optimized, 1 MB POST", "stream"),
     ("s4", "s4 — buffered on disk, 1 MB PUT", "buffer"),
     ("s5", "s5 — spill target is tmpfs, 1 MB PUT", "buffer"),
-    ("s6", "s6 — logging + body capture, 64 KB POST", "logging"),
+    ("s6", "s6 — logging + body capture, ~4 KB JSON POST", "logging"),
 ]
 
 GROUP_HEADINGS = {
     "stream": "#### Streaming path — a 1 MB body nobody needs to replay",
     "buffer": "#### Buffered path — a 1 MB PUT each side must replay (charted: the disk story)",
-    "logging": "#### Body Capture Logging — a 64 KB POST logged to Loki",
+    "logging": "#### Body Capture Logging — a ~4 KB JSON POST logged to Loki",
 }
 
 
@@ -107,11 +107,21 @@ for scenario, heading, group in SECTIONS:
         parts += bar(f"{scenario} — throughput, 1 MB PUT (higher is faster)", "QPS (med/{})".format(rows[0].get("reps", "?")),
                      [gateway_of(r["label"]) for r in rows], [r["qps"] for r in rows])
     if group == "logging":
-        parts += [f"| {heading} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | peak mem | % ingested |",
+        parts += [f"| {heading} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | memory (RSS + tmpfs) | % ingested |",
                   "|---|---:|---:|---:|---:|"]
         for r in rows:
-            peak = r.get("peak_mem_kb", "—")
-            peak_cell = f"{peak} KB" if peak != "—" else peak
+            # Memory is reported as RSS PLUS the capture file when that file lives on tmpfs, because
+            # tmpfs is RAM: a file-sink arm holds ~170 MiB the container's RSS never shows, which made
+            # the fastest arm look like the cheapest. Falls back to the legacy peak_mem_kb for records
+            # written before the split existed, so old artifacts still render instead of going blank.
+            total = r.get("total_mem_mib")
+            if total is not None:
+                rss, tmpfs = r.get("peak_rss_mib", 0.0), r.get("tmpfs_mib", 0.0)
+                peak_cell = (f"**{total:.0f} MiB** ({rss:.0f} + {tmpfs:.0f} tmpfs)"
+                             if tmpfs else f"{total:.0f} MiB")
+            else:
+                legacy = r.get("peak_mem_kb")
+                peak_cell = f"{legacy} KB" if legacy not in (None, "", "—") else "—"
             pct = "—"
             if "ingested" in r and "generated" in r and r["generated"] > 0 and r["ingested"] >= 0:
                 pct = f"{r['ingested'] / r['generated'] * 100:.1f}%"
@@ -181,8 +191,8 @@ if len(sys.argv) > 4:
             ("s4", "s4 — buffering forced onto disk, 1 MB PUT"),
             ("s5", "s5 — buffered, spill target is tmpfs, 1 MB PUT"),
         ]),
-        ("#### Body Capture Logging — a 64 KB POST logged to Loki", [
-            ("s6", "s6 — logging + body capture, 64 KB POST"),
+        ("#### Body Capture Logging — a ~4 KB JSON POST logged to Loki", [
+            ("s6", "s6 — logging + body capture, ~4 KB JSON POST"),
         ]),
     ]
 
@@ -190,7 +200,7 @@ if len(sys.argv) > 4:
         return next((r for r in rows if gateway_of(r["label"]).startswith(name)), None)
 
     s_parts = [S_START,
-               "### Body handling under load — the s1..s5 matrix (relative QPS, same rig)",
+               "### Body handling under load — the s1..s6 matrix (relative QPS, same rig)",
                ""]
 
     def cell(r, base):
@@ -249,6 +259,29 @@ if len(sys.argv) > 4:
                     "",
                 ]
 
+        # Logging bar: s6 body-capture-to-Loki, relative QPS, ConduitSharp = 1.00. CS pays a
+        # capture-and-ship tax here, so the bar shows it trailing APISIX/Envoy and burying Ocelot.
+        if group_heading.startswith("#### Body Capture"):
+            s6 = [r for r in records if r.get("label", "").startswith("s6 ")]
+            s6_cs = find(s6, "conduitsharp")
+            if s6_cs is not None:
+                labels, values = [], []
+                for name, display in (("conduitsharp", "ConduitSharp"), ("ocelot", "Ocelot"), ("apisix", "APISIX"), ("envoy", "Envoy")):
+                    r = find(s6, name)
+                    if r is not None:
+                        labels.append(display)
+                        values.append(r["qps"] / s6_cs["qps"])
+                s_parts += [
+                    "```mermaid",
+                    "xychart-beta",
+                    '    title "s6 — logging + body capture, ~4 KB JSON POST: relative QPS (higher is faster)"',
+                    "    x-axis [{}]".format(", ".join(f'"{l}"' for l in labels)),
+                    f'    y-axis "QPS vs ConduitSharp = 1.00" 0 --> {max(values) * 1.15:.2f}',
+                    "    bar [{}]".format(", ".join(f"{v:.2f}" for v in values)),
+                    "```",
+                    "",
+                ]
+
         s_parts += [f"| scenario (c={conns}) | ConduitSharp | Ocelot | APISIX | Envoy |",
                     "|---|---:|---:|---:|---:|"]
         for scenario, heading in group_rows:
@@ -266,7 +299,9 @@ if len(sys.argv) > 4:
         "Structured comparison: each scenario fixes the shape of the work, then compares gateways "
         "doing that shape, with bytes-written-to-storage measured rather than assumed. s4 is the "
         "honest row: forced entirely onto disk, nginx wins — the design's answer is s5 and the RAM "
-        "tier that makes disk rare. Full tables, method, and the parts that hurt: "
+        "tier that makes disk rare. s6 is the other honest row: capturing and shipping every body is "
+        "real work, so APISIX and Envoy lead it while ConduitSharp buries Ocelot. Full tables, "
+        "method, and the parts that hurt: "
         f"[benchmarks/load](benchmarks/load/README.md#structured-comparison--measured-not-hand-typed) · [CI run]({run_url}).",
         S_END,
     ]

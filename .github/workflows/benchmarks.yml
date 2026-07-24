@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # commits the rendered s1..s6 tables
-    # 10 throughput arms x (warmup + 3 x 60s reps) + the s3 ramp + s6's 5 logging arms
+    # 10 throughput arms x (warmup + 3 x 60s reps) + the s3 ramp + s6's 8 logging arms
     # (each: fresh obs stack + warmup + fixed-count run + Loki drain, capped 120s x2) +
     # rig-gate settling between arms lands around 75-110 min. The gate exits 1 if the runner
     # never settles — a loud failure beats a quiet garbage number.
