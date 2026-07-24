@@ -54,4 +54,18 @@ public interface IPipelinePlugin
     /// Default: false.
     /// </summary>
     bool ReadsRequestBody => false;
+
+    /// <summary>
+    /// Per-request bytes this plugin holds in memory <em>outside</em> the gateway's request-body
+    /// buffer, for a route configured by <paramref name="config"/>. Returning a non-zero value puts
+    /// that memory under <c>Gateway:RequestLimits:MaxTotalBufferedBodyBytes</c>: the gateway reserves
+    /// it for the life of the request and sheds with a 503 when the ceiling is reached.
+    ///
+    /// Exists for plugins that capture on the streaming path. Their footprint is bounded per request
+    /// but multiplies by concurrency, and without a reservation nothing downstream sheds load — so a
+    /// connection flood grows it unchecked while a buffering plugin, whose bytes are budgeted, would
+    /// have started returning 503. Read at chain-compile time, not per request.
+    /// Default: 0 (the plugin holds no memory of its own).
+    /// </summary>
+    int CaptureMemoryBytes(JsonElement config) => 0;
 }
