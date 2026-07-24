@@ -269,89 +269,6 @@ A ready-to-use build of this pattern lives at [examples/ConduitSharp.Plugin.Powe
 
 ---
 
-## 🏗️ Architectural Choices & Trade-offs
-
-ConduitSharp makes deliberate architectural decisions to solve real-world gateway deployment problems. While some choices may seem unconventional at first glance, they are specifically engineered for flexibility and safety.
-
-### 1. Dynamic DLL Loading (The "Appliance" Model)
-
-**The Choice:** Allowing `.dll` files to be dropped into a `plugins/` directory for runtime loading.
-**Why:** This is an explicit *option* designed for the Strangler Fig pattern or legacy non-Kubernetes environments where you cannot easily deploy immutable containers. If your team uses modern immutable infrastructure (like Kubernetes), you simply set `options.EnablePluginDirectoryScan = false` and use standard ASP.NET Core Dependency Injection instead.
-
-### 2. Buffering Request Bodies
-
-**The Choice:** Buffer a request body *only when something consumes the buffer* — a retry policy or a body-inspecting plugin. Everything else streams, automatically.
-**Why:** **Upstream Retries** need a rewindable body, and plugins like HMAC verification or audit logging must inspect the payload. Those are the only consumers, so they are the only cases that pay:
-- **Method-aware:** retries apply to idempotent methods only (`GET`, `PUT`, …) — so a `POST` upload through a retry route still streams; its body could never be replayed anyway.
-- **Tiered, not a cliff:** a buffered body is held in RAM while the memory tier (`MaxMemoryBufferedBodyBytes`, default 64 MiB) has headroom — measured 3.3x faster than spilling for a 1 MB body. Once it is full, further bodies spill to a temp file, nginx-style (`proxy_request_buffering`), and are still served. Only when `MaxTotalBufferedBodyBytes` (RAM + spill) is gone does the gateway shed with a 503. Availability degrades in steps rather than falling over.
-- **Off-heap:** per-body RAM is capped at `MemoryBufferThresholdBytes` (default 1 MiB, clamped there because `FileBufferingReadStream` stops pooling above it). Large uploads never churn the .NET Large Object Heap.
-- **Safety:** buffering is enforced by a per-request limit (413) and the gateway-wide `RequestBodyBudget` (503 load-shed) to prevent memory exhaustion.
-- **Escape hatch:** `"streamOnly": true` still forces pure streaming and is validated at startup against retry policies and body-reading plugins.
-
-### 3. Stateful Hot-Reloading API
-
-**The Choice:** A `POST /admin/routes/reload` API that writes `routes.json` to local disk.
-**Why:** This provides zero-downtime updates for standalone VM/AppService deployments. However, it is **inert by default**. To prevent split-brain scenarios in Kubernetes clusters, you simply do not provide an `AdminKeyHash` in your configuration. This disables the API, allowing you to manage `routes.json` via a standard Kubernetes ConfigMap rollout.
-
-### 4. Custom JSON Plugin Pipeline vs. Standard Middleware
-
-**The Choice:** A custom `IPipelinePlugin` interface driven by JSON arrays instead of `app.Use()` middleware.
-**Why:** YARP natively runs a single, monolithic pipeline for all proxied routes. ConduitSharp solves this by dynamically compiling an isolated `IApplicationBuilder` pipeline *for every single route* defined in the JSON. This allows Route A to run Heavy Rate Limiting and JWT Auth, while Route B runs pure streaming with zero middleware overhead, all built using native Kestrel middleware primitives under the hood.
-
----
-
-## 🚀 Two Paths for Hosting & Extension - Example Project
-
-ConduitSharp is designed to be flexible, supporting two distinct deployment models based on how you want to extend it. The provided example projects demonstrate these models side-by-side.
-
-```mermaid
-flowchart LR
-    subgraph deploy ["Deployed as a standalone binary or embedded"]
-        client(["Client"]) -->|HTTP| gw["ConduitSharp Gateway"]
-        gw --> inv["InventoryService x2\napi-key-auth + rate-limit"]
-        gw --> ord["OrderService\njwt-auth"]
-        gw --> grt["GreeterService (gRPC, h2c)\nhttp-proxy — HTTP/2 verbatim"]
-        gw --> upl["OrderService (upload)\nstreamOnly — zero-alloc passthrough"]
-        gw --> fin["jwt-auth + rate-limit + cache + power-shell\nGet-ErpReport.ps1"]
-    end
-
-    gw -.OTLP.-> choice{"observability stack"}
-
-    subgraph docker ["Available only when running the gateway in Docker for example"]
-        subgraph opt1 ["Option 1 — make docker-up"]
-            choice -.-> aspire["Aspire Dashboard\n:18888"]
-        end
-
-        subgraph opt2 ["Option 2 — make docker-grafana"]
-            choice -.-> collector["OTel Collector"]
-            collector --> tempo["Tempo (traces)"]
-            collector --> loki["Loki (logs)"]
-            collector --> prom["Prometheus (metrics)"]
-            tempo & loki & prom --> grafana["Grafana\n:3000"]
-        end
-    end
-```
-
-### Path 1: The Modern "Code-First" Gateway (Recommended)
-
-This approach treats ConduitSharp like a standard .NET library. It is ideal for mature engineering teams who prefer immutable infrastructure, infrastructure-as-code, and standard ASP.NET Core practices.
-
-**Why choose this path?**
-
-- **Standard Dependency Injection:**: Use (`builder.Services.AddSingleton<...>`) to register your custom plugins.
-- **Custom Plugins:** Written in C# alongside your gateway setup without managing separate `.dll` deployments. Plugins are available through nuget
-- **Standard ASP.NET**: Mix and match with standard ASP.NET Core middleware (`app.Use(...)`) and Minimal APIs.
-
-### Path 2: The Legacy "Appliance" Gateway
-
-This approach treats ConduitSharp like a standalone infrastructure appliance (similar to Kong or Envoy). It is ideal for Operations or DevOps teams who want to manage an API gateway without writing C# wrapper code.
-
-**Why choose this path?**
-
-- **Dynamic Plugin System:** Extend the gateway by dropping compiled `.dll` files into the `plugins/` directory. The gateway will automatically scan and load them at runtime.
-- **Zero Coding Required:** Deploy the pre-built ConduitSharp binary and run it purely via JSON.
-
----
 
 
 ## ⚖️ Compared to alternatives
@@ -558,6 +475,91 @@ hot path) are published to [docs/benchmarks/micro.md](docs/benchmarks/micro.md);
 method in [benchmarks/load](benchmarks/load/README.md).
 
 ---
+
+## 🏗️ Architectural Choices & Trade-offs
+
+ConduitSharp makes deliberate architectural decisions to solve real-world gateway deployment problems. While some choices may seem unconventional at first glance, they are specifically engineered for flexibility and safety.
+
+### 1. Dynamic DLL Loading (The "Appliance" Model)
+
+**The Choice:** Allowing `.dll` files to be dropped into a `plugins/` directory for runtime loading.
+**Why:** This is an explicit *option* designed for the Strangler Fig pattern or legacy non-Kubernetes environments where you cannot easily deploy immutable containers. If your team uses modern immutable infrastructure (like Kubernetes), you simply set `options.EnablePluginDirectoryScan = false` and use standard ASP.NET Core Dependency Injection instead.
+
+### 2. Buffering Request Bodies
+
+**The Choice:** Buffer a request body *only when something consumes the buffer* — a retry policy or a body-inspecting plugin. Everything else streams, automatically.
+**Why:** **Upstream Retries** need a rewindable body, and plugins like HMAC verification or audit logging must inspect the payload. Those are the only consumers, so they are the only cases that pay:
+- **Method-aware:** retries apply to idempotent methods only (`GET`, `PUT`, …) — so a `POST` upload through a retry route still streams; its body could never be replayed anyway.
+- **Tiered, not a cliff:** a buffered body is held in RAM while the memory tier (`MaxMemoryBufferedBodyBytes`, default 64 MiB) has headroom — measured 3.3x faster than spilling for a 1 MB body. Once it is full, further bodies spill to a temp file, nginx-style (`proxy_request_buffering`), and are still served. Only when `MaxTotalBufferedBodyBytes` (RAM + spill) is gone does the gateway shed with a 503. Availability degrades in steps rather than falling over.
+- **Off-heap:** per-body RAM is capped at `MemoryBufferThresholdBytes` (default 1 MiB, clamped there because `FileBufferingReadStream` stops pooling above it). Large uploads never churn the .NET Large Object Heap.
+- **Safety:** buffering is enforced by a per-request limit (413) and the gateway-wide `RequestBodyBudget` (503 load-shed) to prevent memory exhaustion.
+- **Escape hatch:** `"streamOnly": true` still forces pure streaming and is validated at startup against retry policies and body-reading plugins.
+
+### 3. Stateful Hot-Reloading API
+
+**The Choice:** A `POST /admin/routes/reload` API that writes `routes.json` to local disk.
+**Why:** This provides zero-downtime updates for standalone VM/AppService deployments. However, it is **inert by default**. To prevent split-brain scenarios in Kubernetes clusters, you simply do not provide an `AdminKeyHash` in your configuration. This disables the API, allowing you to manage `routes.json` via a standard Kubernetes ConfigMap rollout.
+
+### 4. Custom JSON Plugin Pipeline vs. Standard Middleware
+
+**The Choice:** A custom `IPipelinePlugin` interface driven by JSON arrays instead of `app.Use()` middleware.
+**Why:** YARP natively runs a single, monolithic pipeline for all proxied routes. ConduitSharp solves this by dynamically compiling an isolated `IApplicationBuilder` pipeline *for every single route* defined in the JSON. This allows Route A to run Heavy Rate Limiting and JWT Auth, while Route B runs pure streaming with zero middleware overhead, all built using native Kestrel middleware primitives under the hood.
+
+---
+
+## 🚀 Two Paths for Hosting & Extension - Example Project
+
+ConduitSharp is designed to be flexible, supporting two distinct deployment models based on how you want to extend it. The provided example projects demonstrate these models side-by-side.
+
+```mermaid
+flowchart LR
+    subgraph deploy ["Deployed as a standalone binary or embedded"]
+        client(["Client"]) -->|HTTP| gw["ConduitSharp Gateway"]
+        gw --> inv["InventoryService x2\napi-key-auth + rate-limit"]
+        gw --> ord["OrderService\njwt-auth"]
+        gw --> grt["GreeterService (gRPC, h2c)\nhttp-proxy — HTTP/2 verbatim"]
+        gw --> upl["OrderService (upload)\nstreamOnly — zero-alloc passthrough"]
+        gw --> fin["jwt-auth + rate-limit + cache + power-shell\nGet-ErpReport.ps1"]
+    end
+
+    gw -.OTLP.-> choice{"observability stack"}
+
+    subgraph docker ["Available only when running the gateway in Docker for example"]
+        subgraph opt1 ["Option 1 — make docker-up"]
+            choice -.-> aspire["Aspire Dashboard\n:18888"]
+        end
+
+        subgraph opt2 ["Option 2 — make docker-grafana"]
+            choice -.-> collector["OTel Collector"]
+            collector --> tempo["Tempo (traces)"]
+            collector --> loki["Loki (logs)"]
+            collector --> prom["Prometheus (metrics)"]
+            tempo & loki & prom --> grafana["Grafana\n:3000"]
+        end
+    end
+```
+
+### Path 1: The Modern "Code-First" Gateway (Recommended)
+
+This approach treats ConduitSharp like a standard .NET library. It is ideal for mature engineering teams who prefer immutable infrastructure, infrastructure-as-code, and standard ASP.NET Core practices.
+
+**Why choose this path?**
+
+- **Standard Dependency Injection:**: Use (`builder.Services.AddSingleton<...>`) to register your custom plugins.
+- **Custom Plugins:** Written in C# alongside your gateway setup without managing separate `.dll` deployments. Plugins are available through nuget
+- **Standard ASP.NET**: Mix and match with standard ASP.NET Core middleware (`app.Use(...)`) and Minimal APIs.
+
+### Path 2: The Legacy "Appliance" Gateway
+
+This approach treats ConduitSharp like a standalone infrastructure appliance (similar to Kong or Envoy). It is ideal for Operations or DevOps teams who want to manage an API gateway without writing C# wrapper code.
+
+**Why choose this path?**
+
+- **Dynamic Plugin System:** Extend the gateway by dropping compiled `.dll` files into the `plugins/` directory. The gateway will automatically scan and load them at runtime.
+- **Zero Coding Required:** Deploy the pre-built ConduitSharp binary and run it purely via JSON.
+
+---
+
 
 ## 📚 Documentation
 
