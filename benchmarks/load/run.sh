@@ -689,6 +689,11 @@ with open(results_file, "a") as f:
 
 rec = {
     "label": label,
+    # One measured run per arm, not this job's REPS median: s6 sends a fixed count, drains the
+    # sink and counts, so a rep loop would triple the longest phase in the matrix. Recorded rather
+    # than omitted because a missing field rendered as "QPS (med/?)" — a header implying a median
+    # over a single run, which is exactly the drift the validated protocol exists to prevent.
+    "reps": 1,
     "qps": qps,
     "p50_ms": p50_ms,
     "p99_ms": p99_ms,

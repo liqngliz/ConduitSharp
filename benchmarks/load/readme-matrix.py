@@ -122,7 +122,11 @@ for scenario, heading, group in SECTIONS:
     if group == "logging":
         sc = conns_of(rows)
         head = f"{heading} (c={sc})" if sc else heading
-        parts += [f"| {head} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | memory (RSS + tmpfs) | % ingested |",
+        # "med/1" would be a median of one — say single run instead. s6 measures one run per arm;
+        # claiming a median it never computed is the same drift as naming the wrong concurrency.
+        reps = rows[0].get("reps")
+        qps_col = "QPS (single run)" if reps == 1 else f"QPS (med/{reps or '?'})"
+        parts += [f"| {head} | {qps_col} | p99 ms | memory (RSS + tmpfs) | % ingested |",
                   "|---|---:|---:|---:|---:|"]
         for r in rows:
             # Memory is reported as RSS PLUS the capture file when that file lives on tmpfs, because
