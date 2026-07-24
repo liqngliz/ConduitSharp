@@ -9,6 +9,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 First stable release — promotes `1.0.0-rc.1` to GA.
 
+ConduitSharp is an internal integration gateway built on YARP: routes, clusters, retries, circuit
+breakers and plugin chains are declared in `routes.json` and compiled into a separate ASP.NET
+pipeline per route. Bodies stream by default — one is buffered only when something consumes the
+buffer (a retry, or a body-reading plugin) — and buffering is bounded per request (413) and
+gateway-wide (503 load-shed) so a burst of large uploads degrades instead of exhausting memory.
+
+Upgrading from `1.0.0-rc.1` needs no changes. `IPipelinePlugin` gains one member,
+`CaptureMemoryBytes(JsonElement)`, with a default implementation — existing plugins compile and
+run unmodified.
+
+Ships as a NuGet library (`ConduitSharp.Gateway.AspNetCore`), a `dotnet tool`, and a multi-arch
+container image. Plugin packages for PowerShell and sliding-window rate limiting publish alongside.
+
 ### Added
 - **Streaming-path capture memory is now budgeted** — `IPipelinePlugin` gains
   `CaptureMemoryBytes(JsonElement config)`, defaulting to `0`. A plugin that captures on the
@@ -66,6 +79,18 @@ Not shipped code, but the numbers published from it were wrong in ways worth rec
 - **New s6 arms**: the streaming tee (the plugin the docs describe, which s6 had never benchmarked),
   export deferred to the collector's `file_log` receiver, and that same sink on real disk rather
   than tmpfs.
+- **Every s6 row now states the protocol it was measured under.** The published table named a
+  concurrency the rows never ran at (the renderer took the first `c=` it found anywhere in the
+  document, so s1's 96 was printed over s6's 50) and headed single runs with `QPS (med/?)`, implying
+  a median. s6 labels now carry their concurrency, the renderer resolves it per scenario, and a
+  single measured run is labelled as one. Same drift each time — the label, not the measurement.
+
+What that campaign turned up, recorded because the old tables cannot be un-read: the ingestion
+ceiling was the collector's batch size rather than any gateway; the payload's binary content was
+being silently rejected by the sink; the memory column omitted tmpfs, which is RAM and where the
+file arms hold ~164 MiB; and a competitor was running with a 10x smaller queue than ours. Each
+error flattered ConduitSharp. The measurements were mostly sound — the labels were what needed
+auditing.
 
 ## [1.0.0-rc.1] — 2026-07-19
 
