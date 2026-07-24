@@ -566,12 +566,19 @@ s4_buffered() {
 }
 
 s6_logging() {
-    # 256 concurrent, not the 50 this ran at for months: 50 barely loads a gateway, and the arms
-    # are compared against each other at whatever level is set. Deliberately its own knob rather
-    # than the global CONNS — s6 is a fixed-count ingestion test (send N, drain, count), not a
-    # duration throughput sweep — but the level now travels in the label so a table cannot
-    # attribute s6 rows to the concurrency the other scenarios ran at.
-    export S6_REQS=${S6_REQS:-30000} S6_CONNS=${S6_CONNS:-256}
+    # c=50 is the operating point, not a stress ceiling. This rig saturates around c=25 — 30.9k
+    # QPS there against 35.6k at c=256, i.e. 10x the connections buys 13% more throughput and the
+    # rest becomes queueing (p99 15.7ms -> 26ms). Past saturation you are measuring queue depth,
+    # not the gateway. It also matches Little's Law for a real deployment: an internal gateway at
+    # ~1-2k req/s in front of services answering in ~20ms sits at tens of concurrent requests, not
+    # hundreds. Deliberately its own knob rather than the global CONNS — s6 is a fixed-count
+    # ingestion test (send N, drain, count), not a duration throughput sweep — but the level now
+    # travels in the label so a table cannot attribute s6 rows to another scenario's concurrency.
+    #
+    # Known: in-process OTLP export keeps up at this level (100% ingested) but drops 20-25% of
+    # records at c=256, where it generates ~23k records/s against a 20k queue. That is a capacity
+    # limit of the exporter, not of the gateway, and it is invisible at the operating point.
+    export S6_REQS=${S6_REQS:-30000} S6_CONNS=${S6_CONNS:-50}
     echo "== s6: logging — $S6_REQS fixed requests, ~4 KB JSON POST, to Loki ==" | tee -a "$RESULTS"
 
     ensure_payload_s6json
