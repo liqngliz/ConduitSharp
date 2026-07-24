@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using ConduitSharp.Core.Routing;
@@ -45,19 +47,30 @@ public sealed class BodyCapturePlugin(ILogger<BodyCapturePlugin> logger) : IPipe
             string body;
             if (maxSize.HasValue)
             {
-                var buffer = new char[maxSize.Value];
-                using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-                var read = await reader.ReadBlockAsync(buffer, 0, maxSize.Value);
-                body = new string(buffer, 0, read);
-                
-                if (read == maxSize.Value)
+                // Rent a pooled byte buffer and read bytes directly instead of a per-request
+                // StreamReader + char[]: no 8 KB char[] alloc and no reader allocation on the hot
+                // path. ReadAtLeastAsync fills up to maxSize (matching StreamReader.ReadBlockAsync's
+                // loop-until-full) unless the body ends first.
+                var buffer = ArrayPool<byte>.Shared.Rent(maxSize.Value);
+                try
                 {
-                    var extraBuffer = new char[1];
-                    var extraRead = await reader.ReadAsync(extraBuffer, 0, 1);
-                    if (extraRead > 0)
+                    var read = await context.Request.Body.ReadAtLeastAsync(
+                        buffer.AsMemory(0, maxSize.Value), maxSize.Value, throwOnEndOfStream: false);
+                    body = Encoding.UTF8.GetString(buffer, 0, read);
+
+                    if (read == maxSize.Value)
                     {
-                        body += "... (truncated)";
+                        var extraBuffer = new byte[1];
+                        var extraRead = await context.Request.Body.ReadAsync(extraBuffer.AsMemory(0, 1));
+                        if (extraRead > 0)
+                        {
+                            body += "... (truncated)";
+                        }
                     }
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
                 }
             }
             else
