@@ -20,6 +20,17 @@ namespace ConduitSharp.Gateway.Proxy;
 /// </summary>
 internal static class YarpConfigTranslator
 {
+    /// <summary>
+    /// The passive health policy name, written into <see cref="PassiveHealthCheckConfig.Policy"/>
+    /// below and answered to by <c>ConsecutiveFailuresHealthPolicy.Name</c>. It lives here, with the
+    /// config that references it, rather than on the policy: the policy already depends on
+    /// <see cref="GatewayRouteTable"/> for its thresholds, and that table calls this translator — so
+    /// a constant owned by the policy closed a loop through all three. One constant, still one
+    /// source of truth, no cycle. Two literals would have been the same cycle break at the cost of
+    /// the compile-time link that keeps the two strings equal.
+    /// </summary>
+    internal const string ConsecutiveFailuresPolicyName = "ConsecutiveFailures";
+
     internal static (List<RouteConfig> Routes, List<ClusterConfig> Clusters) Translate(
         GatewayRoutesConfiguration gatewayRoutes)
     {
@@ -68,7 +79,7 @@ internal static class YarpConfigTranslator
             Passive = new PassiveHealthCheckConfig
             {
                 Enabled = true,
-                Policy  = ConsecutiveFailuresHealthPolicy.PolicyName,
+                Policy  = ConsecutiveFailuresPolicyName,
             },
         };
     }

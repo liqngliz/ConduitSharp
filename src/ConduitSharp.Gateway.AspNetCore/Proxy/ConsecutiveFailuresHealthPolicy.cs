@@ -27,10 +27,13 @@ internal sealed class ConsecutiveFailuresHealthPolicy(
     GatewayRouteTable routes)
     : IPassiveHealthCheckPolicy
 {
-    /// <summary>Name referenced from <c>PassiveHealthCheckConfig.Policy</c>.</summary>
-    internal const string PolicyName = "ConsecutiveFailures";
-
-    public string Name => PolicyName;
+    /// <summary>
+    /// Answers to the name <see cref="YarpConfigTranslator"/> writes into
+    /// <c>PassiveHealthCheckConfig.Policy</c>. The constant lives there, with the config that
+    /// references it — owning it here closed a loop, since this policy depends on
+    /// <see cref="GatewayRouteTable"/> and that table calls the translator.
+    /// </summary>
+    public string Name => YarpConfigTranslator.ConsecutiveFailuresPolicyName;
 
     // ponytail: never trimmed — bounded by (clusters x destinations), i.e. the size of routes.json.
     private readonly ConcurrentDictionary<(string Cluster, string Destination), int> _consecutiveFailures =
