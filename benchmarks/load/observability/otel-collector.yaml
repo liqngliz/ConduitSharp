@@ -7,11 +7,19 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
+  # Bound the BATCH SIZE, not just the flush interval. With only `timeout: 5s`, the batcher
+  # accumulates 5 seconds of body-capture records (each carrying a multi-KB request body) into one
+  # push — measured at ~15.9 MB — and Loki's gRPC receiver caps a message at 4 MiB. Loki answers
+  # 503 ResourceExhausted, the exporter retries the SAME oversized batch forever, and the arm
+  # reports ~3% ingestion with no error anywhere except the collector's own log. Capping records per
+  # push keeps every batch under the receiver limit (the raised limit below is the second belt).
   batch:
     timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 1000
 
 exporters:
-  otlp/tempo:
+  otlp_grpc/tempo:
     endpoint: tempo:4317
     tls:
       insecure: true
@@ -20,7 +28,7 @@ exporters:
     endpoint: "0.0.0.0:8889"
     namespace: ""
 
-  otlphttp/loki:
+  otlp_http/loki:
     endpoint: http://loki:3100/otlp
     timeout: 30s
     tls:
@@ -31,7 +39,7 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp/tempo]
+      exporters: [otlp_grpc/tempo]
     metrics:
       receivers: [otlp]
       processors: [batch]
@@ -39,4 +47,4 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlphttp/loki]
+      exporters: [otlp_http/loki]

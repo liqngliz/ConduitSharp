@@ -3,6 +3,13 @@ auth_enabled: false
 server:
   http_listen_port: 3100
   grpc_listen_port: 9096
+  # Loki's default gRPC receive cap is 4 MiB, and the OTLP path pushes whole batches of captured
+  # request bodies through it. An oversized push is rejected with 503 ResourceExhausted and retried
+  # unchanged forever, so the s6 OTLP arms silently reported ~3% ingestion. The collector now caps
+  # records per batch; this raises the ceiling so a burst of larger bodies degrades instead of
+  # deadlocking. Both sides are needed: the cap bounds the common case, this bounds the tail.
+  grpc_server_max_recv_msg_size: 16777216
+  grpc_server_max_send_msg_size: 16777216
 
 common:
   instance_addr: 127.0.0.1
