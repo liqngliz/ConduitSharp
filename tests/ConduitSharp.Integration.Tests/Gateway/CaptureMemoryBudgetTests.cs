@@ -44,9 +44,47 @@ public sealed class CaptureMemoryBudgetTests : IAsyncLifetime
         public Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next) => next(context);
     }
 
+    /// <summary>
+    /// Reads the request body and declares no capture of its own — its only job is to put the route
+    /// on the buffered branch, where the capture reservation used to be skipped.
+    /// </summary>
+    private sealed class BodyReadingPlugin : IPipelinePlugin
+    {
+        public PluginName Name => PluginName.Custom;
+        public string Id => "custom-body-reader";
+        public string? Variant => "body-reader";
+
+        public bool ReadsRequestBody => true;
+
+        public Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next) => next(context);
+    }
+
     private static string Routes(string upstreamBaseUrl, int maxSize) =>
         GatewayTestHelpers.RoutesWithPlugin(upstreamBaseUrl, "custom",
             ("streaming-capture", (object)new { maxSize }));
+
+    /// <summary>
+    /// The same capture plugin, but sharing the route with a body-reading plugin so the chain takes
+    /// the buffered branch instead of the streaming one.
+    /// </summary>
+    private static string BufferedRoutes(string upstreamBaseUrl, int maxSize) => $$"""
+        {
+          "routes": [{
+            "id": "buffered-capture-route",
+            "route": { "match": { "path": "/{**rest}" } },
+            "cluster": {
+              "loadBalancingPolicy": "RoundRobin",
+              "destinations": { "node-0": { "address": "{{upstreamBaseUrl}}" } },
+              "httpRequest": { "activityTimeout": "00:00:05" }
+            },
+            "plugins": [
+              { "name": "custom", "variant": "streaming-capture", "order": 1, "enabled": true,
+                "config": { "maxSize": {{maxSize}} } },
+              { "name": "custom", "variant": "body-reader", "order": 2, "enabled": true, "config": {} }
+            ]
+          }]
+        }
+        """;
 
     [Fact]
     public async Task CaptureMemory_CountsAgainstTotalBudget_ShedsWith503()
@@ -62,6 +100,27 @@ public sealed class CaptureMemoryBudgetTests : IAsyncLifetime
         using var client = factory.CreateClient();
 
         var response = await client.PostAsync("/a/x", new StringContent("hello"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Empty(_upstream.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task CaptureMemory_OnTheBufferedPath_StillCountsAgainstTotalBudget_ShedsWith503()
+    {
+        // The reservation used to live inside the streaming branch only. Put the same capture plugin
+        // on a route that also carries a body-reading plugin and the chain takes the buffered branch,
+        // where the declaration was dropped on the floor — capture grew unbudgeted on exactly the
+        // routes most likely to have it. Same 32 KiB want against the same 4 KiB ceiling: same 503.
+        await using var factory = await GatewayFactory.CreateAsync(_upstream, BufferedRoutes(_upstream.BaseUrl, 32 * 1024),
+            plugins: [new StreamingCapturePlugin(), new BodyReadingPlugin()],
+            settings: new Dictionary<string, string?>
+            {
+                ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"] = "4096",
+            });
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync("/x", new StringContent("hello"));
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Empty(_upstream.ReceivedRequests);

@@ -303,24 +303,27 @@ public static class GatewayApplicationBuilderExtensions
         var readsBody = pluginChain.Any(p => p.plugin.ReadsRequestBody);
         var canRetry  = route.Cluster is not null && route.Retry is { MaxAttempts: > 1 };
 
-        // Streaming-path plugins that capture (the body-capture tee) hold memory the body buffer
-        // never accounts for. Bounded per request, but it multiplies by concurrency with nothing to
-        // shed it — so reserve it against the same budget the buffered path uses, and 503 at the
-        // same ceiling. Summed once here because plugins are singletons and route config is fixed
-        // until the next reload rebuilds this chain.
+        // Plugins that capture hold memory the request-body buffer never accounts for. Bounded per
+        // request, but it multiplies by concurrency with nothing to shed it — so reserve it against
+        // the same budget the buffered path uses, and 503 at the same ceiling. Summed once here
+        // because plugins are singletons and route config is fixed until the next reload rebuilds
+        // this chain.
         var captureBytes = pluginChain.Sum(p => (long)p.plugin.CaptureMemoryBytes(p.config.Config));
 
-        if (route.StreamOnly || (!readsBody && !canRetry))
+        // Reserved ahead of the buffering decision rather than inside one branch of it. Capture
+        // memory is held on either path, and while only a streaming-path plugin could declare it
+        // when this was written, a capture plugin sharing a route with a body-reading plugin or a
+        // retry policy takes the buffered branch — where the declaration used to be dropped on the
+        // floor. That is precisely the shape the reservation exists to prevent: a bounded
+        // per-request cap multiplied by unbounded concurrency, with nothing shedding load.
+        // Reserving first also sheds before the body is buffered, not after.
+        if (captureBytes > 0)
         {
             chain.Use(async (context, next) =>
             {
+                // Also applied here so a shed request is still held to the route's body limit —
+                // the branch below never runs on this path. Setting a feature twice is harmless.
                 SetMaxRequestBodySize(context, route, gatewayOptions);
-
-                if (captureBytes <= 0)
-                {
-                    await next(context);
-                    return;
-                }
 
                 var budget = context.RequestServices.GetRequiredService<Middleware.RequestBodyBudget>();
                 if (!budget.TryReserve(captureBytes))
@@ -340,6 +343,15 @@ public static class GatewayApplicationBuilderExtensions
                     // reservation, or the ceiling ratchets down until the gateway 503s permanently.
                     budget.Release(captureBytes);
                 }
+            });
+        }
+
+        if (route.StreamOnly || (!readsBody && !canRetry))
+        {
+            chain.Use(async (context, next) =>
+            {
+                SetMaxRequestBodySize(context, route, gatewayOptions);
+                await next(context);
             });
         }
         else
