@@ -10,6 +10,14 @@ namespace ConduitSharp.Plugin.BodyCapture;
 
 public sealed class BodyCapturePlugin(ILogger<BodyCapturePlugin> logger) : IPipelinePlugin
 {
+    /// <summary>
+    /// Applied when a route omits <c>maxSize</c>. Absent used to mean "read it all", which put a
+    /// second, unbounded copy of the body in this plugin — outside the gateway's buffering budget,
+    /// and on the large object heap for anything past 85 KiB. A bounded default keeps the capture
+    /// proportional to the log line it becomes; a route that needs more says so.
+    /// </summary>
+    private const int DefaultMaxSize = 4 * 1024;
+
     public PluginName Name => PluginName.Custom;
     public string? Variant => "body-capture";
     public string Id => "body-capture";
@@ -33,8 +41,9 @@ public sealed class BodyCapturePlugin(ILogger<BodyCapturePlugin> logger) : IPipe
     {
         try
         {
-            int? maxSize = null;
-            if (config.ValueKind == JsonValueKind.Object && config.TryGetProperty("maxSize", out var maxSizeProp) && maxSizeProp.TryGetInt32(out var parsedSize))
+            var maxSize = DefaultMaxSize;
+            if (config.ValueKind == JsonValueKind.Object && config.TryGetProperty("maxSize", out var maxSizeProp)
+                && maxSizeProp.TryGetInt32(out var parsedSize) && parsedSize > 0)
             {
                 maxSize = parsedSize;
             }
@@ -45,40 +54,32 @@ public sealed class BodyCapturePlugin(ILogger<BodyCapturePlugin> logger) : IPipe
             context.Request.Body.Position = 0;
 
             string body;
-            if (maxSize.HasValue)
+            // Rent a pooled byte buffer and read bytes directly instead of a per-request
+            // StreamReader + char[]: no 8 KB char[] alloc and no reader allocation on the hot
+            // path. ReadAtLeastAsync fills up to maxSize (matching StreamReader.ReadBlockAsync's
+            // loop-until-full) unless the body ends first.
+            var buffer = ArrayPool<byte>.Shared.Rent(maxSize);
+            try
             {
-                // Rent a pooled byte buffer and read bytes directly instead of a per-request
-                // StreamReader + char[]: no 8 KB char[] alloc and no reader allocation on the hot
-                // path. ReadAtLeastAsync fills up to maxSize (matching StreamReader.ReadBlockAsync's
-                // loop-until-full) unless the body ends first.
-                var buffer = ArrayPool<byte>.Shared.Rent(maxSize.Value);
-                try
-                {
-                    var read = await context.Request.Body.ReadAtLeastAsync(
-                        buffer.AsMemory(0, maxSize.Value), maxSize.Value, throwOnEndOfStream: false);
-                    body = Encoding.UTF8.GetString(buffer, 0, read);
+                var read = await context.Request.Body.ReadAtLeastAsync(
+                    buffer.AsMemory(0, maxSize), maxSize, throwOnEndOfStream: false);
+                body = Encoding.UTF8.GetString(buffer, 0, read);
 
-                    if (read == maxSize.Value)
+                if (read == maxSize)
+                {
+                    var extraBuffer = new byte[1];
+                    var extraRead = await context.Request.Body.ReadAsync(extraBuffer.AsMemory(0, 1));
+                    if (extraRead > 0)
                     {
-                        var extraBuffer = new byte[1];
-                        var extraRead = await context.Request.Body.ReadAsync(extraBuffer.AsMemory(0, 1));
-                        if (extraRead > 0)
-                        {
-                            body += "... (truncated)";
-                        }
+                        body += "... (truncated)";
                     }
                 }
-                finally
-                {
-                    ArrayPool<byte>.Shared.Return(buffer);
-                }
             }
-            else
+            finally
             {
-                using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-                body = await reader.ReadToEndAsync(context.RequestAborted);
+                ArrayPool<byte>.Shared.Return(buffer);
             }
-            
+
             context.Request.Body.Position = 0;
 
             var logLevel = LogLevel.Information;

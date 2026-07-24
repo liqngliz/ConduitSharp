@@ -148,6 +148,28 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
     }
 
     [Fact]
+    public async Task ExecuteAsync_BoundsCapture_WhenNoMaxSizeConfigured()
+    {
+        // Omitting maxSize used to copy the whole body twice (MemoryStream + a pooled rent sized to
+        // it), both outside the gateway's buffering budget. The default is what stops that.
+        using var plugin = Build();
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/big";
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(new string('x', 16 * 1024)));
+
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, _ => Task.CompletedTask);
+
+        await Task.Delay(100);
+
+        var body = JsonDocument.Parse((await File.ReadAllLinesAsync(_tempLogFile))[0])
+            .RootElement.GetProperty("body").GetString()!;
+
+        Assert.EndsWith("... (truncated)", body);
+        Assert.Equal(4 * 1024, body.Count(c => c == 'x'));
+    }
+
+    [Fact]
     public async Task ExecuteAsync_RollsFile_WhenMaxFileBytesExceeded()
     {
         // Without a roll the sink grows until the disk (or the tmpfs cap) stops it, and the writer

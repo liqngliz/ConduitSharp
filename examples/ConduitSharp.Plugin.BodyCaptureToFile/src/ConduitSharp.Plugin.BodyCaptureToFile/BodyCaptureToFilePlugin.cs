@@ -12,6 +12,14 @@ namespace ConduitSharp.Plugin.BodyCaptureToFile;
 
 public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
 {
+    /// <summary>
+    /// Applied when a route omits <c>maxSize</c>. Absent used to mean "read it all" — a MemoryStream
+    /// copy plus a pooled copy of the whole body, both outside the gateway's buffering budget and
+    /// both on the large object heap past 85 KiB. A bounded default keeps the capture proportional
+    /// to the log entry it becomes; a route that needs more says so.
+    /// </summary>
+    private const int DefaultMaxSize = 4 * 1024;
+
     public PluginName Name => PluginName.Custom;
     public string? Variant => "body-capture-file";
     public string Id => "body-capture-file";
@@ -77,41 +85,33 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
 
     public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
     {
-        int? maxSize = null;
-        if (config.ValueKind == JsonValueKind.Object && config.TryGetProperty("maxSize", out var maxSizeProp) && maxSizeProp.TryGetInt32(out var parsedSize))
+        var maxSize = DefaultMaxSize;
+        if (config.ValueKind == JsonValueKind.Object && config.TryGetProperty("maxSize", out var maxSizeProp)
+            && maxSizeProp.TryGetInt32(out var parsedSize) && parsedSize > 0)
         {
             maxSize = parsedSize;
         }
 
         context.Request.Body.Position = 0;
 
-        byte[] buffer;
-        int length;
         bool truncated = false;
 
-        if (maxSize.HasValue)
+        var buffer = ArrayPool<byte>.Shared.Rent(maxSize);
+        // ReadAtLeastAsync, not ReadAsync: a single read may return short on a stream that still has
+        // data, which would both cut the capture and leave `truncated` false — silently claiming a
+        // partial body is the whole one. Matches BodyCapturePlugin.
+        var length = await context.Request.Body.ReadAtLeastAsync(
+            buffer.AsMemory(0, maxSize), maxSize, throwOnEndOfStream: false);
+
+        if (length == maxSize)
         {
-            buffer = ArrayPool<byte>.Shared.Rent(maxSize.Value);
-            length = await context.Request.Body.ReadAsync(buffer, 0, maxSize.Value);
-            
-            if (length == maxSize.Value)
+            var extraBuffer = ArrayPool<byte>.Shared.Rent(1);
+            var extraRead = await context.Request.Body.ReadAsync(extraBuffer, 0, 1);
+            ArrayPool<byte>.Shared.Return(extraBuffer);
+            if (extraRead > 0)
             {
-                var extraBuffer = ArrayPool<byte>.Shared.Rent(1);
-                var extraRead = await context.Request.Body.ReadAsync(extraBuffer, 0, 1);
-                ArrayPool<byte>.Shared.Return(extraBuffer);
-                if (extraRead > 0)
-                {
-                    truncated = true;
-                }
+                truncated = true;
             }
-        }
-        else
-        {
-            using var ms = new MemoryStream();
-            await context.Request.Body.CopyToAsync(ms);
-            buffer = ArrayPool<byte>.Shared.Rent((int)ms.Length);
-            Array.Copy(ms.GetBuffer(), buffer, ms.Length);
-            length = (int)ms.Length;
         }
 
         context.Request.Body.Position = 0;

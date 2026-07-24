@@ -68,7 +68,7 @@ If you need whole bodies, send them to a dedicated audit sink — don't raise th
 
 Declares `ReadsRequestBody = true`, which forces the gateway to buffer the whole body into a rewindable stream — memory up to `Gateway:RequestLimits:MemoryBufferThresholdBytes`, then a temp-file spill — before the plugin runs. The gateway **rejects a `streamOnly` route carrying this plugin at startup.**
 
-Enable with `"name": "body-capture"` (or `"name": "custom", "variant": "body-capture"`). Same `maxSize` option, uncapped, truncating with `... (truncated)`.
+Enable with `"name": "body-capture"` (or `"name": "custom", "variant": "body-capture"`). Same `maxSize` option — same `4096` default, but no 32 KiB ceiling — truncating with `... (truncated)`. Omitting it bounds the capture at the default rather than reading the whole body: the body itself is budgeted, but the plugin's copy of it is not.
 
 Reach for this only when a bounded prefix genuinely isn't enough. It puts every request body through the gateway's buffering budget, and a burst of large bodies sheds load with a 503.
 

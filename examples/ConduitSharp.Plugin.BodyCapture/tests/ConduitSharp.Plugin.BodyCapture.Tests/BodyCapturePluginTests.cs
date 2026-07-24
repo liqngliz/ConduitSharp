@@ -33,7 +33,7 @@ public sealed class BodyCapturePluginTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_CapturesFullBody_WhenNoMaxSize()
+    public async Task ExecuteAsync_CapturesFullBody_WhenUnderDefaultMaxSize()
     {
         var logger = Substitute.For<ILogger<BodyCapturePlugin>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
@@ -81,6 +81,29 @@ public sealed class BodyCapturePluginTests
         Assert.NotEmpty(logCalls);
         var stateArg = logCalls.First().GetArguments()[2];
         Assert.Contains("12345... (truncated)", stateArg?.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BoundsCapture_WhenNoMaxSizeConfigured()
+    {
+        // Omitting maxSize used to mean "read the whole body into a string" — an unbounded copy
+        // outside the gateway's buffering budget. The default is what stops that, so a body past
+        // it must come back truncated rather than whole.
+        var logger = Substitute.For<ILogger<BodyCapturePlugin>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var plugin = Build(logger);
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/big";
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(new string('x', 16 * 1024)));
+
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, _ => Task.CompletedTask);
+
+        var logged = logger.ReceivedCalls().First(c => c.GetMethodInfo().Name == "Log")
+            .GetArguments()[2]?.ToString() ?? string.Empty;
+
+        Assert.Contains("... (truncated)", logged);
+        Assert.Equal(4 * 1024, logged.Count(c => c == 'x'));
     }
 
     [Fact]
