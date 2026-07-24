@@ -94,6 +94,19 @@ rendered = 0
 conns = next((m.group(1) for r in records
               for m in [re.search(r"\[c=(\d+)", r.get("label", ""))] if m), "?")
 
+
+def conns_of(rows):
+    """Concurrency the given rows were measured at, or None if they do not agree/say.
+
+    Not every scenario runs at the same level — s6 is a fixed-count ingestion test with its own
+    S6_CONNS — and taking the first record's c= for the whole document silently stamped one
+    scenario's concurrency onto another's rows. A table that names the wrong operating point is
+    the same class of error as a heading that names the wrong payload.
+    """
+    found = {m.group(1) for r in rows
+             for m in [re.search(r"\[c=(\d+)", r.get("label", ""))] if m}
+    return found.pop() if len(found) == 1 else None
+
 current_group = None
 for scenario, heading, group in SECTIONS:
     rows = [r for r in records if r.get("label", "").startswith(scenario + " ")]
@@ -107,7 +120,9 @@ for scenario, heading, group in SECTIONS:
         parts += bar(f"{scenario} — throughput, 1 MB PUT (higher is faster)", "QPS (med/{})".format(rows[0].get("reps", "?")),
                      [gateway_of(r["label"]) for r in rows], [r["qps"] for r in rows])
     if group == "logging":
-        parts += [f"| {heading} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | memory (RSS + tmpfs) | % ingested |",
+        sc = conns_of(rows)
+        head = f"{heading} (c={sc})" if sc else heading
+        parts += [f"| {head} | QPS (med/{rows[0].get('reps', '?')}) | p99 ms | memory (RSS + tmpfs) | % ingested |",
                   "|---|---:|---:|---:|---:|"]
         for r in rows:
             # Memory is reported as RSS PLUS the capture file when that file lives on tmpfs, because
@@ -157,6 +172,8 @@ if any(r.get("spread_pct", 0) > 15 for r in records):
 
 parts += [
     f"Median of {records[0].get('reps', '?')} runs at c={conns} on a shared GitHub Actions runner "
+    + ("(s6 runs at its own concurrency, shown on that table) " if len({m.group(1) for r in records for m in [re.search(r'\[c=(\d+)', r.get('label', ''))] if m}) > 1 else "")
+    + 
     "(4 vCPU), each behind the rig gate and a discarded warmup — see "
     "[What makes a run of this matrix valid](#what-makes-a-run-of-this-matrix-valid). "
     "**Ratios travel; absolute QPS on shared CI does not.** written÷uploaded measures writes to "
@@ -290,7 +307,11 @@ if len(sys.argv) > 4:
             if conduit is None:
                 continue
             base = conduit["qps"]
-            s_parts.append(f"| {heading} | {cell(conduit, base)} "
+            # Name the level inline when this scenario did not run at the table's c=,
+            # so a row cannot inherit a concurrency it was never measured at.
+            rc = conns_of(rows)
+            row_head = f"{heading} (c={rc})" if rc and rc != conns else heading
+            s_parts.append(f"| {row_head} | {cell(conduit, base)} "
                            f"| {cell(find(rows, 'ocelot'), base)} | {cell(find(rows, 'apisix'), base)} | {cell(find(rows, 'envoy'), base)} |")
             s_rendered += 1
         s_parts.append("")

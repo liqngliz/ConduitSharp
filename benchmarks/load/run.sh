@@ -566,7 +566,12 @@ s4_buffered() {
 }
 
 s6_logging() {
-    export S6_REQS=${S6_REQS:-30000} S6_CONNS=${S6_CONNS:-50}
+    # 256 concurrent, not the 50 this ran at for months: 50 barely loads a gateway, and the arms
+    # are compared against each other at whatever level is set. Deliberately its own knob rather
+    # than the global CONNS — s6 is a fixed-count ingestion test (send N, drain, count), not a
+    # duration throughput sweep — but the level now travels in the label so a table cannot
+    # attribute s6 rows to the concurrency the other scenarios ran at.
+    export S6_REQS=${S6_REQS:-30000} S6_CONNS=${S6_CONNS:-256}
     echo "== s6: logging — $S6_REQS fixed requests, ~4 KB JSON POST, to Loki ==" | tee -a "$RESULTS"
 
     ensure_payload_s6json
@@ -713,12 +718,12 @@ PY
     popd >/dev/null
     
     GATE_PLUGINS="bench-logging-file" GATE_CFG="scenario-logging-file.json" up scenario-logging-file
-    bench_logging_arm "s6 conduitsharp (capture plugin -> tmpfs -> promtail -> Loki)" gateway "$GATEWAY_URL"
+    bench_logging_arm "s6 conduitsharp (capture plugin -> tmpfs -> promtail -> Loki) [c=$S6_CONNS]" gateway "$GATEWAY_URL"
     "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
 
     reset_obs
     LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up scenario-logging
-    bench_logging_arm "s6 conduitsharp (capture plugin -> OTLP -> Loki)" gateway "$GATEWAY_URL"
+    bench_logging_arm "s6 conduitsharp (capture plugin -> OTLP -> Loki) [c=$S6_CONNS]" gateway "$GATEWAY_URL"
     "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
 
     # Tee instead of buffer: body-capture-streaming declares ReadsRequestBody=false, so the gateway
@@ -729,7 +734,7 @@ PY
     export CAPTURE_LOG_LEVEL=Information
     reset_obs
     LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up scenario-logging-streaming
-    bench_logging_arm "s6 conduitsharp (streaming tee -> OTLP -> Loki)" gateway "$GATEWAY_URL"
+    bench_logging_arm "s6 conduitsharp (streaming tee -> OTLP -> Loki) [c=$S6_CONNS]" gateway "$GATEWAY_URL"
     "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
     unset CAPTURE_LOG_LEVEL
 
@@ -740,7 +745,7 @@ PY
     export OTEL_CONF=otel-collector-filelog
     reset_obs
     LOG_LEVEL=Warning up scenario-logging-filelog
-    bench_logging_arm "s6 conduitsharp (capture plugin -> file -> collector filelog -> Loki)" gateway "$GATEWAY_URL"
+    bench_logging_arm "s6 conduitsharp (capture plugin -> file -> collector filelog -> Loki) [c=$S6_CONNS]" gateway "$GATEWAY_URL"
     "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
     unset OTEL_CONF
 
@@ -752,26 +757,26 @@ PY
     export OTEL_CONF=otel-collector-filelog-disk
     reset_obs
     LOG_LEVEL=Warning up scenario-logging-filelog-disk
-    bench_logging_arm "s6 conduitsharp (capture plugin -> file -> collector filelog -> Loki, disk sink)" gateway "$GATEWAY_URL"
+    bench_logging_arm "s6 conduitsharp (capture plugin -> file -> collector filelog -> Loki, disk sink) [c=$S6_CONNS]" gateway "$GATEWAY_URL"
     "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
     unset OTEL_CONF
 
     # --- Ocelot ---
     reset_obs
     OCELOT_CAPTURE_BODY=1 LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up_competitor ocelot "http://127.0.0.1:8083/bench"
-    bench_logging_arm "s6 ocelot (custom middleware -> OTLP -> Loki)" ocelot "$OCELOT_URL"
+    bench_logging_arm "s6 ocelot (custom middleware -> OTLP -> Loki) [c=$S6_CONNS]" ocelot "$OCELOT_URL"
     "${COMPOSE[@]}" stop ocelot >/dev/null 2>&1 || true
 
     # --- APISIX ---
     reset_obs
     up_apisix apisix-logging config-default
-    bench_logging_arm "s6 apisix (loki-logger plugin -> Loki)" apisix "$APISIX_URL"
+    bench_logging_arm "s6 apisix (loki-logger plugin -> Loki) [c=$S6_CONNS]" apisix "$APISIX_URL"
     "${COMPOSE[@]}" stop apisix >/dev/null 2>&1 || true
 
     # --- Envoy ---
     reset_obs
     up_envoy envoy-logging
-    bench_logging_arm "s6 envoy (tap filter -> Promtail -> Loki)" envoy "$ENVOY_URL"
+    bench_logging_arm "s6 envoy (tap filter -> Promtail -> Loki) [c=$S6_CONNS]" envoy "$ENVOY_URL"
     "${COMPOSE[@]}" stop envoy >/dev/null 2>&1 || true
 
     "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml stop loki otel-collector tempo promtail >/dev/null 2>&1 || true
