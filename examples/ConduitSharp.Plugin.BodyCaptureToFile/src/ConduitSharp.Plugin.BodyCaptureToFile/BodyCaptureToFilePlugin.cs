@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using ConduitSharp.Core.Routing;
 using ConduitSharp.Core.Pipeline;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System.Buffers;
 using System.Text;
 
@@ -21,11 +22,18 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
     // routes set different logPath the last ValidateConfig wins for all. One file per gateway is the
     // intended layout; per-route files would need the path carried per entry through the channel.
     private string _logPath = "/tmp/conduit-logs.json";
+    // Rolled at this size, keeping one .1 backup, so the sink is bounded at ~2x. Appending forever
+    // fills a real disk (ENOSPC kills the writer) or hits the size cap on a tmpfs mount.
+    private long _maxFileBytes = 128L * 1024 * 1024;
+    private readonly ILogger<BodyCaptureToFilePlugin>? _logger;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _writeTask;
 
-    public BodyCaptureToFilePlugin(IConfiguration configuration)
+    // logger is optional so the plugin still constructs where nothing registers one (the tests do
+    // exactly that); the gateway's DI supplies it in a real host.
+    public BodyCaptureToFilePlugin(IConfiguration configuration, ILogger<BodyCaptureToFilePlugin>? logger = null)
     {
+        _logger = logger;
         int capacity = configuration.GetValue<int>("OTEL_BLRP_MAX_QUEUE_SIZE", 2048);
         // DropWrite, not DropOldest: DropOldest silently evicts the queued entry whose byte[] is
         // rented from ArrayPool, and there is no drop callback to return it — that leaks pooled
@@ -55,6 +63,14 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
                 {
                     throw new InvalidOperationException("Plugin 'body-capture-file' config error: 'maxSize' must be a positive integer.");
                 }
+            }
+            if (config.TryGetProperty("maxFileBytes", out var maxFileProp))
+            {
+                if (maxFileProp.ValueKind != JsonValueKind.Number || !maxFileProp.TryGetInt64(out var maxFileBytes) || maxFileBytes <= 0)
+                {
+                    throw new InvalidOperationException("Plugin 'body-capture-file' config error: 'maxFileBytes' must be a positive integer.");
+                }
+                _maxFileBytes = maxFileBytes;
             }
         }
     }
@@ -120,8 +136,9 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
             
             while (await _channel.Reader.WaitToReadAsync(_cts.Token))
             {
-                using var stream = new FileStream(_logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite, 65536, useAsync: true);
-                
+                bool rollNow;
+                using (var stream = new FileStream(_logPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite, 65536, useAsync: true))
+                {
                 while (_channel.Reader.TryRead(out var entry))
                 {
                     try
@@ -164,12 +181,42 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
                         ArrayPool<byte>.Shared.Return(entry.buffer);
                     }
                 }
+
+                    rollNow = stream.Length >= _maxFileBytes;
+                }
+
+                if (rollNow)
+                {
+                    Roll();
+                }
             }
         }
         catch (OperationCanceledException) { }
-        // ponytail: writer dies silently on a hard IO error (e.g. bad logPath) because the plugin
-        // has no ILogger. Acceptable for a debug capture sink; inject ILogger to make it visible.
-        catch (Exception) { }
+        catch (Exception ex)
+        {
+            // This task is the only writer: once it dies, capture stops for the life of the process
+            // while every request still succeeds and the plugin still looks healthy. Silence here is
+            // the same failure shape as an over-sized OTLP batch — say so loudly instead.
+            _logger?.LogError(ex,
+                "BodyCaptureToFile writer stopped; request bodies are NO LONGER being captured to {LogPath}", _logPath);
+        }
+    }
+
+    // Single backup, overwritten: bounds the sink at ~2x _maxFileBytes with no scheduler and no
+    // dependency. A log shipper (promtail, the collector's filelog receiver) follows the rename.
+    private void Roll()
+    {
+        try
+        {
+            var backup = _logPath + ".1";
+            File.Delete(backup);
+            File.Move(_logPath, backup);
+        }
+        catch (Exception ex)
+        {
+            // A failed roll is not fatal — the next iteration reopens and keeps appending.
+            _logger?.LogError(ex, "BodyCaptureToFile could not roll {LogPath}; it will keep growing", _logPath);
+        }
     }
 
     public void Dispose()
