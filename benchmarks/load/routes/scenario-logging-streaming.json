@@ -1,0 +1,19 @@
+{
+  "routes": [
+    {
+      "id": "bench-logging-streaming",
+      "description": "Logging benchmark — body captured by teeing a bounded prefix off the streaming path (ReadsRequestBody=false), so the gateway never buffers the request body. Same sink and export path as scenario-logging.json: the only difference is tee vs buffer.",
+      "route": { "match": { "path": "/{**catch-all}" } },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": { "address": "http://upstream:8081" },
+          "node-1": { "address": "http://upstream:8082" }
+        }
+      },
+      "plugins": [
+        { "name": "custom", "variant": "body-capture-streaming", "config": { "maxSize": 4096 } }
+      ]
+    }
+  ]
+}

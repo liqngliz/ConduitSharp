@@ -1,0 +1,69 @@
+# Collector config for the "fully deferred OTLP" arm.
+#
+# The gateway does NOT export logs itself here: the body-capture-file plugin appends JSONL and
+# returns, and this collector tails that file, parses it, batches it and ships it to Loki — all
+# out-of-process, where a slow or rejecting sink cannot touch request latency. Contrast
+# otel-collector.yaml, where the gateway materializes every LogRecord inline on the request thread
+# and pushes over OTLP itself.
+#
+# Deliberately a separate file rather than a second pipeline in the shared config: filelog would
+# otherwise tail this path during every other s6 arm and pollute their counts.
+
+receivers:
+  # Still needed for traces/metrics, which keep coming over the wire.
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # A distinct filename from promtail's conduit.json — promtail tails exact paths, so nothing
+  # double-ships into Loki and inflates the ingestion count.
+  file_log:
+    include: [/var/log/conduit/capture.json]
+    start_at: beginning
+    # The plugin rolls to <path>.1; without this the receiver keeps reading the renamed inode and
+    # misses everything written to the fresh file.
+    poll_interval: 200ms
+    operators:
+      - type: json_parser
+
+processors:
+  # Same size cap as the OTLP config — a batch of captured bodies overruns Loki's 4 MiB gRPC
+  # receive limit long before the flush interval elapses. See otel-collector.yaml for the detail.
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 1000
+
+exporters:
+  otlp_grpc/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: ""
+
+  otlp_http/loki:
+    endpoint: http://loki:3100/otlp
+    timeout: 30s
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_grpc/tempo]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+    logs:
+      receivers: [file_log]
+      processors: [batch]
+      exporters: [otlp_http/loki]
