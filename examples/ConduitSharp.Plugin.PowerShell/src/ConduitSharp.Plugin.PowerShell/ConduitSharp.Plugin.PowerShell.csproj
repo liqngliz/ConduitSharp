@@ -28,6 +28,7 @@
   </ItemGroup>
   <ItemGroup>
     <!-- ProjectReference, not PackageReference: always builds against current source. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.10" />
     <ProjectReference Include="..\..\..\..\src\ConduitSharp.Core\ConduitSharp.Core.csproj" />
     <!--<PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.0" />-->
     <!-- Embeds the PowerShell 7 runtime — no system pwsh installation required. -->
