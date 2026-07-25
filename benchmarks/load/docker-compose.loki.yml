@@ -3,7 +3,13 @@ services:
     image: otel/opentelemetry-collector-contrib:latest
     command: ["--config=/etc/otel-collector.yaml"]
     volumes:
-      - ./observability/otel-collector.yaml:/etc/otel-collector.yaml
+      # Defaults to the OTLP-receiver config, so every existing arm is unchanged. The filelog arm
+      # sets OTEL_CONF=otel-collector-filelog to tail the capture file instead of receiving pushes.
+      - ./observability/${OTEL_CONF:-otel-collector}.yaml:/etc/otel-collector.yaml
+      # Read-only view of the capture file the gateway appends to (filelog arm only; harmless
+      # otherwise). Same named volume the gateway and promtail already share.
+      - envoy-logs:/tmp/envoy-logs:ro
+      - capture-disk:/var/log/conduit:ro
     ports:
       - "4317:4317"
       - "4318:4318"

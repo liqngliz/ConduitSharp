@@ -104,7 +104,7 @@ public sealed class JwtAuthConfigTests
             {
                 "signingKey": "{{ValidKey}}",
                 "requiredClaims": [
-                    { "claim": "roles", "anyOf": ["Finance.Admin"] },
+                    { "claim": "roles", "anyOf": ["Admin"] },
                     { "claim": "hd" }
                 ]
             }
@@ -113,7 +113,7 @@ public sealed class JwtAuthConfigTests
         Assert.NotNull(config.RequiredClaims);
         Assert.Equal(2, config.RequiredClaims!.Count);
         Assert.Equal("roles", config.RequiredClaims[0].Claim);
-        Assert.Equal(["Finance.Admin"], config.RequiredClaims[0].AnyOf);
+        Assert.Equal(["Admin"], config.RequiredClaims[0].AnyOf);
         Assert.Equal("hd", config.RequiredClaims[1].Claim);
     }
 

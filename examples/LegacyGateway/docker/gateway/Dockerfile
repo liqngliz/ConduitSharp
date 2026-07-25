@@ -11,7 +11,7 @@ RUN dotnet publish src/ConduitSharp.Host \
 RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo "linux-arm64" || echo "linux-x64") && \
     dotnet publish examples/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell \
     -c Release -r $RID --no-self-contained \
-    -o /app/plugins/finance-margin-report -v q
+    -o /app/plugins/erp-report -v q
 
 # Build BodyCapture plugin
 RUN dotnet publish examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture \

@@ -100,28 +100,36 @@ jobs:
           path: benchmarks/load/results.md
 
   matrix:
-    name: Phase 3 — structured comparison s1..s5 (validated protocol)
+    name: Phase 3 — structured comparison s1..s6 (validated protocol)
     if: github.event_name == 'release' || inputs.only == 'all' || inputs.only == 'matrix'
     runs-on: ubuntu-latest
     permissions:
-      contents: write # commits the rendered s1..s5 tables
-    # 10 throughput arms x (warmup + 3 x 60s reps) + the s3 ramp + rig-gate settling between
-    # arms lands around 60-90 min. The gate exits 1 if the runner never settles — a loud
-    # failure beats a quiet garbage number.
+      contents: write # commits the rendered s1..s6 tables
+    # 10 throughput arms x (warmup + 3 x 60s reps) + the s3 ramp + s6's 8 logging arms
+    # (each: fresh obs stack + warmup + fixed-count run + Loki drain, capped 120s x2) +
+    # rig-gate settling between arms lands around 75-110 min. The gate exits 1 if the runner
+    # never settles — a loud failure beats a quiet garbage number.
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
-      - name: Run s1..s5 (median of 3, gated, c=96)
+        with:
+          # Release events check out the tag (detached) — the rendered tables must land on
+          # main, matching the micro and compare jobs. Release tags are cut from main's tip.
+          ref: ${{ github.event_name == 'release' && 'main' || github.ref }}
+      - name: Run s1..s5 (median of 3, c=96) + s6 (single run, c=50 — logging + body capture)
         working-directory: benchmarks/load
         # GW_MEM=1g because s5's 512m tmpfs pages count against the same cgroup as the heap;
         # s1..s4 just get headroom they don't use. STEPS pins the s3 ramp to the two levels the
         # README documents. CONNS=96 is the validated operating point for 1 MB bodies — see
         # "What makes a run of this matrix valid" in benchmarks/load/README.md.
+        # REPS and CONNS reach s1..s5 only. s6 is a fixed-count ingestion test (send N, drain,
+        # count) with its own S6_CONNS=50 operating point and a single measured run per arm — its
+        # rows are labelled with both so a table cannot present them as this job's median at c=96.
         run: >
           DUR="${{ inputs.duration || '60s' }}" CONNS=96 REPS=3
           GW_MEM=1g TMPFS_SIZE=512m STEPS="96 384" PTF_DUR=60s
           ./run.sh matrix
-      - name: Publish the s1..s5 tables
+      - name: Publish the s1..s6 tables
         run: |
           RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           python3 benchmarks/load/readme-matrix.py benchmarks/load/runs.jsonl \
@@ -130,7 +138,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add benchmarks/load/README.md README.md
           git diff --cached --quiet || {
-            git commit -m "chore(bench): update s1..s5 matrix tables [skip ci]"
+            git commit -m "chore(bench): update s1..s6 matrix tables [skip ci]"
             BRANCH=$(git rev-parse --abbrev-ref HEAD)
             for i in 1 2 3; do git pull --rebase origin "$BRANCH" && git push origin "$BRANCH" && break || sleep 5; done
           }

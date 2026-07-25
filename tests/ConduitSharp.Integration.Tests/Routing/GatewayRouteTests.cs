@@ -59,7 +59,7 @@ public class GatewayRouteTests
             },
             {
               "id": "script-route",
-              "route": { "match": { "path": "/reports/margin" } },
+              "route": { "match": { "path": "/reports/summary" } },
               "cluster": null,
               "plugins": [
                 { "name": "custom", "variant": "power-shell", "order": 1, "config": {} }

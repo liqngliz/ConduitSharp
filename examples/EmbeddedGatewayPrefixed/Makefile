@@ -74,7 +74,7 @@ run: build
 	echo " curl http://localhost:7050/health"; \
 	echo " curl http://localhost:7050/api/inventory -H 'X-Api-Key: demo-api-key-conduitsharp-example'"; \
 	echo " curl http://localhost:7050/api/orders -H \"Authorization: Bearer $$JWT\""; \
-	echo " curl http://localhost:7050/finance/reports/margin -H \"Authorization: Bearer $$JWT\""; \
+	echo " curl http://localhost:7050/erp/reports/summary -H \"Authorization: Bearer $$JWT\""; \
 	echo ""; \
 	echo " Logs: $(LOGS)/   Stop: make stop"; \
 	echo ""
@@ -125,7 +125,7 @@ docker-up:
 	echo " curl http://localhost:7050/health"; \
 	echo " curl http://localhost:7050/api/inventory -H 'X-Api-Key: demo-api-key-conduitsharp-example'"; \
 	echo " curl http://localhost:7050/api/orders -H \"Authorization: Bearer $$JWT\""; \
-	echo " curl http://localhost:7050/finance/reports/margin -H \"Authorization: Bearer $$JWT\""; \
+	echo " curl http://localhost:7050/erp/reports/summary -H \"Authorization: Bearer $$JWT\""; \
 	echo ""; \
 	echo " Traces visible in Aspire Dashboard → Traces tab"; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -154,7 +154,7 @@ docker-grafana:
 	echo " curl http://localhost:7050/health"; \
 	echo " curl http://localhost:7050/api/inventory -H 'X-Api-Key: demo-api-key-conduitsharp-example'"; \
 	echo " curl http://localhost:7050/api/orders -H \"Authorization: Bearer $$JWT\""; \
-	echo " curl http://localhost:7050/finance/reports/margin -H \"Authorization: Bearer $$JWT\""; \
+	echo " curl http://localhost:7050/erp/reports/summary -H \"Authorization: Bearer $$JWT\""; \
 	echo ""; \
 	echo " Signals: Traces → Tempo  |  Metrics → Prometheus  |  Logs → Loki"; \
 	echo " Stop: make docker-grafana-down"; \

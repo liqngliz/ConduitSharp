@@ -93,6 +93,55 @@ To turn capture down or off without touching `routes.json`:
 }
 ```
 
+### Size the OTLP batch against your sink's message limit
+
+Body capture makes every log record carry a multi-KB payload, so a batching exporter reaches its
+sink's **maximum message size** far sooner than ordinary logging does. Get this wrong and capture
+fails *silently*: the collector keeps accepting records, the gateway looks healthy, and nothing
+reaches the log backend.
+
+Do the arithmetic before enabling capture in production:
+
+```
+bytes per push  ≈  maxSize  ×  records per batch
+```
+
+With `maxSize: 4096` and an OpenTelemetry Collector `batch` processor left on its defaults
+(`timeout` only, **no size cap**), a busy route accumulates a whole flush interval of records into
+one push — measured on this repo's benchmark rig at **~15.9 MB**. Grafana Loki's gRPC receiver
+caps a message at **4 MiB**, so every push was rejected:
+
+```
+HTTP 503, Message=rpc error: code = ResourceExhausted
+desc = grpc: received message larger than max (15894276 vs. 4194304)
+```
+
+The exporter then retries **the same oversized batch** forever. It never shrinks, so it never
+succeeds — only **3.4%** of captured bodies reached Loki, and the only trace of the problem was in
+the collector's own log. Cap the batch on the sender, and raise the ceiling on the sink:
+
+```yaml
+# otel-collector.yaml — bound records per push, not just the flush interval
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 500
+    send_batch_max_size: 1000
+
+# loki.yaml — headroom so a burst of larger bodies degrades instead of deadlocking
+server:
+  grpc_server_max_recv_msg_size: 16777216   # 16 MiB
+  grpc_server_max_send_msg_size: 16777216
+```
+
+Both sides matter: the cap bounds the common case, the raised limit bounds the tail.
+
+**To detect it**, compare what your sink *received* against what it *stored* — they diverge under
+this failure. Watch for retries in the collector log (`Exporting failed. Will retry`); a steadily
+climbing received-count with a flat stored-count is the same oversized batch being re-sent, not
+traffic. Other sinks have their own ceiling (Kafka `message.max.bytes`, gRPC's own 4 MiB default);
+the arithmetic above is what changes, not the failure mode.
+
 ## Security
 
 Request bodies routinely carry credentials, tokens, and personal data. Both plugins log them verbatim — there is no redaction. Treat any route with body capture enabled as exporting its payloads to your log backend, and scope retention and access accordingly.

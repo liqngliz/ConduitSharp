@@ -303,12 +303,43 @@ public static class GatewayApplicationBuilderExtensions
         var readsBody = pluginChain.Any(p => p.plugin.ReadsRequestBody);
         var canRetry  = route.Cluster is not null && route.Retry is { MaxAttempts: > 1 };
 
+        // Streaming-path plugins that capture (the body-capture tee) hold memory the body buffer
+        // never accounts for. Bounded per request, but it multiplies by concurrency with nothing to
+        // shed it — so reserve it against the same budget the buffered path uses, and 503 at the
+        // same ceiling. Summed once here because plugins are singletons and route config is fixed
+        // until the next reload rebuilds this chain.
+        var captureBytes = pluginChain.Sum(p => (long)p.plugin.CaptureMemoryBytes(p.config.Config));
+
         if (route.StreamOnly || (!readsBody && !canRetry))
         {
             chain.Use(async (context, next) =>
             {
                 SetMaxRequestBodySize(context, route, gatewayOptions);
-                await next(context);
+
+                if (captureBytes <= 0)
+                {
+                    await next(context);
+                    return;
+                }
+
+                var budget = context.RequestServices.GetRequiredService<Middleware.RequestBodyBudget>();
+                if (!budget.TryReserve(captureBytes))
+                {
+                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    await context.Response.WriteAsync("The gateway is at capacity capturing request bodies. Retry shortly.");
+                    return;
+                }
+
+                try
+                {
+                    await next(context);
+                }
+                finally
+                {
+                    // Released on every path — an abort or an upstream throw must not leak the
+                    // reservation, or the ceiling ratchets down until the gateway 503s permanently.
+                    budget.Release(captureBytes);
+                }
             });
         }
         else

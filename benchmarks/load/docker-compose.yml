@@ -35,12 +35,21 @@ services:
       Gateway__RequestLimits__SpillDirectory: ${SPILL_DIR:-/spill}
       DOTNET_gcServer: "1"
       Logging__LogLevel__Default: ${LOG_LEVEL:-Warning}
+      # body-capture-streaming delegates to ASP.NET's HttpLogging, which emits captured bodies at
+      # Information — a level the Warning default above silently filters, leaving the arm fast and
+      # empty with nothing logged and no error. The buffering plugin is unaffected either way (it
+      # logs AT its configured level), so the default here keeps every existing arm identical.
+      Logging__LogLevel__ConduitSharp.Plugin.BodyCapture: ${CAPTURE_LOG_LEVEL:-Warning}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
       OTEL_RESOURCE_ATTRIBUTES: service.name=conduitsharp-gateway
     volumes:
       - ./routes:/config:ro
       - ./plugins:/app/plugins:ro
       - envoy-logs:/tmp/envoy-logs
+      # Disk-backed capture sink (default local driver), so the filelog arm can be measured
+      # writing to real storage instead of RAM. The plugin never fsyncs, so appends land in
+      # page cache and return at RAM speed while the kernel flushes lazily.
+      - capture-disk:/var/log/conduit
     # RAM-backed spill for s5, sized explicitly. Three limits can stop a tmpfs spill and only one
     # of them is graceful, so they must be ordered:
     #   MaxTotalBufferedBodyBytes (503) < tmpfs size= (ENOSPC -> 500) < mem_limit (OOM-kill)
@@ -66,6 +75,12 @@ services:
       # rather than skip it. See ocelot/RetryQoSProvider.cs for what it does and does not buy.
       OCELOT_RETRY: ${OCELOT_RETRY:-0}
       OCELOT_CAPTURE_BODY: ${OCELOT_CAPTURE_BODY:-0}
+      # Same log-export queue budget the gateway gets. Both are .NET apps on the same OpenTelemetry
+      # SDK, so leaving this unset handed Ocelot the 2048-record default against the gateway's
+      # 20000 — a 10x smaller buffer. At s6's 30k requests it overflowed and dropped 16% of its
+      # records, which read as "Ocelot logs worse" when it was really "Ocelot got a smaller bucket",
+      # and inflated its QPS because dropped work is cheap. Equal knobs or the comparison is fiction.
+      OTEL_BLRP_MAX_QUEUE_SIZE: 20000
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-}
     ports:
       - "127.0.0.1:8083:8080"
@@ -118,6 +133,9 @@ services:
       - ./payload:/payload:ro
 
 volumes:
+  # Disk-backed sink for the filelog arm — plain local driver, i.e. real storage, not tmpfs.
+  capture-disk:
+
   # Disk-backed spill for the gateway's buffering overflow tier. A named volume rather than
   # the container's /tmp on purpose: /tmp is tmpfs on many images, and spilling to RAM would
   # defeat the whole point of having a disk tier.

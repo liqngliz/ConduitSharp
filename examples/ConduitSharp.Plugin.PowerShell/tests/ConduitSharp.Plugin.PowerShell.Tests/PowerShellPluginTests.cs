@@ -34,15 +34,15 @@ public sealed class PowerShellPluginTests
     }
 
     [Fact]
-    public async Task EmbeddedRuntime_CanRunMarginReportScript()
+    public async Task EmbeddedRuntime_CanRunErpReportScript()
     {
-        // Runs the actual Get-MarginReport.ps1 content through the embedded runtime
+        // Runs the actual Get-ErpReport.ps1 content through the embedded runtime
         // and confirms it returns valid JSON with the expected fields.
         var script = """
-            $margins = @(
-                [PSCustomObject]@{ product = "Widget A"; margin = 0.42 }
+            $values = @(
+                [PSCustomObject]@{ product = "Widget A"; value = 0.42 }
             )
-            [PSCustomObject]@{ margins = $margins; averageMargin = 0.42 } | ConvertTo-Json -Depth 5
+            [PSCustomObject]@{ values = $values; averageValue = 0.42 } | ConvertTo-Json -Depth 5
             """;
 
         string output = "";
@@ -56,7 +56,7 @@ public sealed class PowerShellPluginTests
             output = string.Join("", results.Select(r => r?.ToString() ?? ""));
         });
 
-        Assert.Contains("averageMargin", output);
+        Assert.Contains("averageValue", output);
         Assert.Contains("Widget A", output);
     }
 

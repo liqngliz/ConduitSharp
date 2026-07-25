@@ -1,0 +1,46 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  # Weekly full scan so newly-added CodeQL queries run against unchanged code too.
+  schedule:
+    - cron: '0 3 * * 1'   # Mondays 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    name: Analyze (C#)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload results to the Security tab
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pin the SDK so CodeQL's manual build uses .NET 10, not the runner default.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: csharp
+          build-mode: manual
+
+      # build-mode: manual — CodeQL traces this build to extract the C# database.
+      # Plain Release build (no TreatWarningsAsErrors): the analyzer/audit gate is CI's
+      # job in ci.yml; here a warning must not fail the security scan's build.
+      - name: Build
+        run: |
+          dotnet restore
+          dotnet build --no-restore -c Release
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:csharp"

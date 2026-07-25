@@ -16,15 +16,15 @@ Enable the plugin on any route in your `routes.json` by adding `"name": "custom"
 
 ```json
 {
-  "id": "finance-margin-report",
+  "id": "erp-report",
   "route": {
-    "match": { "path": "/finance/reports/margin", "methods": ["GET"] }
+    "match": { "path": "/erp/reports/summary", "methods": ["GET"] }
   },
   "cluster": null,
   "plugins": [
     { "name": "jwt-auth",   "order": 1, "config": { "signingKey": "..." } },
     { "name": "rate-limit", "order": 2, "config": { "windowSeconds": 3600, "maxRequests": 100 } },
-    { "name": "custom", "variant": "power-shell", "order": 99, "config": { "scriptPath": "scripts/Get-MarginReport.ps1" } }
+    { "name": "custom", "variant": "power-shell", "order": 99, "config": { "scriptPath": "scripts/Get-ErpReport.ps1" } }
   ]
 }
 ```

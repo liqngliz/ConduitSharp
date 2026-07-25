@@ -5,6 +5,93 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-07-25
+
+First stable release — promotes `1.0.0-rc.1` to GA.
+
+ConduitSharp is an internal integration gateway built on YARP: routes, clusters, retries, circuit
+breakers and plugin chains are declared in `routes.json` and compiled into a separate ASP.NET
+pipeline per route. Bodies stream by default — one is buffered only when something consumes the
+buffer (a retry, or a body-reading plugin) — and buffering is bounded per request (413) and
+gateway-wide (503 load-shed) so a burst of large uploads degrades instead of exhausting memory.
+
+Upgrading from `1.0.0-rc.1` needs no changes. `IPipelinePlugin` gains one member,
+`CaptureMemoryBytes(JsonElement)`, with a default implementation — existing plugins compile and
+run unmodified.
+
+Ships as a NuGet library (`ConduitSharp.Gateway.AspNetCore`), a `dotnet tool`, and a multi-arch
+container image. Plugin packages for PowerShell and sliding-window rate limiting publish alongside.
+
+### Added
+- **Streaming-path capture memory is now budgeted** — `IPipelinePlugin` gains
+  `CaptureMemoryBytes(JsonElement config)`, defaulting to `0`. A plugin that captures on the
+  streaming path holds a bounded prefix per request, but that multiplies by concurrency and never
+  touched `Gateway:RequestLimits:MaxTotalBufferedBodyBytes` — so nothing shed load as it grew, while
+  a *buffering* plugin, whose bytes are budgeted, would already be returning 503. Declaring a
+  non-zero value puts that memory under the same ceiling and the same 503. Plugins cannot reserve
+  directly (the budget type is internal to the gateway assembly), hence a declared footprint read
+  once at chain-compile time; it is config-aware because `maxSize` is per-route while plugins are
+  singletons. **Source- and binary-compatible** for existing plugins via the default implementation.
+- **Rotation for the file body-capture plugin** — `maxFileBytes` (default 128 MiB) rolls the sink
+  keeping one backup, bounding it at ~2x. Appending forever hit the mount's size cap on tmpfs, or
+  filled the volume and killed the writer on ENOSPC on real disk.
+- **File body-capture example plugin** (`ConduitSharp.Plugin.BodyCaptureToFile`) — zero-allocation
+  request-body capture to a JSONL sink via a bounded channel + pooled buffers (used by the s6
+  logging benchmark; not published to NuGet).
+- **PowerShell plugin cancellation + timeout** — a hung `.ps1` no longer blocks its thread; the
+  script observes `RequestAborted` and a configurable `timeoutMs` (default 30s, `504` on timeout).
+
+### Fixed
+- **The file body-capture writer no longer dies silently.** It is the only writer, so a single IO
+  error ended capture for the life of the process while every request still returned 200. It now
+  takes an optional `ILogger` and reports the failure (optional so the plugin still constructs where
+  nothing registers one).
+- **ArrayPool leak in the file body-capture plugin** — `DropOldest` silently evicted queued
+  entries without returning their pooled buffer under backpressure; switched to `DropWrite` with
+  guaranteed buffer return.
+- **Observability logging cost** — `IncludeScopes` disabled on the OpenTelemetry logging path
+  (per-request serialization with no added signal); body-capture plugin log level is configurable.
+
+### Performance
+- **Body-capture reads its bounded prefix from a pooled buffer** — the `maxSize` path allocated a
+  `char[maxSize]` plus a `StreamReader` per request to read a prefix whose size was already known.
+  Truncation behaviour is unchanged.
+
+### Benchmarks
+Not shipped code, but the numbers published from it were wrong in ways worth recording:
+- **s6 logging ingestion was capped by batch size, not by any gateway.** The OpenTelemetry Collector
+  batched a whole flush interval of body-capture records into one ~15.9 MB push against Loki's 4 MiB
+  gRPC receive limit; Loki answered 503 `ResourceExhausted` and the exporter retried the same
+  oversized batch indefinitely. That one cause produced both published symptoms — ~3% ingestion and
+  300–400% "ingestion" (the distributor counting retries). Records per push are now bounded and the
+  receive ceiling raised; every arm measures 100%.
+- **s6 posted 64 KB of random binary** and logged it as the log line. Loki's OTLP endpoint silently
+  rejects invalid UTF-8, so OTLP arms "lost" records while file arms — writing bytes blindly —
+  ingested everything. The payload is now a ~3 KB JSON body, which is what body capture actually
+  sees.
+- **Memory is reported with tmpfs counted.** The sampler polled every 2s while an arm lasted about
+  one, leaving the column blank; it now reads the cgroup's own peak. tmpfs residency is reported
+  alongside it, because tmpfs is RAM — a file-sink arm holds ~164 MiB the container's RSS never
+  shows, which made the fastest arm look like the cheapest.
+- **Ocelot now gets the gateway's `OTEL_BLRP_MAX_QUEUE_SIZE`.** Unset, it ran the SDK's 2048 default
+  against the gateway's 20000 and dropped 16% of its records at 30k requests — which read as "Ocelot
+  logs worse" when it was "Ocelot got a 10x smaller buffer".
+- **New s6 arms**: the streaming tee (the plugin the docs describe, which s6 had never benchmarked),
+  export deferred to the collector's `file_log` receiver, and that same sink on real disk rather
+  than tmpfs.
+- **Every s6 row now states the protocol it was measured under.** The published table named a
+  concurrency the rows never ran at (the renderer took the first `c=` it found anywhere in the
+  document, so s1's 96 was printed over s6's 50) and headed single runs with `QPS (med/?)`, implying
+  a median. s6 labels now carry their concurrency, the renderer resolves it per scenario, and a
+  single measured run is labelled as one. Same drift each time — the label, not the measurement.
+
+What that campaign turned up, recorded because the old tables cannot be un-read: the ingestion
+ceiling was the collector's batch size rather than any gateway; the payload's binary content was
+being silently rejected by the sink; the memory column omitted tmpfs, which is RAM and where the
+file arms hold ~164 MiB; and a competitor was running with a 10x smaller queue than ours. Each
+error flattered ConduitSharp. The measurements were mostly sound — the labels were what needed
+auditing.
+
 ## [1.0.0-rc.1] — 2026-07-19
 
 ### Fixed

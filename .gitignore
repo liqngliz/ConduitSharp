@@ -41,3 +41,6 @@ BenchmarkDotNet.Artifacts/
 
 # Generated per-run by CertificateMaterial.Generate — throwaway test CA
 tests/ConduitSharp.Mtls.E2E.Tests/assets/certs/
+/graph.json
+/lifeblood_context.md
+*.bak

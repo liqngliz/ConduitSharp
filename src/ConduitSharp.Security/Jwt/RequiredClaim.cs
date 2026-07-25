@@ -15,9 +15,9 @@ namespace ConduitSharp.Security.Jwt;
 /// <example>
 /// <code>
 /// "requiredClaims": [
-///   { "claim": "roles", "anyOf": ["Finance.Reader", "Finance.Admin"] },
+///   { "claim": "roles", "anyOf": ["Read", "Admin"] },
 ///   { "claim": "scp", "allOf": ["reports.read"], "delimiter": " " },
-///   { "claim": "realm_access.roles", "anyOf": ["finance"] },
+///   { "claim": "realm_access.roles", "anyOf": ["erp"] },
 ///   { "claim": "email_verified", "equals": "true" },
 ///   { "claim": "hd" }
 /// ]

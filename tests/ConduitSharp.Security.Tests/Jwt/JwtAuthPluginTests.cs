@@ -206,7 +206,7 @@ public sealed class JwtAuthPluginTests
     {
         var config = DefaultConfig with
         {
-            RequiredClaims = [new RequiredClaim { Claim = "roles", AnyOf = ["Finance.Admin"] }]
+            RequiredClaims = [new RequiredClaim { Claim = "roles", AnyOf = ["Admin"] }]
         };
         var token   = JwtTokenBuilder.ValidToken(extraClaims: new() { ["roles"] = new[] { "Other" } });
         var context = HttpContextBuilder.WithAuth($"Bearer {token}");
@@ -221,9 +221,9 @@ public sealed class JwtAuthPluginTests
     {
         var config = DefaultConfig with
         {
-            RequiredClaims = [new RequiredClaim { Claim = "roles", AnyOf = ["Finance.Admin"] }]
+            RequiredClaims = [new RequiredClaim { Claim = "roles", AnyOf = ["Admin"] }]
         };
-        var token             = JwtTokenBuilder.ValidToken(extraClaims: new() { ["roles"] = new[] { "Finance.Admin" } });
+        var token             = JwtTokenBuilder.ValidToken(extraClaims: new() { ["roles"] = new[] { "Admin" } });
         var context = HttpContextBuilder.WithAuth($"Bearer {token}");
         var (next, wasCalled) = HttpContextBuilder.TrackingNext();
 

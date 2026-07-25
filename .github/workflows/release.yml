@@ -169,8 +169,10 @@ jobs:
             src/ConduitSharp.Gateway.AspNetCore.Swagger \
             src/ConduitSharp.Host \
             examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture \
+            examples/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell \
             examples/ConduitSharp.Cache.RedisProtocol/src/ConduitSharp.Cache.RedisProtocol \
             examples/ConduitSharp.RateLimit.RedisProtocol/src/ConduitSharp.RateLimit.RedisProtocol \
+            examples/ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow \
           ; do
             dotnet pack "$proj" -c Release -o nupkg
           done

@@ -67,8 +67,8 @@ curl http://localhost:5050/health
 curl http://localhost:5050/api/inventory \
      -H "X-Api-Key: demo-api-key-conduitsharp-example"
 
-# Finance report — JWT (token printed by make docker-up)
-curl http://localhost:5050/finance/reports/margin \
+# ERP report — JWT (token printed by make docker-up)
+curl http://localhost:5050/erp/reports/summary \
      -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -86,8 +86,7 @@ Pick by how you deploy. The embedded-library and Docker paths fit immutable-infr
 Host the gateway *inside your own ASP.NET Core app* — the YARP `AddReverseProxy()` / `MapReverseProxy()` model. Plugins arrive as NuGet packages registered in DI, so the whole deployment is one immutable, versioned build.
 
 ```bash
-# --prerelease while 1.0.0-rc is the latest; drop it once a stable 1.0.0 ships
-dotnet add package ConduitSharp.Gateway.AspNetCore --prerelease
+dotnet add package ConduitSharp.Gateway.AspNetCore
 ```
 
 ```csharp
@@ -118,8 +117,7 @@ To ship plugins the immutable way, build your own image `FROM` this one and `COP
 ### dotnet tool
 
 ```bash
-# --prerelease while 1.0.0-rc is the latest; drop it once a stable 1.0.0 ships
-dotnet tool install -g ConduitSharp.Gateway --prerelease
+dotnet tool install -g ConduitSharp.Gateway
 conduitsharp
 ```
 
@@ -165,6 +163,39 @@ A route has two halves, and the split is deliberate:
 
 Write it all in camelCase; YARP's records bind case-insensitively. The full field reference — load balancing policies, retry/circuit-breaker fields, path & query syntax — is in the [in-depth docs](#-documentation).
 
+### JWKS-based authorization (Auth0 · Microsoft Entra ID / Azure AD · Google · Keycloak · Okta)
+
+The `jwks-jwt-auth` plugin validates RS/ES Bearer JWTs against **any** OIDC provider's JWKS endpoint and enforces authorization with `requiredClaims` — no code, just config. Point `jwksUri` / `issuer` / `audience` at your provider and match on whatever claim it emits (`roles`, `groups`, `scp`, `realm_access.roles`, …); it works with **Auth0, Microsoft Entra ID (Azure AD), Google, Keycloak, Okta**, and any OIDC-compliant issuer.
+
+**Example — Microsoft Entra ID (Azure AD).** The three connection fields are the same whether you gate on **app roles** or **security groups**; only the claim differs.
+
+```json
+{
+  "name": "jwks-jwt-auth",
+  "order": 1,
+  "config": {
+    "jwksUri":  "https://login.microsoftonline.com/{tenantId}/discovery/v2.0/keys",
+    "issuer":   "https://login.microsoftonline.com/{tenantId}/v2.0",
+    "audience": "{api-app-client-id}",
+    "requiredClaims": [
+      { "claim": "roles", "anyOf": ["Admin", "Read"] }
+    ]
+  }
+}
+```
+
+- **App roles** (above — recommended). Gate on the `roles` claim. Define `appRoles` in the API app registration, then assign users/groups in the Enterprise App; Entra emits `roles` **by default** as readable value strings (e.g. `"Admin"`). No size limit.
+- **Security groups.** Swap the rule for `{ "claim": "groups", "anyOf": ["<group-object-id-guid>"] }`. Requires `"groupMembershipClaims": "SecurityGroup"` in the app manifest; values are group **object-id GUIDs** (on-prem AD groups synced via Entra Connect appear as their Entra object IDs). Caveat: a user in **>200 groups** gets no `groups` claim at all — Entra emits a Graph pointer the plugin can't resolve — so prefer app roles at that scale.
+
+`anyOf` = member of any listed value (403 otherwise); use `allOf` to require every one. The endpoints above are v2; a v1-token app uses `https://sts.windows.net/{tenantId}/` as the issuer.
+
+**Other providers** use the same shape — only the `jwksUri`/`issuer` and the claim name change. The `claim` field is looked up as a literal name first, then as a dot-path into nested objects, so provider-specific claims work directly: Keycloak `realm_access.roles`, Auth0 namespaced `https://your-app.example.com/roles`, or a space-delimited OAuth `scp`/`scope` (add `"delimiter": " "`). JWKS endpoints: Auth0 `https://TENANT.auth0.com/.well-known/jwks.json`, Google `https://www.googleapis.com/oauth2/v3/certs`, Keycloak `https://HOST/realms/REALM/protocol/openid-connect/certs`.
+
+---
+
+## 🔌 Plugins
+Plugins implement one interface (`IPipelinePlugin`) and can be written in **C#, F#, VB.NET, or PowerShell.**
+
 ### Built-in plugins
 
 | Name | What it does |
@@ -178,7 +209,8 @@ Write it all in camelCase; YARP's records bind case-insensitively. The full fiel
 | `header-transform` | Add, remove, or rewrite request headers before forwarding upstream |
 | `http-proxy` | Not a plugin — names where in the chain YARP forwards upstream. Omit it and the forward is appended at the end of the chain |
 
-### Shipped example plugins
+
+## Shipped example plugins
 
 Runnable extensions under [examples/](examples/) — copy the source as a template, or reference the NuGet package directly:
 
@@ -190,11 +222,7 @@ Runnable extensions under [examples/](examples/) — copy the source as a templa
 | [ConduitSharp.RateLimit.RedisProtocol](examples/ConduitSharp.RateLimit.RedisProtocol) | `IRateLimitStore` seam | `ConduitSharp.RateLimit.RedisProtocol` | Swaps the in-memory `rate-limit` store for Redis/Valkey — shared quota across instances |
 | [ConduitSharp.RateLimit.SlidingWindow](examples/ConduitSharp.RateLimit.SlidingWindow) | `IRateLimiter` seam | `ConduitSharp.RateLimit.SlidingWindow` | Swaps the fixed-window *algorithm* for a sliding log — refuses the 2x burst a fixed window allows across its boundary. The algorithm and the store are separate seams |
 
----
-
-## 🔌 Writing a plugin
-
-Plugins implement one interface (`IPipelinePlugin`) and can be written in **C#, F#, VB.NET, or PowerShell** — not Lua.
+## Writing a custom plugin
 
 | Language | How |
 |---|---|
@@ -241,6 +269,213 @@ A ready-to-use build of this pattern lives at [examples/ConduitSharp.Plugin.Powe
 
 ---
 
+
+
+## ⚖️ Compared to alternatives
+
+ConduitSharp can replace an existing gateway or sit behind one. Against Ocelot it competes directly. Rather than competing with YARP, it builds on top of it as the forwarding engine. Against Kong, APISIX, or Azure APIM it complements — those handle external edge traffic while ConduitSharp handles legacy workload execution and internal observability at the layer below.
+
+|  | ConduitSharp | Ocelot | YARP | Envoy | APISIX |
+| --- | --- | --- | --- | --- | --- |
+| **Language** | C# / .NET | C# / .NET | C# / .NET | C++ | Lua / Nginx |
+| **Plugin language** | **C# / F# / VB.NET / PowerShell**<br/> + ASP.NET middleware | None | ASP.NET middleware | C++ / Lua / WASM | Lua |
+| **PowerShell script execution** | ✅ Plugin | ❌ | ❌ | ❌ | ❌ |
+| **Per-route plugin pipeline** | ✅ | ⚠️ per-route hook <br/> (DelegatingHandler, code-registered) | ❌ | ✅ | ✅ |
+| **Drop-in external plugins** | ✅ | ❌ | ❌ | ✅ WASM | ✅ Lua |
+| **Plugin contract as NuGet** | ✅ | ❌ | ❌ | — | — |
+| **Unit-testable without HTTP** | ✅ | ❌ | ❌ | — | — |
+| **OpenTelemetry (traces + metrics)** | ✅ Built-in | ❌ | ✅ | ✅ Native | ✅ Plugin |
+| **Forwarding engine** | **YARP native** | Custom | YARP native | Envoy native | Nginx |
+| **Windows Service / IIS native** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Config format** | JSON file | JSON file | JSON / YAML | YAML / xDS | YAML / etcd |
+
+---
+
+
+## 📊 Benchmarks
+
+<!-- BENCH:START -->
+### Throughput — relative, same rig, sequential runs
+
+#### 125 connections
+
+```mermaid
+xychart-beta
+    title "Relative QPS at 125 connections — higher is faster"
+    x-axis ["ConduitSharp", "APISIX", "Ocelot", "Envoy", "no gateway (direct)"]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 5.16
+    bar [1.00, 1.04, 0.70, 0.82, 4.49]
+```
+
+| gateway | QPS (relative) | p50 | p99 |
+|---|---:|---:|---:|
+| ConduitSharp | 1.00× | 5.29 ms | 20.28 ms |
+| APISIX | 1.04× | 5.47 ms | 14.93 ms |
+| Ocelot | 0.70× | 7.82 ms | 24.27 ms |
+| Envoy | 0.82× | 6.94 ms | 15.09 ms |
+| *(no gateway — direct to nginx)* | 4.49× | 1.17 ms | 4.98 ms |
+
+#### 512 connections
+
+```mermaid
+xychart-beta
+    title "Relative QPS at 512 connections — higher is faster"
+    x-axis ["ConduitSharp", "APISIX", "Ocelot", "Envoy"]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.15
+    bar [1.00, 1.00, 0.69, 0.77]
+```
+
+| gateway | QPS (relative) | p50 | p99 |
+|---|---:|---:|---:|
+| ConduitSharp | 1.00× | 21.35 ms | 74.43 ms |
+| APISIX | 1.00× | 22.75 ms | 58.66 ms |
+| Ocelot | 0.69× | 33.04 ms | 91.43 ms |
+| Envoy | 0.77× | 30.12 ms | 53.76 ms |
+
+Pure proxy, 1 KB upstream response, bombardier, gateways benched sequentially on the
+identical rig. **Measured on shared GitHub Actions runners (4 vCPU) — only ratios are
+meaningful there; absolute QPS on shared CI is noise.** Raw figures for this exact run:
+[CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30165314699). Method & how to reproduce on pinned hardware:
+[benchmarks/load](benchmarks/load/README.md).
+<!-- BENCH:END -->
+
+<!-- BENCH-MICRO:START -->
+### Head-to-head microbenchmarks — ConduitSharp vs Ocelot (.NET gateways only)
+
+#### Route-table scaling — request hits the last of N routes
+
+```mermaid
+xychart-beta
+    title "Allocated per request, N routes configured — lower is better"
+    x-axis ["ConduitSharp N=1", "ConduitSharp N=500", "Ocelot N=1", "Ocelot N=500"]
+    y-axis "KB / request" 0 --> 181.94
+    bar [14.34, 14.28, 25.92, 158.21]
+```
+
+| Method     | Gateway      | RouteCount | Mean     | Error      | StdDev   | Gen0    | Allocated |
+|----------- |------------- |----------- |---------:|-----------:|---------:|--------:|----------:|
+| **ProxiedGet** | **ConduitSharp** | **1**          | **234.0 μs** |   **152.7 μs** |  **8.37 μs** |  **1.4648** |  **14.34 KB** |
+| **ProxiedGet** | **ConduitSharp** | **500**        | **218.0 μs** |   **491.3 μs** | **26.93 μs** |  **1.4648** |  **14.28 KB** |
+| **ProxiedGet** | **Ocelot**       | **1**          | **366.8 μs** |   **707.0 μs** | **38.75 μs** |  **1.9531** |  **25.92 KB** |
+| **ProxiedGet** | **Ocelot**       | **500**        | **463.4 μs** |   **248.9 μs** | **13.64 μs** | **15.6250** | **158.21 KB** |
+
+ConduitSharp rides ASP.NET endpoint routing's DFA: flat time and allocations at any
+route count. Ocelot's route finder scans templates per request — cost grows with N.
+
+#### Policy chain — JWT auth (HS256) + rate limit on both sides
+
+```mermaid
+xychart-beta
+    title "Allocated per request — JWT + rate limit, lower is better"
+    x-axis ["ConduitSharp", "Ocelot"]
+    y-axis "KB / request" 0 --> 43.26
+    bar [21.01, 37.62]
+```
+
+| Method    | Gateway      | Mean     | Error    | StdDev   | Gen0   | Allocated |
+|---------- |------------- |---------:|---------:|---------:|-------:|----------:|
+| **AuthedGet** | **ConduitSharp** | **286.2 μs** | **457.1 μs** | **25.05 μs** | **1.9531** |  **21.01 KB** |
+| **AuthedGet** | **Ocelot**       | **498.7 μs** | **658.0 μs** | **36.07 μs** | **2.9297** |  **37.62 KB** |
+
+#### Upload bodies — POST (streamed) and PUT on a retry route (buffered)
+
+```mermaid
+xychart-beta
+    title "Allocated per request, 10 MB body — lower is better"
+    x-axis ["ConduitSharp", "ConduitSharp-retry", "Ocelot", "Ocelot-retry"]
+    y-axis "KB / request" 0 --> 23357.89
+    bar [10043.79, 10118.84, 10062.00, 20311.21]
+```
+
+| Method   | Gateway            | BodyKB | Mean        | Error       | StdDev      | Gen0     | Gen1     | Gen2     | Allocated   |
+|--------- |------------------- |------- |------------:|------------:|------------:|---------:|---------:|---------:|------------:|
+| **PostBody** | **ConduitSharp**       | **1**      |    **356.6 μs** |    **228.2 μs** |    **12.51 μs** |   **0.9766** |        **-** |        **-** |    **16.08 KB** |
+| **PostBody** | **ConduitSharp**       | **10240**  | **15,659.0 μs** |  **4,789.6 μs** |   **262.54 μs** | **343.7500** | **281.2500** |        **-** | **10043.79 KB** |
+| **PostBody** | **ConduitSharp-retry** | **1**      |    **268.6 μs** |    **450.9 μs** |    **24.72 μs** |   **1.4648** |        **-** |        **-** |    **17.86 KB** |
+| **PostBody** | **ConduitSharp-retry** | **10240**  | **23,840.6 μs** | **25,545.6 μs** | **1,400.24 μs** | **312.5000** | **281.2500** |        **-** | **10118.84 KB** |
+| **PostBody** | **Ocelot**             | **1**      |    **427.5 μs** |    **223.3 μs** |    **12.24 μs** |   **2.9297** |        **-** |        **-** |    **29.26 KB** |
+| **PostBody** | **Ocelot**             | **10240**  | **15,299.4 μs** |  **4,404.7 μs** |   **241.44 μs** | **312.5000** | **250.0000** |        **-** |    **10062 KB** |
+| **PostBody** | **Ocelot-retry**       | **1**      |    **477.8 μs** |  **1,229.1 μs** |    **67.37 μs** |   **3.9063** |        **-** |        **-** |    **41.42 KB** |
+| **PostBody** | **Ocelot-retry**       | **10240**  | **18,529.8 μs** | **14,757.8 μs** |   **808.92 μs** | **625.0000** | **531.2500** | **312.5000** | **20311.21 KB** |
+
+Both gateways stream a POST upload — retries never apply to a POST, whose body could not
+be safely replayed, so neither side allocates a buffer. Identical work: the delta is
+per-request overhead, and ConduitSharp allocates about half.
+
+The `-retry` arms are the buffered path, same-on-same: a PUT each side must be able to
+replay. Ocelot ships no retry, so it runs the load rig's, built on its official Polly
+package's `AddPolly` seam
+([BufferingPollyHandler](benchmarks/load/ocelot/BufferingPollyHandler.cs)) — the whole body
+held on the heap via `LoadIntoBufferAsync`, per in-flight request, no ceiling. ConduitSharp
+buffers up to 1 MiB in pooled memory and spills the rest to tmpfs on this rig — bounded
+RAM either way, and the tiers degrade to disk and then 503 instead of OOM under
+concurrency (measured in [benchmarks/load](benchmarks/load/README.md)).
+
+Both gateways in-proc (TestServer), forwarding over a real loopback socket to the same
+1 KB upstream — identical downstream cost, the delta is gateway overhead.
+**Allocated per request is deterministic — compare that column;** time columns are
+trend-only on shared CI runners. APISIX is nginx/Lua and cannot be micro-benched
+in-process; its comparison is the throughput ratio table above. Full tables:
+[docs/benchmarks/micro.md](docs/benchmarks/micro.md) · [source run](https://github.com/liqngliz/ConduitSharp/actions/runs/30165314699)
+<!-- BENCH-MICRO:END -->
+
+<!-- BENCH-MATRIX-SUMMARY:START -->
+### Body handling under load — the s1..s6 matrix (relative QPS, same rig)
+
+#### Streaming path — a 1 MB body nobody needs to replay
+
+```mermaid
+xychart-beta
+    title "s1 — out of the box, retries set, 1 MB POST: relative QPS (higher is faster)"
+    x-axis ["ConduitSharp", "Ocelot", "APISIX", "Envoy"]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.86
+    bar [1.00, 0.82, 0.51, 1.61]
+```
+
+| scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
+|---|---:|---:|---:|---:|
+| s1 — retries configured, 1 MB POST (ConduitSharp streams it: method-aware) | 1.00× | 0.82× | 0.51× (1.9x to disk) | 1.61× |
+| s2 — pure streaming, 1 MB POST (APISIX de-tuned to qualify, forfeiting retry) | 1.00× | 1.00× | 0.54× | 1.43× |
+
+#### Buffered path — forced to disk (s4), and tmpfs as the answer (s5)
+
+```mermaid
+xychart-beta
+    title "1 MB PUT, tmpfs spill: relative QPS (higher is faster)"
+    x-axis ["ConduitSharp", "APISIX", "Envoy"]
+    y-axis "QPS vs ConduitSharp tmpfs = 1.00" 0 --> 1.89
+    bar [1.00, 0.51, 1.64]
+```
+
+| scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
+|---|---:|---:|---:|---:|
+| s4 — buffering forced onto disk, 1 MB PUT | 1.00× (1.0x to disk) | — | 0.77× (1.9x to disk) | 2.43× |
+| s5 — buffered, spill target is tmpfs, 1 MB PUT | 1.00× | — | 0.51× (2.0x to disk) | 1.64× |
+
+#### Body Capture Logging — a ~4 KB JSON POST logged to Loki
+
+```mermaid
+xychart-beta
+    title "s6 — logging + body capture, ~4 KB JSON POST: relative QPS (higher is faster)"
+    x-axis ["ConduitSharp", "Ocelot", "APISIX", "Envoy"]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.81
+    bar [1.00, 0.79, 1.58, 1.19]
+```
+
+| scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
+|---|---:|---:|---:|---:|
+| s6 — logging + body capture, ~4 KB JSON POST (c=50) | 1.00× | 0.79× | 1.58× | 1.19× |
+
+Structured comparison: each scenario fixes the shape of the work, then compares gateways doing that shape, with bytes-written-to-storage measured rather than assumed. s4 is the honest row: forced entirely onto disk, nginx wins — the design's answer is s5 and the RAM tier that makes disk rare. s6 is the other honest row: capturing and shipping every body is real work, so APISIX and Envoy lead it while ConduitSharp buries Ocelot. Full tables, method, and the parts that hurt: [benchmarks/load](benchmarks/load/README.md#structured-comparison--measured-not-hand-typed) · [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30165314699).
+<!-- BENCH-MATRIX-SUMMARY:END -->
+
+Full microbenchmark tables (routing, plugin dispatch, buffered-vs-stream allocations, JWT
+hot path) are published to [docs/benchmarks/micro.md](docs/benchmarks/micro.md); source in
+[benchmarks/ConduitSharp.Benchmarks](benchmarks/ConduitSharp.Benchmarks), load rig and
+method in [benchmarks/load](benchmarks/load/README.md).
+
+---
+
 ## 🏗️ Architectural Choices & Trade-offs
 
 ConduitSharp makes deliberate architectural decisions to solve real-world gateway deployment problems. While some choices may seem unconventional at first glance, they are specifically engineered for flexibility and safety.
@@ -284,7 +519,7 @@ flowchart LR
         gw --> ord["OrderService\njwt-auth"]
         gw --> grt["GreeterService (gRPC, h2c)\nhttp-proxy — HTTP/2 verbatim"]
         gw --> upl["OrderService (upload)\nstreamOnly — zero-alloc passthrough"]
-        gw --> fin["jwt-auth + rate-limit + cache + power-shell\nGet-MarginReport.ps1"]
+        gw --> fin["jwt-auth + rate-limit + cache + power-shell\nGet-ErpReport.ps1"]
     end
 
     gw -.OTLP.-> choice{"observability stack"}
@@ -325,202 +560,6 @@ This approach treats ConduitSharp like a standalone infrastructure appliance (si
 
 ---
 
-
-## ⚖️ Compared to alternatives
-
-ConduitSharp can replace an existing gateway or sit behind one. Against Ocelot it competes directly. Rather than competing with YARP, it builds on top of it as the forwarding engine. Against Kong, APISIX, or Azure APIM it complements — those handle external edge traffic while ConduitSharp handles legacy workload execution and internal observability at the layer below.
-
-|  | ConduitSharp | Ocelot | YARP | Envoy | APISIX |
-| --- | --- | --- | --- | --- | --- |
-| **Language** | C# / .NET | C# / .NET | C# / .NET | C++ | Lua / Nginx |
-| **Plugin language** | **C# / F# / VB.NET / PowerShell**<br/> + ASP.NET middleware | None | ASP.NET middleware | C++ / Lua / WASM | Lua |
-| **PowerShell script execution** | ✅ Plugin | ❌ | ❌ | ❌ | ❌ |
-| **Per-route plugin pipeline** | ✅ | ⚠️ per-route hook <br/> (DelegatingHandler, code-registered) | ❌ | ✅ | ✅ |
-| **Drop-in external plugins** | ✅ | ❌ | ❌ | ✅ WASM | ✅ Lua |
-| **Plugin contract as NuGet** | ✅ | ❌ | ❌ | — | — |
-| **Unit-testable without HTTP** | ✅ | ❌ | ❌ | — | — |
-| **OpenTelemetry (traces + metrics)** | ✅ Built-in | ❌ | ✅ | ✅ Native | ✅ Plugin |
-| **Forwarding engine** | **YARP native** | Custom | YARP native | Envoy native | Nginx |
-| **Windows Service / IIS native** | ✅ | ✅ | ✅ | ❌ | ❌ |
-| **Config format** | JSON file | JSON file | JSON / YAML | YAML / xDS | YAML / etcd |
-
----
-
-
-## 📊 Benchmarks
-
-<!-- BENCH:START -->
-### Throughput — relative, same rig, sequential runs
-
-#### 125 connections
-
-```mermaid
-xychart-beta
-    title "Relative QPS at 125 connections — higher is faster"
-    x-axis ["ConduitSharp", "APISIX", "Ocelot", "Envoy", "no gateway (direct)"]
-    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 4.68
-    bar [1.00, 1.08, 0.68, 0.85, 4.07]
-```
-
-| gateway | QPS (relative) | p50 | p99 |
-|---|---:|---:|---:|
-| ConduitSharp | 1.00× | 4.31 ms | 18.59 ms |
-| APISIX | 1.08× | 4.19 ms | 13.38 ms |
-| Ocelot | 0.68× | 6.62 ms | 21.80 ms |
-| Envoy | 0.85× | 5.68 ms | 12.14 ms |
-| *(no gateway — direct to nginx)* | 4.07× | 1.00 ms | 5.35 ms |
-
-#### 512 connections
-
-```mermaid
-xychart-beta
-    title "Relative QPS at 512 connections — higher is faster"
-    x-axis ["ConduitSharp", "APISIX", "Ocelot", "Envoy"]
-    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.15
-    bar [1.00, 1.00, 0.68, 0.80]
-```
-
-| gateway | QPS (relative) | p50 | p99 |
-|---|---:|---:|---:|
-| ConduitSharp | 1.00× | 17.30 ms | 64.73 ms |
-| APISIX | 1.00× | 17.49 ms | 55.38 ms |
-| Ocelot | 0.68× | 26.68 ms | 81.53 ms |
-| Envoy | 0.80× | 24.23 ms | 44.36 ms |
-
-Pure proxy, 1 KB upstream response, bombardier, gateways benched sequentially on the
-identical rig. **Measured on shared GitHub Actions runners (4 vCPU) — only ratios are
-meaningful there; absolute QPS on shared CI is noise.** Raw figures for this exact run:
-[CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30025170098). Method & how to reproduce on pinned hardware:
-[benchmarks/load](benchmarks/load/README.md).
-<!-- BENCH:END -->
-
-<!-- BENCH-MICRO:START -->
-### Head-to-head microbenchmarks — ConduitSharp vs Ocelot (.NET gateways only)
-
-#### Route-table scaling — request hits the last of N routes
-
-```mermaid
-xychart-beta
-    title "Allocated per request, N routes configured — lower is better"
-    x-axis ["ConduitSharp N=1", "ConduitSharp N=500", "Ocelot N=1", "Ocelot N=500"]
-    y-axis "KB / request" 0 --> 181.99
-    bar [14.42, 14.45, 25.96, 158.25]
-```
-
-| Method     | Gateway      | RouteCount | Mean     | Error    | StdDev   | Gen0    | Allocated |
-|----------- |------------- |----------- |---------:|---------:|---------:|--------:|----------:|
-| **ProxiedGet** | **ConduitSharp** | **1**          | **222.9 μs** | **345.4 μs** | **18.93 μs** |  **0.9766** |  **14.42 KB** |
-| **ProxiedGet** | **ConduitSharp** | **500**        | **226.1 μs** | **271.2 μs** | **14.87 μs** |  **1.4648** |  **14.45 KB** |
-| **ProxiedGet** | **Ocelot**       | **1**          | **400.7 μs** | **796.7 μs** | **43.67 μs** |  **1.9531** |  **25.96 KB** |
-| **ProxiedGet** | **Ocelot**       | **500**        | **455.6 μs** | **294.5 μs** | **16.14 μs** | **15.6250** | **158.25 KB** |
-
-ConduitSharp rides ASP.NET endpoint routing's DFA: flat time and allocations at any
-route count. Ocelot's route finder scans templates per request — cost grows with N.
-
-#### Policy chain — JWT auth (HS256) + rate limit on both sides
-
-```mermaid
-xychart-beta
-    title "Allocated per request — JWT + rate limit, lower is better"
-    x-axis ["ConduitSharp", "Ocelot"]
-    y-axis "KB / request" 0 --> 43.25
-    bar [20.75, 37.61]
-```
-
-| Method    | Gateway      | Mean     | Error      | StdDev   | Gen0   | Allocated |
-|---------- |------------- |---------:|-----------:|---------:|-------:|----------:|
-| **AuthedGet** | **ConduitSharp** | **279.3 μs** |   **404.2 μs** | **22.16 μs** | **1.9531** |  **20.75 KB** |
-| **AuthedGet** | **Ocelot**       | **491.1 μs** | **1,014.0 μs** | **55.58 μs** | **2.9297** |  **37.61 KB** |
-
-#### Upload bodies — POST (streamed) and PUT on a retry route (buffered)
-
-```mermaid
-xychart-beta
-    title "Allocated per request, 10 MB body — lower is better"
-    x-axis ["ConduitSharp", "ConduitSharp-retry", "Ocelot", "Ocelot-retry"]
-    y-axis "KB / request" 0 --> 23357.10
-    bar [10044.20, 10118.59, 10057.96, 20310.52]
-```
-
-| Method   | Gateway            | BodyKB | Mean        | Error       | StdDev      | Gen0     | Gen1     | Gen2     | Allocated   |
-|--------- |------------------- |------- |------------:|------------:|------------:|---------:|---------:|---------:|------------:|
-| **PostBody** | **ConduitSharp**       | **1**      |    **254.7 μs** |    **367.5 μs** |    **20.15 μs** |   **1.4648** |        **-** |        **-** |    **15.94 KB** |
-| **PostBody** | **ConduitSharp**       | **10240**  | **15,482.2 μs** |  **7,758.6 μs** |   **425.27 μs** | **312.5000** | **281.2500** |        **-** |  **10044.2 KB** |
-| **PostBody** | **ConduitSharp-retry** | **1**      |    **275.5 μs** |    **522.8 μs** |    **28.66 μs** |   **1.4648** |        **-** |        **-** |    **17.38 KB** |
-| **PostBody** | **ConduitSharp-retry** | **10240**  | **22,897.9 μs** | **18,259.8 μs** | **1,000.88 μs** | **343.7500** | **281.2500** |        **-** | **10118.59 KB** |
-| **PostBody** | **Ocelot**             | **1**      |    **426.6 μs** |    **823.5 μs** |    **45.14 μs** |   **2.9297** |        **-** |        **-** |    **29.23 KB** |
-| **PostBody** | **Ocelot**             | **10240**  | **15,675.6 μs** |  **3,755.3 μs** |   **205.84 μs** | **343.7500** | **281.2500** |        **-** | **10057.96 KB** |
-| **PostBody** | **Ocelot-retry**       | **1**      |    **478.7 μs** |    **735.7 μs** |    **40.33 μs** |   **3.9063** |        **-** |        **-** |     **41.5 KB** |
-| **PostBody** | **Ocelot-retry**       | **10240**  | **18,742.8 μs** | **17,950.7 μs** |   **983.94 μs** | **625.0000** | **562.5000** | **312.5000** | **20310.52 KB** |
-
-Both gateways stream a POST upload — retries never apply to a POST, whose body could not
-be safely replayed, so neither side allocates a buffer. Identical work: the delta is
-per-request overhead, and ConduitSharp allocates about half.
-
-The `-retry` arms are the buffered path, same-on-same: a PUT each side must be able to
-replay. Ocelot ships no retry, so it runs the load rig's, built on its official Polly
-package's `AddPolly` seam
-([BufferingPollyHandler](benchmarks/load/ocelot/BufferingPollyHandler.cs)) — the whole body
-held on the heap via `LoadIntoBufferAsync`, per in-flight request, no ceiling. ConduitSharp
-buffers up to 1 MiB in pooled memory and spills the rest to tmpfs on this rig — bounded
-RAM either way, and the tiers degrade to disk and then 503 instead of OOM under
-concurrency (measured in [benchmarks/load](benchmarks/load/README.md)).
-
-Both gateways in-proc (TestServer), forwarding over a real loopback socket to the same
-1 KB upstream — identical downstream cost, the delta is gateway overhead.
-**Allocated per request is deterministic — compare that column;** time columns are
-trend-only on shared CI runners. APISIX is nginx/Lua and cannot be micro-benched
-in-process; its comparison is the throughput ratio table above. Full tables:
-[docs/benchmarks/micro.md](docs/benchmarks/micro.md) · [source run](https://github.com/liqngliz/ConduitSharp/actions/runs/29957816337)
-<!-- BENCH-MICRO:END -->
-
-<!-- BENCH-MATRIX-SUMMARY:START -->
-### Body handling under load — the s1..s5 matrix (relative QPS, same rig)
-
-#### Streaming path — a 1 MB body nobody needs to replay
-
-```mermaid
-xychart-beta
-    title "s1 — out of the box, retries set, 1 MB POST: relative QPS (higher is faster)"
-    x-axis ["ConduitSharp", "Ocelot", "APISIX", "Envoy"]
-    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.81
-    bar [1.00, 0.84, 0.50, 1.57]
-```
-
-| scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
-|---|---:|---:|---:|---:|
-| s1 — retries configured, 1 MB POST (ConduitSharp streams it: method-aware) | 1.00× | 0.84× | 0.50× (1.9x to disk) | 1.57× |
-| s2 — pure streaming, 1 MB POST (APISIX de-tuned to qualify, forfeiting retry) | 1.00× | 1.01× | 0.55× | 1.46× |
-
-#### Buffered path — forced to disk (s4), and tmpfs as the answer (s5)
-
-```mermaid
-xychart-beta
-    title "1 MB PUT, disk vs tmpfs spill: relative QPS (higher is faster)"
-    x-axis ["ConduitSharp — disk", "APISIX — disk", "Envoy — disk", "Envoy — tmpfs", "APISIX — tmpfs", "ConduitSharp — tmpfs"]
-    y-axis "QPS vs ConduitSharp disk = 1.00" 0 --> 2.87
-    bar [1.00, 0.78, 2.50, 2.48, 0.78, 1.63]
-```
-
-| scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
-|---|---:|---:|---:|---:|
-| s4 — buffering forced onto disk, 1 MB PUT | 1.00× (1.0x to disk) | — | 0.78× (1.9x to disk) | 2.50× |
-| s5 — buffered, spill target is tmpfs, 1 MB PUT | 1.00× | — | 0.48× (1.9x to disk) | 1.53× |
-
-#### Body Capture Logging — a 24 KB POST logged to Loki
-
-| scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
-|---|---:|---:|---:|---:|
-
-Structured comparison: each scenario fixes the shape of the work, then compares gateways doing that shape, with bytes-written-to-storage measured rather than assumed. s4 is the honest row: forced entirely onto disk, nginx wins — the design's answer is s5 and the RAM tier that makes disk rare. Full tables, method, and the parts that hurt: [benchmarks/load](benchmarks/load/README.md#structured-comparison--measured-not-hand-typed) · [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/29957816337).
-<!-- BENCH-MATRIX-SUMMARY:END -->
-
-Full microbenchmark tables (routing, plugin dispatch, buffered-vs-stream allocations, JWT
-hot path) are published to [docs/benchmarks/micro.md](docs/benchmarks/micro.md); source in
-[benchmarks/ConduitSharp.Benchmarks](benchmarks/ConduitSharp.Benchmarks), load rig and
-method in [benchmarks/load](benchmarks/load/README.md).
-
----
 
 ## 📚 Documentation
 

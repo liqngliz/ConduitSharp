@@ -78,6 +78,14 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
     // observes the bytes as YARP streams them, so the route stays on the zero-copy streaming path.
     public bool ReadsRequestBody => false;
 
+    /// <summary>
+    /// The captured prefix is bounded per request, but it multiplies by concurrency — and sitting on
+    /// the streaming path it was invisible to <c>MaxTotalBufferedBodyBytes</c>, so nothing shed load
+    /// as it grew. Declaring it here puts the tee under the same ceiling and the same 503 as a
+    /// buffered body: a connection flood now sheds instead of climbing unchecked.
+    /// </summary>
+    public int CaptureMemoryBytes(JsonElement config) => MaxSize(config);
+
     public void ValidateConfig(JsonElement config)
     {
         if (config.ValueKind == JsonValueKind.Object && config.TryGetProperty("maxSize", out var maxSizeProp))

@@ -1,0 +1,27 @@
+{
+  "routes": [
+    {
+      "id": "bench-logging-filelog-disk",
+      "description": "Logging benchmark — body captured to file, shipped by the OTel Collector's filelog receiver (fully deferred OTLP: the gateway only appends, the collector does parse/batch/export out-of-process).",
+      "route": { "match": { "path": "/{**catch-all}" } },
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",
+        "destinations": {
+          "node-0": { "address": "http://upstream:8081" },
+          "node-1": { "address": "http://upstream:8082" }
+        }
+      },
+      "plugins": [
+        {
+          "name": "custom",
+          "variant": "body-capture-file",
+          "config": {
+            "logPath": "/var/log/conduit/capture.json",
+            "maxSize": 4096,
+            "maxFileBytes": 268435456
+          }
+        }
+      ]
+    }
+  ]
+}

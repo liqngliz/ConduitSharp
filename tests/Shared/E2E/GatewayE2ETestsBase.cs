@@ -21,7 +21,7 @@ public interface IGatewayE2EFixture
     string ExampleRoot { get; }
     /// <summary>Cleartext HTTP/2 (h2c) endpoint for the gRPC route.</summary>
     string GrpcUrl { get; }
-    /// <summary>Prefix for gateway-owned paths (health, finance, swagger): "" or "/api".</summary>
+    /// <summary>Prefix for gateway-owned paths (health, erp, swagger): "" or "/api".</summary>
     string PathPrefix { get; }
     /// <summary>The two inventory upstream ports — asserted absent from served swagger.</summary>
     (string A, string B) InventoryUpstreamPorts { get; }
@@ -194,12 +194,12 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     }
 
     // =========================================================================
-    // Finance margin report — JWT auth + role-based access, rate limited,
+    // Erp value report — JWT auth + role-based access, rate limited,
     // cached 60s, executed via PowerShell plugin
     // =========================================================================
 
     [Fact]
-    public async Task GetFinanceMargin_WithJwt_Returns200_OrSkippedIfNoPwsh()
+    public async Task GetErpValue_WithJwt_Returns200_OrSkippedIfNoPwsh()
     {
         if (!IsPwshAvailable())
         {
@@ -207,7 +207,7 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
             return;
         }
 
-        var request = JwtRequest(HttpMethod.Get, P("/finance/reports/margin"));
+        var request = JwtRequest(HttpMethod.Get, P("/erp/reports/summary"));
 
         var response = await fx.Client.SendAsync(request);
 
@@ -215,24 +215,24 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     }
 
     [Fact]
-    public async Task GetFinanceMargin_NoToken_Returns401_OrSkippedIfNoPwsh()
+    public async Task GetErpValue_NoToken_Returns401_OrSkippedIfNoPwsh()
     {
         if (!IsPwshAvailable()) return;
 
-        var response = await fx.Client.GetAsync(P("/finance/reports/margin"));
+        var response = await fx.Client.GetAsync(P("/erp/reports/summary"));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
-    public async Task GetFinanceMargin_ValidTokenWrongRole_Returns403_OrSkippedIfNoPwsh()
+    public async Task GetErpValue_ValidTokenWrongRole_Returns403_OrSkippedIfNoPwsh()
     {
         if (!IsPwshAvailable()) return;
 
         // Same signing key/issuer/audience as fx.DemoJwt, but a role not in the route's
         // requiredClaims anyOf list — a valid token lacking permission is 403, not 401.
         var token   = MintTokenWithRole("intern");
-        var request = new HttpRequestMessage(HttpMethod.Get, P("/finance/reports/margin"));
+        var request = new HttpRequestMessage(HttpMethod.Get, P("/erp/reports/summary"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         var response = await fx.Client.SendAsync(request);
@@ -241,17 +241,17 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     }
 
     [Fact]
-    public async Task GetFinanceMargin_CalledTwice_SecondResponseIsCached()
+    public async Task GetErpValue_CalledTwice_SecondResponseIsCached()
     {
         if (!IsPwshAvailable()) return;
 
-        var request1 = JwtRequest(HttpMethod.Get, P("/finance/reports/margin"));
+        var request1 = JwtRequest(HttpMethod.Get, P("/erp/reports/summary"));
         var response1 = await fx.Client.SendAsync(request1);
         if (!response1.IsSuccessStatusCode) return; // skip if pwsh fails for other reasons
 
         var body1 = await response1.Content.ReadAsStringAsync();
 
-        var request2 = JwtRequest(HttpMethod.Get, P("/finance/reports/margin"));
+        var request2 = JwtRequest(HttpMethod.Get, P("/erp/reports/summary"));
         var response2 = await fx.Client.SendAsync(request2);
         var body2 = await response2.Content.ReadAsStringAsync();
 

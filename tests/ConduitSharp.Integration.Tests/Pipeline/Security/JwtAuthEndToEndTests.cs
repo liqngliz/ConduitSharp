@@ -160,7 +160,7 @@ public sealed class JwtAuthEndToEndTests : IAsyncLifetime
         {
             signingKey = PluginTestHelpers.TestSecretBase64,
             algorithm  = "HS256",
-            requiredClaims = new[] { new { claim = "roles", anyOf = new[] { "Finance.Admin" } } }
+            requiredClaims = new[] { new { claim = "roles", anyOf = new[] { "Admin" } } }
         });
 
     [Fact]
@@ -186,7 +186,7 @@ public sealed class JwtAuthEndToEndTests : IAsyncLifetime
         var token = PluginTestHelpers.BuildHs256Token(
             PluginTestHelpers.TestSecretBase64,
             expOffset: +3600,
-            extraClaims: new() { ["roles"] = new[] { "Finance.Admin" } });
+            extraClaims: new() { ["roles"] = new[] { "Admin" } });
         await using var factory = await GatewayFactory.CreateAsync(_upstream, RoutesWithRequiredRole());
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");

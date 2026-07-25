@@ -147,6 +147,40 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task ExecuteAsync_RollsFile_WhenMaxFileBytesExceeded()
+    {
+        // Without a roll the sink grows until the disk (or the tmpfs cap) stops it, and the writer
+        // dies on ENOSPC with every request still succeeding. Tiny cap so a handful of entries trip it.
+        var plugin = new BodyCaptureToFilePlugin(_configSub);
+        var json = $$"""{ "logPath": "{{_tempLogFile.Replace("\\", "\\\\")}}", "maxSize": 1024, "maxFileBytes": 200 }""";
+        plugin.ValidateConfig(JsonDocument.Parse(json).RootElement);
+
+        using (plugin)
+        {
+            var config = JsonDocument.Parse("{}").RootElement;
+            for (var i = 0; i < 20; i++)
+            {
+                var context = new DefaultHttpContext();
+                context.Request.Path = $"/api/roll-{i}";
+                context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(new string('x', 100)));
+                await plugin.ExecuteAsync(context, config, _ => Task.CompletedTask);
+                await Task.Delay(15); // let the writer drain between entries so it can roll
+            }
+
+            await Task.Delay(250);
+        }
+
+        var backup = _tempLogFile + ".1";
+        Assert.True(File.Exists(backup), "expected a rolled .1 backup once maxFileBytes was exceeded");
+        // The live file is bounded by the roll — and right after one it may not exist at all until
+        // the next entry recreates it (FileMode.Append). Either way it must not hold everything.
+        var liveLength = File.Exists(_tempLogFile) ? new FileInfo(_tempLogFile).Length : 0;
+        Assert.True(liveLength < 20 * 100, $"live file should be bounded by the roll, was {liveLength}");
+
+        File.Delete(backup);
+    }
+
     public void Dispose()
     {
         if (File.Exists(_tempLogFile))

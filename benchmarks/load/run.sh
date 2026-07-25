@@ -101,6 +101,38 @@ header() {
 EOF
 }
 
+# True peak memory from the container's own cgroup counter, in MiB.
+#
+# Preferred over sample_mem for anything short: that sampler polls `docker stats` every 2s, and an
+# s6 arm can finish in about one — which is why peak_mem_kb came back blank for half the rows it was
+# supposed to fill. The cgroup tracks the high-water mark itself, so there is no sampling race and no
+# dependence on how long the arm ran.
+cgroup_peak_mib() { # $1 = service
+    local cid; cid=$("${COMPOSE[@]}" ps -q "$1" 2>/dev/null)
+    [ -z "$cid" ] && { echo 0; return; }
+    local v
+    v=$(docker exec "$cid" sh -c 'cat /sys/fs/cgroup/memory.peak 2>/dev/null || cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes 2>/dev/null' 2>/dev/null | tr -d '\r')
+    if [ -n "$v" ] && [ "$v" -eq "$v" ] 2>/dev/null; then
+        python3 -c "print(f'{$v/1048576:.1f}')"
+    else
+        echo 0
+    fi
+}
+
+# MiB resident in the shared tmpfs volume, i.e. the capture file for the file-sink arms.
+#
+# tmpfs is RAM: envoy-logs is declared with driver_opts type=tmpfs, so a capture file living there is
+# memory pressure that grows with traffic — and it is invisible in the container's RSS, which is
+# exactly why the file arms look cheapest while holding the most. Reported alongside the cgroup peak
+# so "fastest" cannot quietly mean "holding 170 MiB of RAM the number does not show".
+tmpfs_mib() { # $1 = service
+    local cid; cid=$("${COMPOSE[@]}" ps -q "$1" 2>/dev/null)
+    [ -z "$cid" ] && { echo 0; return; }
+    local kb; kb=$(docker exec "$cid" sh -c 'du -sk /tmp/envoy-logs 2>/dev/null | cut -f1' 2>/dev/null | tr -d '\r')
+    [ -z "$kb" ] && kb=0
+    python3 -c "print(f'{$kb/1024:.1f}')"
+}
+
 # Max container RSS while a flag file exists (crude sampler, 2s period).
 sample_mem() { # $1 = service, $2 = flag file, $3 = out file
     local cid; cid=$("${COMPOSE[@]}" ps -q "$1")
@@ -294,6 +326,21 @@ ensure_payload_4kb() {
 }
 ensure_payload_64kb() {
     [ -s payload/64kb.bin ] || dd if=/dev/urandom of=payload/64kb.bin bs=1024 count=64 >/dev/null 2>&1
+}
+# s6 logs the request BODY as the log line, so the payload must be what real body-capture sees:
+# valid UTF-8 text, bounded size. Random binary is rejected by content-validating sinks (Loki's
+# OTLP endpoint drops invalid-UTF-8 and oversized lines with a silent partialSuccess-200), while a
+# blind file sink ingests it — which is what made the "ingested" column look like a gateway defect.
+# A ~4 KB JSON body is what a body-logging gateway actually captures and ingests losslessly.
+ensure_payload_s6json() {
+    [ -s payload/s6-body.json ] || python3 - <<'PY'
+import json
+rec={"event":"order.created","order_id":"ORD-000123",
+     "customer":{"id":"CUST-4471","name":"Acme Corp","tier":"gold"},
+     "items":[{"sku":"SKU-%04d"%i,"qty":i%5+1,"price":round(i*1.5,2)} for i in range(60)],
+     "meta":{"source":"web","region":"eu-central-1"}}
+open("payload/s6-body.json","w").write(json.dumps(rec))
+PY
 }
 
 # Bytes written to storage by everything in a container — the ground truth for "did it allocate a
@@ -519,10 +566,22 @@ s4_buffered() {
 }
 
 s6_logging() {
+    # c=50 is the operating point, not a stress ceiling. This rig saturates around c=25 — 30.9k
+    # QPS there against 35.6k at c=256, i.e. 10x the connections buys 13% more throughput and the
+    # rest becomes queueing (p99 15.7ms -> 26ms). Past saturation you are measuring queue depth,
+    # not the gateway. It also matches Little's Law for a real deployment: an internal gateway at
+    # ~1-2k req/s in front of services answering in ~20ms sits at tens of concurrent requests, not
+    # hundreds. Deliberately its own knob rather than the global CONNS — s6 is a fixed-count
+    # ingestion test (send N, drain, count), not a duration throughput sweep — but the level now
+    # travels in the label so a table cannot attribute s6 rows to another scenario's concurrency.
+    #
+    # Known: in-process OTLP export keeps up at this level (100% ingested) but drops 20-25% of
+    # records at c=256, where it generates ~23k records/s against a 20k queue. That is a capacity
+    # limit of the exporter, not of the gateway, and it is invisible at the operating point.
     export S6_REQS=${S6_REQS:-30000} S6_CONNS=${S6_CONNS:-50}
-    echo "== s6: logging — $S6_REQS fixed requests, 64 KB POST, to Loki ==" | tee -a "$RESULTS"
+    echo "== s6: logging — $S6_REQS fixed requests, ~4 KB JSON POST, to Loki ==" | tee -a "$RESULTS"
 
-    ensure_payload_64kb
+    ensure_payload_s6json
     dotnet publish ../../examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release -o plugins/bench-logging
 
     # Loki log counter helper — reads loki_distributor_lines_received_total from :3100/metrics
@@ -567,7 +626,7 @@ except Exception:
 
         # Warmup, then drain so warmup logs don't leak into the measurement
         "${COMPOSE[@]}" run --rm -T --quiet-pull load --print r --format json -l \
-            -c "$S6_CONNS" -n 500 -m POST -f /payload/64kb.bin -H "Content-Type: application/octet-stream" "$url" \
+            -c "$S6_CONNS" -n 500 -m POST -f /payload/s6-body.json -H "Content-Type: application/json" "$url" \
             >/dev/null 2>&1 || true
         echo "   draining warmup logs..."
         drain_loki
@@ -580,20 +639,24 @@ except Exception:
         echo ">> $label [$S6_REQS reqs, c=$S6_CONNS]"
         local json; json=$(mktemp)
         "${COMPOSE[@]}" run --rm -T --quiet-pull load --print r --format json -l \
-            -c "$S6_CONNS" -n "$S6_REQS" -m POST -f /payload/64kb.bin -H "Content-Type: application/octet-stream" "$url" \
+            -c "$S6_CONNS" -n "$S6_REQS" -m POST -f /payload/s6-body.json -H "Content-Type: application/json" "$url" \
             > "$json" 2>/dev/null || true
 
         rm -f "$flag"
-        local peak_mem; peak_mem=$(cat "$mem" 2>/dev/null || echo "0")
-        
+        # Measured before the drain: the capture file is the memory pressure we are reporting, and
+        # a shipper that has caught up may already have let it be truncated away.
+        local peak_mem; peak_mem=$(cgroup_peak_mib "$svc")
+        local tmpfs_mem; tmpfs_mem=$(tmpfs_mib "$svc")
+
         drain_loki
         local after_loki; after_loki=$(loki_count)
 
         # Extract results from bombardier JSON
-        python3 - "$label" "$json" "$before_loki" "$after_loki" "$S6_REQS" "$peak_mem" "$RESULTS" "$JSONL" <<'PY'
+        python3 - "$label" "$json" "$before_loki" "$after_loki" "$S6_REQS" "$peak_mem" "$tmpfs_mem" "$RESULTS" "$JSONL" <<'PY'
 import json, sys
 
-label, jpath, before_s, after_s, total_reqs_s, peak_mem, results_file, jsonl_file = sys.argv[1:]
+label, jpath, before_s, after_s, total_reqs_s, peak_mem, tmpfs_mem, results_file, jsonl_file = sys.argv[1:]
+total_mem = float(peak_mem or 0) + float(tmpfs_mem or 0)
 before, after = int(before_s), int(after_s)
 total_reqs = int(total_reqs_s)
 
@@ -616,14 +679,21 @@ pct = f"{ingested / generated * 100:.1f}%" if ingested >= 0 and generated > 0 el
 print(f"    -> {label}: {ok_2xx}/{total_reqs} requests OK in {elapsed:.1f}s ({qps:.0f} QPS)")
 print(f"    -> {label}: p50 {p50_ms:.2f} ms, p99 {p99_ms:.2f} ms")
 print(f"    -> {label}: logs generated {generated:,} / ingested {ingested:,} = {pct} completion")
+print(f"    -> {label}: peak RSS {float(peak_mem or 0):.1f} MiB + tmpfs {float(tmpfs_mem or 0):.1f} MiB = {total_mem:.1f} MiB memory")
 
 with open(results_file, "a") as f:
     f.write(f"    -> {label}: {ok_2xx}/{total_reqs} OK in {elapsed:.1f}s ({qps:.0f} QPS), "
             f"p50 {p50_ms:.2f}ms p99 {p99_ms:.2f}ms, "
-            f"logs {ingested:,}/{generated:,} = {pct}\n")
+            f"logs {ingested:,}/{generated:,} = {pct}, "
+            f"mem {total_mem:.1f}MiB (rss {float(peak_mem or 0):.1f} + tmpfs {float(tmpfs_mem or 0):.1f})\n")
 
 rec = {
     "label": label,
+    # One measured run per arm, not this job's REPS median: s6 sends a fixed count, drains the
+    # sink and counts, so a rep loop would triple the longest phase in the matrix. Recorded rather
+    # than omitted because a missing field rendered as "QPS (med/?)" — a header implying a median
+    # over a single run, which is exactly the drift the validated protocol exists to prevent.
+    "reps": 1,
     "qps": qps,
     "p50_ms": p50_ms,
     "p99_ms": p99_ms,
@@ -631,6 +701,9 @@ rec = {
     "total": total_reqs,
     "ingested": ingested,
     "generated": generated,
+    "peak_rss_mib": float(peak_mem or 0),
+    "tmpfs_mib": float(tmpfs_mem or 0),
+    "total_mem_mib": round(total_mem, 1),
     "peak_mem_kb": peak_mem
 }
 with open(jsonl_file, "a") as f:
@@ -657,30 +730,65 @@ PY
     popd >/dev/null
     
     GATE_PLUGINS="bench-logging-file" GATE_CFG="scenario-logging-file.json" up scenario-logging-file
-    bench_logging_arm "s6 conduitsharp (capture plugin -> tmpfs -> promtail -> Loki)" gateway "$GATEWAY_URL"
+    bench_logging_arm "s6 conduitsharp (capture plugin -> tmpfs -> promtail -> Loki) [c=$S6_CONNS]" gateway "$GATEWAY_URL"
     "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
 
     reset_obs
     LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up scenario-logging
-    bench_logging_arm "s6 conduitsharp (capture plugin -> OTLP -> Loki)" gateway "$GATEWAY_URL"
+    bench_logging_arm "s6 conduitsharp (capture plugin -> OTLP -> Loki) [c=$S6_CONNS]" gateway "$GATEWAY_URL"
     "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
+
+    # Tee instead of buffer: body-capture-streaming declares ReadsRequestBody=false, so the gateway
+    # never copies the request body into a rewindable stream. Identical to the arm above in sink,
+    # export path, payload and maxSize — the only variable is buffer vs tee, so the QPS delta is
+    # what the body copy costs. CAPTURE_LOG_LEVEL lifts the category floor to Information, without
+    # which HttpLogging's records are filtered and the arm benchmarks "logging nothing" at speed.
+    export CAPTURE_LOG_LEVEL=Information
+    reset_obs
+    LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up scenario-logging-streaming
+    bench_logging_arm "s6 conduitsharp (streaming tee -> OTLP -> Loki) [c=$S6_CONNS]" gateway "$GATEWAY_URL"
+    "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
+    unset CAPTURE_LOG_LEVEL
+
+    # Fully deferred: no OTEL_ENDPOINT, so the gateway exports nothing itself — it appends JSONL and
+    # returns, and the collector's filelog receiver tails that file and does the parse/batch/export
+    # out-of-process. Isolates what in-process LogRecord materialization actually costs, against the
+    # arm above that differs only in where the export work happens.
+    export OTEL_CONF=otel-collector-filelog
+    reset_obs
+    LOG_LEVEL=Warning up scenario-logging-filelog
+    bench_logging_arm "s6 conduitsharp (capture plugin -> file -> collector filelog -> Loki) [c=$S6_CONNS]" gateway "$GATEWAY_URL"
+    "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
+    unset OTEL_CONF
+
+    # Same arm, real disk instead of tmpfs. Worth publishing as its own row because the tmpfs sink is
+    # a config choice the rig was silently making for us: measured at 0.99x the throughput but ~154
+    # MiB less RAM, because the capture file stops being resident memory. The plugin never fsyncs, so
+    # appends land in page cache and return at RAM speed either way — and unlike tmpfs, the file
+    # survives a container restart.
+    export OTEL_CONF=otel-collector-filelog-disk
+    reset_obs
+    LOG_LEVEL=Warning up scenario-logging-filelog-disk
+    bench_logging_arm "s6 conduitsharp (capture plugin -> file -> collector filelog -> Loki, disk sink) [c=$S6_CONNS]" gateway "$GATEWAY_URL"
+    "${COMPOSE[@]}" stop gateway >/dev/null 2>&1 || true
+    unset OTEL_CONF
 
     # --- Ocelot ---
     reset_obs
     OCELOT_CAPTURE_BODY=1 LOG_LEVEL=Warning OTEL_ENDPOINT="http://otel-collector:4317" up_competitor ocelot "http://127.0.0.1:8083/bench"
-    bench_logging_arm "s6 ocelot (custom middleware -> OTLP -> Loki)" ocelot "$OCELOT_URL"
+    bench_logging_arm "s6 ocelot (custom middleware -> OTLP -> Loki) [c=$S6_CONNS]" ocelot "$OCELOT_URL"
     "${COMPOSE[@]}" stop ocelot >/dev/null 2>&1 || true
 
     # --- APISIX ---
     reset_obs
     up_apisix apisix-logging config-default
-    bench_logging_arm "s6 apisix (loki-logger plugin -> Loki)" apisix "$APISIX_URL"
+    bench_logging_arm "s6 apisix (loki-logger plugin -> Loki) [c=$S6_CONNS]" apisix "$APISIX_URL"
     "${COMPOSE[@]}" stop apisix >/dev/null 2>&1 || true
 
     # --- Envoy ---
     reset_obs
     up_envoy envoy-logging
-    bench_logging_arm "s6 envoy (tap filter -> Promtail -> Loki)" envoy "$ENVOY_URL"
+    bench_logging_arm "s6 envoy (tap filter -> Promtail -> Loki) [c=$S6_CONNS]" envoy "$ENVOY_URL"
     "${COMPOSE[@]}" stop envoy >/dev/null 2>&1 || true
 
     "${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.loki.yml stop loki otel-collector tempo promtail >/dev/null 2>&1 || true
