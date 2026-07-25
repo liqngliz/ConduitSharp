@@ -2,24 +2,24 @@
 
 > Shared GitHub Actions runner (4 vCPU): absolute numbers are run-to-run noise;
 > the published claim is the README's same-rig ratio table.
-> Source run: https://github.com/liqngliz/ConduitSharp/actions/runs/29957816337
+> Source run: https://github.com/liqngliz/ConduitSharp/actions/runs/30158839718
 
 
-## 2026-07-22T21:05:25Z — DUR=60s CONNS=125 RATE=0 PIN=0 host=Linux x86_64
-
-| run | QPS (mean) | lat mean ms | p50 ms | p99 ms | 2xx | 4xx | 5xx | conn |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| direct-to-upstream (no gateway) [c=125] | 92133 | 1.35 | 1.20 | 4.54 | 5527627 | 0 | 0 | 0 |
-| scenario-a pure proxy (max QPS) [c=125] | 21211 | 5.89 | 5.07 | 20.61 | 1272287 | 0 | 0 | 0 |
-| ocelot pure proxy (max QPS) [c=125] | 14658 | 8.53 | 7.75 | 23.96 | 879076 | 0 | 0 | 0 |
-| apisix pure proxy (max QPS) [c=125] | 22129 | 5.65 | 5.25 | 14.36 | 1327798 | 0 | 0 | 0 |
-| envoy pure proxy (max QPS) [c=125] | 17004 | 7.35 | 7.08 | 14.23 | 1020222 | 0 | 0 | 0 |
-
-## 2026-07-22T21:16:21Z — DUR=60s CONNS=512 RATE=0 PIN=0 host=Linux x86_64
+## 2026-07-25T12:57:38Z — DUR=60s CONNS=125 RATE=0 PIN=0 host=Linux x86_64
 
 | run | QPS (mean) | lat mean ms | p50 ms | p99 ms | 2xx | 4xx | 5xx | conn |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| scenario-a pure proxy (max QPS) [c=512] | 22021 | 23.45 | 20.58 | 71.77 | 1309904 | 0 | 0 | 0 |
-| ocelot pure proxy (max QPS) [c=512] | 15239 | 34.22 | 31.21 | 90.25 | 897761 | 0 | 0 | 0 |
-| apisix pure proxy (max QPS) [c=512] | 21635 | 23.67 | 22.41 | 61.29 | 1297605 | 0 | 0 | 0 |
-| envoy pure proxy (max QPS) [c=512] | 16579 | 30.89 | 29.60 | 55.82 | 994628 | 0 | 0 | 0 |
+| direct-to-upstream (no gateway) [c=125] | 104618 | 1.19 | 1.03 | 4.48 | 6276357 | 0 | 0 | 0 |
+| scenario-a pure proxy (max QPS) [c=125] | 25432 | 4.91 | 4.19 | 18.66 | 1525831 | 0 | 0 | 0 |
+| ocelot pure proxy (max QPS) [c=125] | 16829 | 7.43 | 6.65 | 21.57 | 1009249 | 0 | 0 | 0 |
+| apisix pure proxy (max QPS) [c=125] | 26521 | 4.71 | 4.25 | 12.73 | 1591297 | 0 | 0 | 0 |
+| envoy pure proxy (max QPS) [c=125] | 20239 | 6.17 | 5.95 | 11.57 | 1214389 | 0 | 0 | 0 |
+
+## 2026-07-25T13:08:34Z — DUR=60s CONNS=512 RATE=0 PIN=0 host=Linux x86_64
+
+| run | QPS (mean) | lat mean ms | p50 ms | p99 ms | 2xx | 4xx | 5xx | conn |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| scenario-a pure proxy (max QPS) [c=512] | 25431 | 20.35 | 17.53 | 67.21 | 1509574 | 0 | 0 | 0 |
+| ocelot pure proxy (max QPS) [c=512] | 17152 | 30.33 | 27.43 | 82.75 | 1012737 | 0 | 0 | 0 |
+| apisix pure proxy (max QPS) [c=512] | 24066 | 21.29 | 17.32 | 74.45 | 1443099 | 0 | 0 | 0 |
+| envoy pure proxy (max QPS) [c=512] | 20055 | 25.53 | 24.86 | 44.84 | 1203198 | 0 | 0 | 0 |
