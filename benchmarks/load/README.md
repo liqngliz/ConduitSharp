@@ -104,17 +104,17 @@ both sides buffer every upload to disk and serve it. No budget advantage, no pol
 
 | s1 — out of the box: retries set, 1 MB POST | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (retry route, POST is method-aware) | 1329 | 190 | 0.00x | no |
-| ocelot (retry via official Polly seam: buffers every body) | 1093 | 138 | 0.00x | no |
-| apisix (retries=2, buffers POST regardless) | 657 | 328 | 1.93x | **yes** |
-| envoy (retries=2, buffers POST regardless) | 2109 | 95 | 0.00x | no |
+| conduitsharp (retry route, POST is method-aware) | 1313 | 189 | 0.00x | no |
+| ocelot (retry via official Polly seam: buffers every body) | 1075 | 140 | 0.00x | no |
+| apisix (retries=2, buffers POST regardless) | 670 | 312 | 1.92x | **yes** |
+| envoy (retries=2, buffers POST regardless) | 2119 | 85 | 0.00x | no |
 
 | s2 — streaming-only, optimized, 1 MB POST | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (stream) | 1303 | 187 | 0.00x | no |
-| ocelot (stream) | 1283 | 181 | 0.00x | no |
-| apisix (proxy_request_buffering off — non-default, forfeits retry) | 727 | 347 | 0.13x | no |
-| envoy (stream) | 1901 | 121 | 0.00x | no |
+| conduitsharp (stream) | 1330 | 206 | 0.00x | no |
+| ocelot (stream) | 1330 | 201 | 0.00x | no |
+| apisix (proxy_request_buffering off — non-default, forfeits retry) | 721 | 396 | 0.13x | no |
+| envoy (stream) | 1899 | 123 | 0.00x | no |
 
 #### Buffered path — a 1 MB PUT each side must replay (charted: the disk story)
 
@@ -122,44 +122,44 @@ both sides buffer every upload to disk and serve it. No budget advantage, no pol
 xychart-beta
     title "s4 — throughput, 1 MB PUT (higher is faster)"
     x-axis ["conduitsharp (retry, 16k threshold, no budget cap)", "apisix (retries=2, stock buffering)", "envoy (retries=2, stock buffering)"]
-    y-axis "QPS (med/3)" 0 --> 2452
-    bar [849, 661, 2132]
+    y-axis "QPS (med/3)" 0 --> 2431
+    bar [869, 666, 2114]
 ```
 
 | s4 — buffered on disk, 1 MB PUT | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (retry, 16k threshold, no budget cap) | 849 | 176 | 1.00x | **yes** |
-| apisix (retries=2, stock buffering) | 661 | 287 | 1.94x | **yes** |
-| envoy (retries=2, stock buffering) | 2132 | 85 | 0.00x | no |
+| conduitsharp (retry, 16k threshold, no budget cap) | 869 | 175 | 1.00x | **yes** |
+| apisix (retries=2, stock buffering) | 666 | 293 | 1.93x | **yes** |
+| envoy (retries=2, stock buffering) | 2114 | 91 | 0.00x | no |
 
 ```mermaid
 xychart-beta
     title "s5 — throughput, 1 MB PUT (higher is faster)"
     x-axis ["conduitsharp (spill -> tmpfs)", "apisix (client_body_temp -> tmpfs)", "envoy (buffers entirely in RAM)"]
-    y-axis "QPS (med/3)" 0 --> 2430
-    bar [1269, 654, 2113]
+    y-axis "QPS (med/3)" 0 --> 2447
+    bar [1294, 661, 2128]
 ```
 
 | s5 — spill target is tmpfs, 1 MB PUT | QPS (med/3) | p99 ms | written÷uploaded | spilled to disk? |
 |---|---:|---:|---:|---|
-| conduitsharp (spill -> tmpfs) | 1269 | 161 | 0.00x | no |
-| apisix (client_body_temp -> tmpfs) | 654 | 311 | 1.93x | **yes** |
-| envoy (buffers entirely in RAM) | 2113 | 88 | 0.00x | no |
+| conduitsharp (spill -> tmpfs) | 1294 | 178 | 0.00x | no |
+| apisix (client_body_temp -> tmpfs) | 661 | 299 | 1.95x | **yes** |
+| envoy (buffers entirely in RAM) | 2128 | 90 | 0.00x | no |
 
 #### Body Capture Logging — a ~4 KB JSON POST logged to Loki
 
-| s6 — logging + body capture, ~4 KB JSON POST | QPS (med/?) | p99 ms | memory (RSS + tmpfs) | % ingested |
+| s6 — logging + body capture, ~4 KB JSON POST (c=50) | QPS (med/?) | p99 ms | memory (RSS + tmpfs) | % ingested |
 |---|---:|---:|---:|---:|
-| conduitsharp (capture plugin -> tmpfs -> promtail -> Loki) | 5539 | 25 | **413 MiB** (249 + 164 tmpfs) | 100.0% |
-| conduitsharp (capture plugin -> OTLP -> Loki) | 3254 | 53 | 402 MiB | 100.0% |
-| conduitsharp (streaming tee -> OTLP -> Loki) | 3222 | 45 | 385 MiB | 100.0% |
-| conduitsharp (capture plugin -> file -> collector filelog -> Loki) | 4917 | 38 | **426 MiB** (263 + 164 tmpfs) | 100.0% |
-| conduitsharp (capture plugin -> file -> collector filelog -> Loki, disk sink) | 4852 | 43 | 243 MiB | 100.0% |
-| ocelot (custom middleware -> OTLP -> Loki) | 4329 | 34 | 288 MiB | 100.0% |
-| apisix (loki-logger plugin -> Loki) | 7990 | 70 | 420 MiB | 100.0% |
-| envoy (tap filter -> Promtail -> Loki) | 6417 | 31 | **232 MiB** (130 + 102 tmpfs) | 100.0% |
+| conduitsharp (capture plugin -> tmpfs -> promtail -> Loki) | 5605 | 28 | **412 MiB** (248 + 164 tmpfs) | 100.0% |
+| conduitsharp (capture plugin -> OTLP -> Loki) | 3567 | 56 | 430 MiB | 100.0% |
+| conduitsharp (streaming tee -> OTLP -> Loki) | 3317 | 46 | 510 MiB | 100.0% |
+| conduitsharp (capture plugin -> file -> collector filelog -> Loki) | 5057 | 39 | **402 MiB** (239 + 164 tmpfs) | 100.0% |
+| conduitsharp (capture plugin -> file -> collector filelog -> Loki, disk sink) | 4896 | 38 | 244 MiB | 100.0% |
+| ocelot (custom middleware -> OTLP -> Loki) | 4442 | 27 | 263 MiB | 100.0% |
+| apisix (loki-logger plugin -> Loki) | 8832 | 67 | 391 MiB | 100.0% |
+| envoy (tap filter -> Promtail -> Loki) | 6650 | 32 | **236 MiB** (133 + 102 tmpfs) | 100.0% |
 
-Median of 3 runs at c=96 on a shared GitHub Actions runner (4 vCPU), each behind the rig gate and a discarded warmup — see [What makes a run of this matrix valid](#what-makes-a-run-of-this-matrix-valid). **Ratios travel; absolute QPS on shared CI does not.** written÷uploaded measures writes to *storage*: a 0.00x row did not touch disk, which is not the same as not buffering — an in-RAM buffer (Ocelot's LoadIntoBufferAsync) is invisible to it and shows as its throughput cost instead. Raw figures: [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30158839718).
+Median of 3 runs at c=96 on a shared GitHub Actions runner (s6 runs at its own concurrency, shown on that table) (4 vCPU), each behind the rig gate and a discarded warmup — see [What makes a run of this matrix valid](#what-makes-a-run-of-this-matrix-valid). **Ratios travel; absolute QPS on shared CI does not.** written÷uploaded measures writes to *storage*: a 0.00x row did not touch disk, which is not the same as not buffering — an in-RAM buffer (Ocelot's LoadIntoBufferAsync) is invisible to it and shows as its throughput cost instead. Raw figures: [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30165314699).
 <!-- BENCH-MATRIX:END -->
 
 s3 is absent from that table on purpose: its result is categorical (shed vs die — RSS bound, 5xx

@@ -511,14 +511,14 @@ in-process; its comparison is the throughput ratio table above. Full tables:
 xychart-beta
     title "s1 — out of the box, retries set, 1 MB POST: relative QPS (higher is faster)"
     x-axis ["ConduitSharp", "Ocelot", "APISIX", "Envoy"]
-    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.82
-    bar [1.00, 0.82, 0.49, 1.59]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.86
+    bar [1.00, 0.82, 0.51, 1.61]
 ```
 
 | scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
 |---|---:|---:|---:|---:|
-| s1 — retries configured, 1 MB POST (ConduitSharp streams it: method-aware) | 1.00× | 0.82× | 0.49× (1.9x to disk) | 1.59× |
-| s2 — pure streaming, 1 MB POST (APISIX de-tuned to qualify, forfeiting retry) | 1.00× | 0.98× | 0.56× | 1.46× |
+| s1 — retries configured, 1 MB POST (ConduitSharp streams it: method-aware) | 1.00× | 0.82× | 0.51× (1.9x to disk) | 1.61× |
+| s2 — pure streaming, 1 MB POST (APISIX de-tuned to qualify, forfeiting retry) | 1.00× | 1.00× | 0.54× | 1.43× |
 
 #### Buffered path — forced to disk (s4), and tmpfs as the answer (s5)
 
@@ -526,14 +526,14 @@ xychart-beta
 xychart-beta
     title "1 MB PUT, tmpfs spill: relative QPS (higher is faster)"
     x-axis ["ConduitSharp", "APISIX", "Envoy"]
-    y-axis "QPS vs ConduitSharp tmpfs = 1.00" 0 --> 1.92
-    bar [1.00, 0.52, 1.67]
+    y-axis "QPS vs ConduitSharp tmpfs = 1.00" 0 --> 1.89
+    bar [1.00, 0.51, 1.64]
 ```
 
 | scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
 |---|---:|---:|---:|---:|
-| s4 — buffering forced onto disk, 1 MB PUT | 1.00× (1.0x to disk) | — | 0.78× (1.9x to disk) | 2.51× |
-| s5 — buffered, spill target is tmpfs, 1 MB PUT | 1.00× | — | 0.52× (1.9x to disk) | 1.67× |
+| s4 — buffering forced onto disk, 1 MB PUT | 1.00× (1.0x to disk) | — | 0.77× (1.9x to disk) | 2.43× |
+| s5 — buffered, spill target is tmpfs, 1 MB PUT | 1.00× | — | 0.51× (2.0x to disk) | 1.64× |
 
 #### Body Capture Logging — a ~4 KB JSON POST logged to Loki
 
@@ -541,15 +541,15 @@ xychart-beta
 xychart-beta
     title "s6 — logging + body capture, ~4 KB JSON POST: relative QPS (higher is faster)"
     x-axis ["ConduitSharp", "Ocelot", "APISIX", "Envoy"]
-    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.66
-    bar [1.00, 0.78, 1.44, 1.16]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.81
+    bar [1.00, 0.79, 1.58, 1.19]
 ```
 
 | scenario (c=96) | ConduitSharp | Ocelot | APISIX | Envoy |
 |---|---:|---:|---:|---:|
-| s6 — logging + body capture, ~4 KB JSON POST | 1.00× | 0.78× | 1.44× | 1.16× |
+| s6 — logging + body capture, ~4 KB JSON POST (c=50) | 1.00× | 0.79× | 1.58× | 1.19× |
 
-Structured comparison: each scenario fixes the shape of the work, then compares gateways doing that shape, with bytes-written-to-storage measured rather than assumed. s4 is the honest row: forced entirely onto disk, nginx wins — the design's answer is s5 and the RAM tier that makes disk rare. s6 is the other honest row: capturing and shipping every body is real work, so APISIX and Envoy lead it while ConduitSharp buries Ocelot. Full tables, method, and the parts that hurt: [benchmarks/load](benchmarks/load/README.md#structured-comparison--measured-not-hand-typed) · [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30158839718).
+Structured comparison: each scenario fixes the shape of the work, then compares gateways doing that shape, with bytes-written-to-storage measured rather than assumed. s4 is the honest row: forced entirely onto disk, nginx wins — the design's answer is s5 and the RAM tier that makes disk rare. s6 is the other honest row: capturing and shipping every body is real work, so APISIX and Envoy lead it while ConduitSharp buries Ocelot. Full tables, method, and the parts that hurt: [benchmarks/load](benchmarks/load/README.md#structured-comparison--measured-not-hand-typed) · [CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30165314699).
 <!-- BENCH-MATRIX-SUMMARY:END -->
 
 Full microbenchmark tables (routing, plugin dispatch, buffered-vs-stream allocations, JWT
