@@ -386,17 +386,17 @@ ConduitSharp can replace an existing gateway or sit behind one. Against Ocelot i
 xychart-beta
     title "Relative QPS at 125 connections — higher is faster"
     x-axis ["ConduitSharp", "APISIX", "Ocelot", "Envoy", "no gateway (direct)"]
-    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 4.73
-    bar [1.00, 1.04, 0.66, 0.80, 4.11]
+    y-axis "QPS vs ConduitSharp = 1.00" 0 --> 5.16
+    bar [1.00, 1.04, 0.70, 0.82, 4.49]
 ```
 
 | gateway | QPS (relative) | p50 | p99 |
 |---|---:|---:|---:|
-| ConduitSharp | 1.00× | 4.19 ms | 18.66 ms |
-| APISIX | 1.04× | 4.25 ms | 12.73 ms |
-| Ocelot | 0.66× | 6.65 ms | 21.57 ms |
-| Envoy | 0.80× | 5.95 ms | 11.57 ms |
-| *(no gateway — direct to nginx)* | 4.11× | 1.03 ms | 4.48 ms |
+| ConduitSharp | 1.00× | 5.29 ms | 20.28 ms |
+| APISIX | 1.04× | 5.47 ms | 14.93 ms |
+| Ocelot | 0.70× | 7.82 ms | 24.27 ms |
+| Envoy | 0.82× | 6.94 ms | 15.09 ms |
+| *(no gateway — direct to nginx)* | 4.49× | 1.17 ms | 4.98 ms |
 
 #### 512 connections
 
@@ -405,20 +405,20 @@ xychart-beta
     title "Relative QPS at 512 connections — higher is faster"
     x-axis ["ConduitSharp", "APISIX", "Ocelot", "Envoy"]
     y-axis "QPS vs ConduitSharp = 1.00" 0 --> 1.15
-    bar [1.00, 0.95, 0.67, 0.79]
+    bar [1.00, 1.00, 0.69, 0.77]
 ```
 
 | gateway | QPS (relative) | p50 | p99 |
 |---|---:|---:|---:|
-| ConduitSharp | 1.00× | 17.53 ms | 67.21 ms |
-| APISIX | 0.95× | 17.32 ms | 74.45 ms |
-| Ocelot | 0.67× | 27.43 ms | 82.75 ms |
-| Envoy | 0.79× | 24.86 ms | 44.84 ms |
+| ConduitSharp | 1.00× | 21.35 ms | 74.43 ms |
+| APISIX | 1.00× | 22.75 ms | 58.66 ms |
+| Ocelot | 0.69× | 33.04 ms | 91.43 ms |
+| Envoy | 0.77× | 30.12 ms | 53.76 ms |
 
 Pure proxy, 1 KB upstream response, bombardier, gateways benched sequentially on the
 identical rig. **Measured on shared GitHub Actions runners (4 vCPU) — only ratios are
 meaningful there; absolute QPS on shared CI is noise.** Raw figures for this exact run:
-[CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30158839718). Method & how to reproduce on pinned hardware:
+[CI run](https://github.com/liqngliz/ConduitSharp/actions/runs/30165314699). Method & how to reproduce on pinned hardware:
 [benchmarks/load](benchmarks/load/README.md).
 <!-- BENCH:END -->
 
