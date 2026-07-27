@@ -49,7 +49,7 @@ This sample also swaps a pluggable service for a package that ships on its own, 
 automatically, and re-registering a key replaces the built-in:
 
 // Register custom plugins that aren't built-in
-builder.Services.AddSingleton<IPipelinePlugin, BodyCapturePlugin>();
+builder.Services.AddSingleton<IPipelinePlugin, StreamingBodyCapturePlugin>();
 builder.Services.AddSingleton<IPipelinePlugin, PowerShellPlugin>();
 
 A plugin whose `Id` is `"cache"`/`"rate-limit"`/etc. must be **declared in the route's plugin

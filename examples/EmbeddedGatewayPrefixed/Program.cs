@@ -17,7 +17,7 @@ if (!string.IsNullOrEmpty(configOverlay))
 
 builder.Configuration.AddEnvironmentVariables();
 
-builder.Services.AddSingleton<IPipelinePlugin, BodyCapturePlugin>();
+builder.Services.AddSingleton<IPipelinePlugin, StreamingBodyCapturePlugin>();
 builder.Services.AddSingleton<IPipelinePlugin, PowerShellPlugin>();
 
 builder.AddConduitSharpGateway(options => 

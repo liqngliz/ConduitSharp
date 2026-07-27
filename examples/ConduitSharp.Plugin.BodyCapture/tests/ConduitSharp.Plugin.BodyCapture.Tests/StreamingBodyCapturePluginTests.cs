@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -33,8 +34,26 @@ public sealed class StreamingBodyCapturePluginTests
         context.Request.Path = "/api/test";
         context.Request.Method = "POST";
         if (contentType is not null) context.Request.ContentType = contentType;
-        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
+        // Non-seekable: models the streaming path, so the plugin takes its HttpLogging tee branch
+        // (the reuse branch fires only when the gateway has already buffered a seekable body — see
+        // the retry/binary reuse tests in the integration suite).
+        context.Request.Body = new NonSeekableStream(new MemoryStream(Encoding.UTF8.GetBytes(body)));
         return context;
+    }
+
+    private sealed class NonSeekableStream(Stream inner) : Stream
+    {
+        public override bool CanRead => inner.CanRead;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) => inner.ReadAsync(buffer, ct);
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     [Fact]
@@ -67,6 +86,40 @@ public sealed class StreamingBodyCapturePluginTests
         var config = JsonDocument.Parse("""{ "maxSize": 32769 }""").RootElement;
         var ex = Assert.Throws<InvalidOperationException>(() => Build().Plugin.ValidateConfig(config));
         Assert.Contains("32768", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateConfig_CeilingIsConfigurable_RaisedCeilingAcceptsLargerMaxSize()
+    {
+        // BodyCapture:MaxCaptureBytes lifts the default 32 KiB ceiling. A 48 KiB maxSize that the
+        // default rejects is accepted once the ceiling is raised to 64 KiB.
+        var config = JsonDocument.Parse("""{ "maxSize": 49152 }""").RootElement;
+
+        var factory = LoggerFactory.Create(_ => { });
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["BodyCapture:MaxCaptureBytes"] = "65536" })
+            .Build();
+
+        var raised = new StreamingBodyCapturePlugin(factory, configuration);
+        raised.ValidateConfig(config); // 48 KiB is under the raised 64 KiB ceiling — no throw
+
+        Assert.Throws<InvalidOperationException>(() => Build().Plugin.ValidateConfig(config)); // default still rejects
+    }
+
+    private static StreamingBodyCapturePlugin BuildWith(params (string Key, string Value)[] settings) =>
+        new(LoggerFactory.Create(_ => { }),
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(settings.ToDictionary(s => s.Key, s => (string?)s.Value))
+                .Build());
+
+    [Fact]
+    public void Ctor_CeilingBeyondAddressableRange_ThrowsWithItsSize()
+    {
+        // A captured prefix is addressed by an int (HttpLogging's RequestBodyLogLimit), so an
+        // oversized ceiling must say so plainly rather than die as an opaque conversion error.
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            BuildWith(("BodyCapture:MaxCaptureBytes", (4L * 1024 * 1024 * 1024).ToString()))); // 4 GiB
+        Assert.Contains("4096.0 MiB", ex.Message);
     }
 
     [Fact]

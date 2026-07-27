@@ -1,24 +1,35 @@
+using System.Buffers;
+using System.Text;
 using System.Text.Json;
 using ConduitSharp.Core.Pipeline;
 using ConduitSharp.Core.Routing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpLogging;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace ConduitSharp.Plugin.BodyCapture;
 
 /// <summary>
-/// Logs a bounded prefix of the request body <em>without buffering it</em>, by running the
-/// framework's own HttpLogging middleware over the forward.
+/// Logs a bounded prefix of the request body, picking the cheapest path per request:
 ///
-/// Where <see cref="BodyCapturePlugin"/> declares <see cref="IPipelinePlugin.ReadsRequestBody"/> and
-/// so forces the gateway to buffer the whole body (memory + temp-file spill) just to hand it a
-/// rewindable stream, this plugin leaves the route on the streaming path. HttpLogging wraps
-/// <see cref="HttpRequest.Body"/> in its internal <c>RequestBufferingStream</c>, which tees the first
-/// <c>maxSize</c> bytes into pooled segments as YARP streams them upstream and drops the rest. Heap
-/// cost is the prefix, never the body — so this runs on <c>streamOnly</c> routes too.
+/// <list type="bullet">
+/// <item>If the gateway already buffered the body — a retry route, or a body-reading plugin on the
+/// same route — <see cref="HttpRequest.Body"/> is seekable, so this reads the prefix directly off
+/// that existing buffer and rewinds. No second copy: on a retry route capture is near-free, and it
+/// reads raw bytes so it captures binary bodies too.</item>
+/// <item>Otherwise the route is streaming, so it runs the framework's HttpLogging middleware over the
+/// forward. HttpLogging wraps the body in its internal <c>RequestBufferingStream</c>, teeing the first
+/// <c>maxSize</c> bytes into pooled segments as YARP streams them upstream and dropping the rest. Heap
+/// cost is the prefix, never the body — so this runs on <c>streamOnly</c> routes too. (HttpLogging
+/// only captures text-ish media types; a binary body on a pure streaming route is not logged.)</item>
+/// </list>
+///
+/// <see cref="IPipelinePlugin.ReadsRequestBody"/> stays <c>false</c> — this never forces the gateway to
+/// buffer. It only reuses a buffer that already exists. This supersedes the old <c>BodyCapturePlugin</c>,
+/// which declared <c>ReadsRequestBody</c> and so forced whole-body buffering on every route.
 ///
 /// Captured bodies are emitted through the host's <see cref="ILoggerFactory"/>, so they leave the
 /// process through whatever it has wired up — including the gateway's OpenTelemetry logger provider
@@ -29,22 +40,45 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
     private const int DefaultMaxSize = 4 * 1024;
 
     /// <summary>
-    /// Hard ceiling on a route's <c>maxSize</c>. Capture memory sits on the streaming path, which
-    /// never reserves against <c>Gateway:RequestLimits:MaxTotalBufferedBodyBytes</c> — so nothing
-    /// downstream sheds load if it grows. 32 KiB keeps a captured prefix well under the 85 KiB large
-    /// object heap threshold (and matches HttpLogging's own RequestBodyLogLimit default), so capture
-    /// stays on pooled, gen-0-sized buffers no matter how many requests are in flight.
+    /// Default ceiling on a route's <c>maxSize</c>. 32 KiB keeps a captured prefix well under the
+    /// 85 KiB large object heap threshold (and matches HttpLogging's own RequestBodyLogLimit default),
+    /// so capture stays on pooled, gen-0-sized buffers no matter how many requests are in flight.
     /// </summary>
-    private const int MaxAllowedSize = 32 * 1024;
+    private const int DefaultMaxAllowedSize = 32 * 1024;
+
+    /// <summary>
+    /// Effective ceiling on a route's <c>maxSize</c>, from <c>BodyCapture:MaxCaptureBytes</c>
+    /// (default 32 KiB, floored at the per-route default of 4 KiB). Raising it past 85 KiB puts every
+    /// captured prefix on the large object heap — and capture on the streaming path is now counted
+    /// against <c>Gateway:RequestLimits:MaxRamBufferedBodyBytes</c> (see <see cref="CaptureMemoryBytes"/>),
+    /// so a larger prefix reserves more budget and sheds sooner, rather than growing unchecked.
+    /// </summary>
+    private readonly int _maxAllowedSize;
 
     internal const string LimitKey = "conduitsharp.body-capture.limit";
     private  const string NextKey  = "conduitsharp.body-capture.next";
 
     private readonly RequestDelegate _pipeline;
+    // Reuse-branch records log here; the tee branch re-homes HttpLogging's records to the same
+    // category (see BodyCaptureLoggerFactory), so both paths surface under one name.
+    private readonly ILogger _logger;
 
-    public StreamingBodyCapturePlugin(ILoggerFactory loggerFactory)
+    public StreamingBodyCapturePlugin(ILoggerFactory loggerFactory, IConfiguration? configuration = null)
     {
         ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        _logger = loggerFactory.CreateLogger(typeof(StreamingBodyCapturePlugin).FullName!);
+
+        // Read as long so an oversized value reports what it is rather than failing as an opaque
+        // int conversion error. HttpLogging's RequestBodyLogLimit is an int, so that is the hard cap.
+        var requestedCeiling = configuration?.GetValue<long?>("BodyCapture:MaxCaptureBytes") ?? DefaultMaxAllowedSize;
+        if (requestedCeiling > int.MaxValue)
+            throw new InvalidOperationException(
+                $"Plugin 'body-capture' config error: 'BodyCapture:MaxCaptureBytes' of {Mb(requestedCeiling)} exceeds the " +
+                $"{Mb(int.MaxValue)} maximum a captured prefix can address. Send full bodies to a file sink " +
+                "(body-capture-file) instead of holding them in memory.");
+
+        _maxAllowedSize = (int)Math.Max(requestedCeiling, DefaultMaxSize);
 
         // HttpLoggingMiddleware is internal, reachable only via UseHttpLogging() on a pipeline we
         // own, and it resolves its options from DI. The gateway hands drop-in plugins no seam onto
@@ -70,9 +104,11 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
         _pipeline = app.Build();
     }
 
+    private static string Mb(long bytes) => $"{bytes / 1024.0 / 1024.0:F1} MiB";
+
     public PluginName Name => PluginName.Custom;
-    public string? Variant => "body-capture-streaming";
-    public string Id => "body-capture-streaming";
+    public string? Variant => "body-capture";
+    public string Id => "body-capture";
 
     // Deliberately false: we do NOT need the gateway's buffered, rewindable body. HttpLogging
     // observes the bytes as YARP streams them, so the route stays on the zero-copy streaming path.
@@ -80,7 +116,7 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
 
     /// <summary>
     /// The captured prefix is bounded per request, but it multiplies by concurrency — and sitting on
-    /// the streaming path it was invisible to <c>MaxTotalBufferedBodyBytes</c>, so nothing shed load
+    /// the streaming path it was invisible to the RAM budget, so nothing shed load
     /// as it grew. Declaring it here puts the tee under the same ceiling and the same 503 as a
     /// buffered body: a connection flood now sheds instead of climbing unchecked.
     /// </summary>
@@ -92,17 +128,18 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
         {
             if (maxSizeProp.ValueKind != JsonValueKind.Number || !maxSizeProp.TryGetInt32(out var maxSize) || maxSize <= 0)
             {
-                throw new InvalidOperationException("Plugin 'body-capture-streaming' config error: 'maxSize' must be a positive integer.");
+                throw new InvalidOperationException("Plugin 'body-capture' config error: 'maxSize' must be a positive integer.");
             }
 
-            if (maxSize > MaxAllowedSize)
+            if (maxSize > _maxAllowedSize)
             {
                 throw new InvalidOperationException(
-                    $"Plugin 'body-capture-streaming' config error: 'maxSize' must not exceed {MaxAllowedSize} bytes (32 KiB); got {maxSize}. " +
-                    "Capture memory sits on the streaming path, where it is not counted against " +
-                    "Gateway:RequestLimits:MaxTotalBufferedBodyBytes and cannot shed load — and a larger prefix would " +
-                    "put every captured body on the large object heap. Log a bounded prefix here and send full bodies " +
-                    "to an audit sink instead.");
+                    $"Plugin 'body-capture' config error: 'maxSize' must not exceed {_maxAllowedSize} bytes; got {maxSize}. " +
+                    "A captured prefix is reserved against Gateway:RequestLimits:MaxRamBufferedBodyBytes, so a larger " +
+                    "prefix consumes that budget faster and sheds (503) sooner — and past 85 KiB it puts every captured " +
+                    "body on the large object heap. Raise the ceiling with BodyCapture:MaxCaptureBytes only alongside a " +
+                    "budget sized to real available memory; otherwise log a bounded prefix here and send full bodies to " +
+                    "an audit sink instead.");
             }
         }
     }
@@ -111,20 +148,64 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // Body already buffered (retry route / a body-reading plugin on the route): read the prefix
+        // off the existing seekable buffer rather than teeing a second copy. On a retry route this is
+        // the cheap path, and it captures binary bodies HttpLogging would skip.
+        if (context.Request.Body.CanSeek)
+            return CaptureFromBufferedBodyAsync(context, MaxSize(config), next);
+
         context.Items[NextKey]  = next;
         context.Items[LimitKey] = MaxSize(config);
         return _pipeline(context);
     }
 
+    // Reads up to maxSize off the already-buffered, seekable body, rewinds, logs the prefix, forwards.
+    // Same rewind discipline the retry loop relies on: Position is left at 0 for the forward and any
+    // replay. No EnableBuffering — the gateway's buffer is reused in place, staying under its budget.
+    private async Task CaptureFromBufferedBodyAsync(HttpContext context, int maxSize, RequestDelegate next)
+    {
+        context.Request.Body.Position = 0;
+        var buffer = ArrayPool<byte>.Shared.Rent(maxSize);
+        try
+        {
+            var read = await context.Request.Body.ReadAtLeastAsync(
+                buffer.AsMemory(0, maxSize), maxSize, throwOnEndOfStream: false);
+
+            var truncated = false;
+            if (read == maxSize)
+            {
+                var extra = new byte[1];
+                truncated = await context.Request.Body.ReadAsync(extra.AsMemory(0, 1)) > 0;
+            }
+            context.Request.Body.Position = 0;
+
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                var body = Encoding.UTF8.GetString(buffer, 0, read);
+                if (truncated) body += "... (truncated)";
+                var routeId = context.Items.TryGetValue("ConduitSharp.RouteId", out var r) && r is string id ? id : "";
+                _logger.LogInformation(
+                    "Captured request body for path {Path} route {RouteId}: {Body}",
+                    context.Request.Path.Value ?? "", routeId, body);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        await next(context);
+    }
+
     // Clamped as well as validated: ValidateConfig already rejects an oversized maxSize at startup
     // and on reload, so this only matters if a plugin host ever skips it — but the ceiling exists to
     // bound heap, and a bound that depends on someone else remembering to call a validator is not one.
-    private static int MaxSize(JsonElement config) =>
+    private int MaxSize(JsonElement config) =>
         config.ValueKind == JsonValueKind.Object
         && config.TryGetProperty("maxSize", out var maxSizeProp)
         && maxSizeProp.TryGetInt32(out var parsed)
         && parsed > 0
-            ? Math.Min(parsed, MaxAllowedSize)
+            ? Math.Min(parsed, _maxAllowedSize)
             : DefaultMaxSize;
 
     /// <summary>
