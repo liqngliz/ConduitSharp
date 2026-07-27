@@ -283,6 +283,15 @@ public sealed class RetryConfig
     [JsonPropertyName("maxAttempts")]
     public int MaxAttempts { get; init; } = 1;
 
+    /// <summary>
+    /// Opt in to retrying non-idempotent methods (POST/PATCH). Off by default because a POST may
+    /// already have been applied upstream, so a replay can double-apply it — enable only when the
+    /// upstream is safe to hit twice. When on, the route always buffers so the body can be rewound.
+    /// Default: <c>false</c>.
+    /// </summary>
+    [JsonPropertyName("retryNonIdempotent")]
+    public bool RetryNonIdempotent { get; init; } = false;
+
     /// <summary>Base delay between attempts in milliseconds. Default: <c>0</c>.</summary>
     [JsonPropertyName("delayMs")]
     public int DelayMs { get; init; } = 0;

@@ -118,9 +118,13 @@ wrap `context.Request.Body` before calling `next`, and the route keeps streaming
 See [examples/ConduitSharp.Plugin.BodyCapture](../examples/ConduitSharp.Plugin.BodyCapture) for both
 patterns side by side.
 
-Retries apply to **idempotent methods only** (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`, `TRACE`);
-a `POST`/`PATCH` never retries, since it may already have been applied upstream. A retried attempt
-never reaches the client — its response is held back and discarded.
+Retries apply to **idempotent methods only** (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`, `TRACE`) by
+default; a `POST`/`PATCH` never retries, since it may already have been applied upstream. A route
+whose upstream is safe to replay can opt a non-idempotent method in with
+`"retry": { "maxAttempts": 3, "retryNonIdempotent": true }` — but a replayed `POST` can **double-apply**
+if the first attempt reached the upstream, so enable it only when that is harmless. Opting in forces
+the route to buffer (the loop needs a rewindable body). A retried attempt never reaches the client —
+its response is held back and discarded.
 
 Retry is a sibling of `cluster`, not part of it — YARP's `ClusterConfig` has no retry field, and its
 `metadata` (a string-to-string dictionary) could never hold a structured policy:

@@ -269,4 +269,23 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
         Assert.Equal(2, _upstream.ReceivedRequests.Count);
         Assert.All(_upstream.ReceivedRequests, r => Assert.Equal("""{"v":42}""", r.Body));
     }
+
+    [Fact]
+    public async Task NonIdempotentMethod_WithRetryNonIdempotent_IsRetried_FullBodyResent()
+    {
+        // Opt-in: retryNonIdempotent makes a POST replay. Proves all three call sites agree —
+        // the gate lets it through, the route buffers instead of streaming, and the loop rewinds
+        // the buffered body so attempt 2 carries the full payload (not an empty stream).
+        FailThenSucceed(failures: 1);
+        await using var factory = await GatewayFactory.CreateAsync(_upstream,
+            RoutesWithRetryBlock("""{ "maxAttempts": 2, "retryNonIdempotent": true }"""));
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync("/api/data",
+            new StringContent("""{"v":42}""", System.Text.Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, _upstream.ReceivedRequests.Count); // POST retried once
+        Assert.All(_upstream.ReceivedRequests, r => Assert.Equal("""{"v":42}""", r.Body));
+    }
 }
