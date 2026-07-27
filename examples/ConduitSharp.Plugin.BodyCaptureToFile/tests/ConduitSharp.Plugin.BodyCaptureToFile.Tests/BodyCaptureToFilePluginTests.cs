@@ -31,6 +31,28 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
     }
 
     [Fact]
+    public void CaptureMemoryBytes_DeclaresTheRentedBuffer_SoTheGatewayCanBudgetIt()
+    {
+        // The plugin rents a maxSize buffer per request and holds it until the background writer
+        // drains the queue. Undeclared, that multiplies by concurrency with nothing to shed it —
+        // declaring it puts the RAM under MaxRamBufferedBodyBytes and the gateway's 503.
+        using var plugin = new BodyCaptureToFilePlugin(_configSub);
+        var config = JsonDocument.Parse("""{ "maxSize": 8192 }""").RootElement;
+
+        Assert.Equal(8192, plugin.CaptureMemoryBytes(config));
+    }
+
+    [Fact]
+    public void CaptureMemoryBytes_WithoutMaxSize_DeclaresTheDefault_NotZero()
+    {
+        // Zero would mean "this plugin holds no memory of its own", which is exactly the silent
+        // gap this closes: a route omitting maxSize still rents the 4 KiB default.
+        using var plugin = new BodyCaptureToFilePlugin(_configSub);
+
+        Assert.Equal(4 * 1024, plugin.CaptureMemoryBytes(JsonDocument.Parse("{}").RootElement));
+    }
+
+    [Fact]
     public void ValidateConfig_ValidMaxSize_DoesNotThrow()
     {
         var json = $$"""{ "logPath": "{{_tempLogFile.Replace("\\", "\\\\")}}", "maxSize": 1024 }""";

@@ -51,7 +51,42 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
             new BoundedChannelOptions(capacity) { FullMode = BoundedChannelFullMode.DropWrite }
         );
         _writeTask = Task.Run(ProcessQueueAsync);
+
+        // The queue can hold this much pooled RAM beyond what any in-flight request has reserved
+        // (see CaptureMemoryBytes). Stated once at startup so it is a known number rather than one
+        // discovered from a memory graph.
+        _logger?.LogInformation(
+            "BodyCaptureToFile queue holds up to {Capacity} entries; retained capture RAM is bounded by capacity x the route's maxSize",
+            capacity);
     }
+
+    /// <summary>
+    /// The pooled <c>maxSize</c> buffer this plugin rents per request, declared so the gateway
+    /// reserves it against <c>Gateway:RequestLimits:MaxRamBufferedBodyBytes</c> and sheds with a 503
+    /// instead of letting it multiply by concurrency unbudgeted.
+    ///
+    /// Note what this does <em>not</em> cover. The buffer is handed to a bounded channel and returned
+    /// to the pool only when the background writer drains it, which can be after the request that
+    /// rented it has completed and released its reservation. So the queue can retain up to
+    /// <c>OTEL_BLRP_MAX_QUEUE_SIZE</c> × <c>maxSize</c> beyond what is reserved at any instant — a
+    /// hard ceiling (the channel is <c>DropWrite</c>), but one the request-scoped budget cannot see.
+    /// It is logged at startup so the number is visible rather than inferred.
+    ///
+    /// The sink's <em>disk</em> use is deliberately not budgeted here: <c>MaxDiskBufferedBodyBytes</c>
+    /// meters transient per-request spill that is released when the request ends, whereas this writes
+    /// a persistent rolling log already bounded at ~2× <c>maxFileBytes</c> by <see cref="Roll"/>.
+    /// Reserving those bytes per request would ratchet that budget to zero and 503 the gateway
+    /// permanently, because they are never released.
+    /// </summary>
+    public int CaptureMemoryBytes(JsonElement config) => MaxSize(config);
+
+    private static int MaxSize(JsonElement config) =>
+        config.ValueKind == JsonValueKind.Object
+        && config.TryGetProperty("maxSize", out var maxSizeProp)
+        && maxSizeProp.TryGetInt32(out var parsed)
+        && parsed > 0
+            ? parsed
+            : DefaultMaxSize;
 
     public void ValidateConfig(JsonElement config)
     {
@@ -85,12 +120,7 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
 
     public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
     {
-        var maxSize = DefaultMaxSize;
-        if (config.ValueKind == JsonValueKind.Object && config.TryGetProperty("maxSize", out var maxSizeProp)
-            && maxSizeProp.TryGetInt32(out var parsedSize) && parsedSize > 0)
-        {
-            maxSize = parsedSize;
-        }
+        var maxSize = MaxSize(config);
 
         context.Request.Body.Position = 0;
 
@@ -99,7 +129,7 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
         var buffer = ArrayPool<byte>.Shared.Rent(maxSize);
         // ReadAtLeastAsync, not ReadAsync: a single read may return short on a stream that still has
         // data, which would both cut the capture and leave `truncated` false — silently claiming a
-        // partial body is the whole one. Matches BodyCapturePlugin.
+        // partial body is the whole one.
         var length = await context.Request.Body.ReadAtLeastAsync(
             buffer.AsMemory(0, maxSize), maxSize, throwOnEndOfStream: false);
 
