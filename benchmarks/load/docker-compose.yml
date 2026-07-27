@@ -1,4 +1,4 @@
-# Phase 2/3 load-bench rig — APISIX-style method (see docs/planning/BENCHMARKS_PLAN.md).
+# Phase 2/3 load-bench rig — APISIX-style method (see run.sh for per-scenario rationale).
 #
 #   ./run.sh all                 # scenarios with 30s runs, writes results.md
 #   SCENARIO=scenario-b ./run.sh scenario-b

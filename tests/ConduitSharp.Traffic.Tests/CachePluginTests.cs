@@ -192,7 +192,8 @@ public sealed class CachePluginTests
     }
 
     // -------------------------------------------------------------------------
-    // ResponseCaptureCallback — registered on cache miss so gateway can write back
+    // Response capture — on a cache miss the plugin swaps Response.Body for a bounded
+    // CapturingStream, so the body reaches the client and the cache in one pass
     // -------------------------------------------------------------------------
 
     [Fact]

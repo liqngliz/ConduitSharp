@@ -86,6 +86,7 @@ Each item references the test(s) that must pass (or be un-Skipped) to consider i
 **What**: With `ResponseCaptureCallback` set, `ReadAsStringAsync()` loaded the full upstream body into memory before writing it to the client — defeating streaming for cacheable responses and unbounded in size.
 **Fix (implemented)**: `TeeAndCaptureAsync` streams each chunk to the client and captures it in parallel. Capture stops once `PluginContext.ResponseCaptureLimitBytes` is exceeded (set by `CachePlugin` from `maxCacheableBytes`, default 1 MiB) — the client still gets the full body, but oversized responses are streamed without being cached and without a memory spike. `maxCacheableBytes <= 0` means no cap.
 **Tests**: `CacheEndToEndTests.LargeResponse_IsCachedWithoutMemoryBlowup` (256 KB body streamed + cached intact) and `ResponseOverCacheLimit_IsStreamedButNotCached` (4 KB body over a 1 KB cap → streamed in full, not cached)
+**Since superseded**: the `ResponseCaptureCallback` mechanism this describes no longer exists. Capture is now plugin-owned — `CachePlugin` swaps `Response.Body` for a bounded `CapturingStream`. The bound survives; the plumbing does not. Kept for history.
 
 ---
 

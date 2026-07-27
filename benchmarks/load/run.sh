@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 2/3 load benchmarks (see docs/planning/BENCHMARKS_PLAN.md).
+# Phase 2/3 load benchmarks. Method and per-scenario rationale are documented inline below.
 #
 #   ./run.sh all                  # direct + scenario-a + scenario-b + flood
 #   ./run.sh scenario-a           # one scenario

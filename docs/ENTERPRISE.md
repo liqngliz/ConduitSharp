@@ -730,16 +730,16 @@ public sealed class MyRateLimitPlugin : IPipelinePlugin
     // it is a breaking change for anyone replacing this built-in.
     public string Id => "rate-limit";
 
-    public async Task ExecuteAsync(PluginContext context, PluginDelegate next)
+    public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
     {
-        // Load and validate config at the top — save before calling next,
-        // the executor overwrites PluginConfig for each plugin in the chain.
-        var config = MyRateLimitConfig.From(context.PluginConfig);
+        // The route's config block is passed in on every call — nothing shared to copy first.
+        var typed = MyRateLimitConfig.From(config);
 
-        if (IsOverLimit(context.Request, config.Threshold))
+        if (IsOverLimit(context.Request, typed.Threshold))
         {
-            context.ShortCircuitHeaders["Retry-After"] = "60";
-            context.ShortCircuit(429, "Rate limit exceeded.");
+            context.Response.Headers.RetryAfter = "60";
+            context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            await context.Response.WriteAsync("Rate limit exceeded.");
             return; // stops the chain — upstream is never called
         }
 
@@ -789,7 +789,7 @@ public sealed class RequestIdPlugin : IPipelinePlugin
     public PluginName Name => PluginName.HeaderTransform;
     public string     Id   => "header-transform";
 
-    public async Task ExecuteAsync(PluginContext context, PluginDelegate next)
+    public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
     {
         context.Request.Headers["X-Request-Id"] = Guid.NewGuid().ToString();
         context.Request.Headers["X-Forwarded-By"] = "ConduitSharp";
@@ -808,7 +808,7 @@ public sealed class TenantPlugin : IPipelinePlugin
     public PluginName Name => PluginName.HeaderTransform;
     public string     Id   => "header-transform";
 
-    public async Task ExecuteAsync(PluginContext context, PluginDelegate next)
+    public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
     {
         if (context.Request.Headers.TryGetValue("Authorization", out var bearer))
         {
@@ -837,12 +837,12 @@ public sealed class FanOutPlugin : IPipelinePlugin
     public string?    Variant => "fan-out";
     public string     Id      => "fan-out";
 
-    public async Task ExecuteAsync(PluginContext context, PluginDelegate next)
+    public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
     {
-        var config = FanOutConfig.From(context.PluginConfig);
+        var typed = FanOutConfig.From(config);
 
         // Fan out in parallel, honour per-target timeouts
-        var tasks = config.Targets.Select(async t =>
+        var tasks = typed.Targets.Select(async t =>
         {
             using var cts = new CancellationTokenSource(t.TimeoutMs);
             var response = await _http.GetStringAsync(t.Url, cts.Token);
@@ -855,7 +855,9 @@ public sealed class FanOutPlugin : IPipelinePlugin
         var merged = JsonSerializer.Serialize(
             results.ToDictionary(r => r.Name, r => r.Body));
 
-        context.ShortCircuit(200, merged);
+        context.Response.StatusCode  = StatusCodes.Status200OK;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsync(merged);
         // do not call next — there is no upstream to forward to
     }
 }

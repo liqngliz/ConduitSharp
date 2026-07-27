@@ -88,33 +88,42 @@ HTTP request
 ```csharp
 public interface IPipelinePlugin
 {
-    PluginName Name { get; }
-    string? Variant => null;                                    // disambiguator for PluginName.Custom
-    Task ExecuteAsync(PluginContext context, PluginDelegate next);
+    PluginName Name { get; }                                     // closed enum, strictly deserialized
+    string     Id   { get; }                                     // stable lowercase registry key
+    string?    Variant => null;                                  // disambiguator for PluginName.Custom
+
+    Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next);
+
     void ValidateConfig(JsonElement config) { }                  // startup/reload fail-fast; default no-op
+    bool ReadsRequestBody => false;                              // forces the buffered path when true
+    int  CaptureMemoryBytes(JsonElement config) => 0;            // RAM held outside the body buffer
 }
 ```
 
-`PluginDelegate` is `Task(PluginContext)` — the rest of the chain. The middleware
-pattern applies: do work, call `next`, optionally do more work after `next` returns.
-To block a request call `context.ShortCircuit(statusCode, body?)` and **return
-without calling next**.
+The plugin runs on ASP.NET Core's own `HttpContext` and `RequestDelegate` — there is no
+gateway-specific context type. `next` is the rest of the chain, and on a route with an
+upstream the terminal step invokes YARP's forward, so the forward happens *inside* your
+`next()`. The middleware pattern applies: do work, call `next`, optionally do more after it
+returns. To block a request, write to `context.Response` and **return without calling
+`next`**.
+
+The per-route `config` block arrives as a parameter on every call, so unlike a mutable
+context field there is nothing to copy to a local before calling `next`.
 
 ### Two separate validation moments
 
 - **`ValidateConfig(JsonElement)`** — called once per enabled route/plugin at startup
-  and on admin reload, via `PluginPipelineExecutor.ValidateRouteConfigs`. Throw here to
-  fail fast on structurally-valid-but-semantically-wrong config (e.g. `rate-limit` with
-  `maxRequests <= 0`, `cache` with a non-positive `ttlSeconds`, `jwks-jwt-auth` missing
-  `jwksUri`). Default implementation is a no-op — most plugins skip it and rely on the
-  pattern below.
+  and on admin reload. Throw here to fail fast on structurally-valid-but-semantically-wrong
+  config (e.g. `rate-limit` with `maxRequests <= 0`, `cache` with a non-positive
+  `ttlSeconds`, `jwks-jwt-auth` missing `jwksUri`). Default implementation is a no-op —
+  most plugins skip it and rely on the pattern below.
 - **`static From(JsonElement)` factory** — the config record's own deserialize+validate
   entry point, called by convention at the top of `ExecuteAsync` on every request:
 
 ```csharp
-public Task ExecuteAsync(PluginContext context, PluginDelegate next)
+public Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
 {
-    var config = MyConfig.From(context.PluginConfig); // deserialize + validate here
+    var typed = MyConfig.From(config);   // deserialize + validate here
     // ... plugin logic with typed config
 }
 ```
@@ -123,18 +132,27 @@ Implementing `ValidateConfig` (even as `configLoader(config)` reusing the same `
 factory, as `JwksJwtAuthPlugin` does) moves the failure to startup instead of first
 request; it is optional but recommended for anything with a "this must be positive" invariant.
 
-### PluginContext fields available to a plugin
+### Declaring what the plugin costs
 
-| Member | Type | Notes |
-|---|---|---|
-| `Request` | `GatewayRequest` | Snapshot of the incoming request including seekable body stream |
-| `RouteMatch` | `RouteMatchResult` | The matched route + captured path params |
-| `PluginConfig` | `JsonElement` | This plugin's `config` block from routes.json. **Save to a local before calling next** — the executor overwrites it for the next plugin |
-| `ShortCircuitHeaders` | `Dictionary<string,string>` | Add response headers here before calling `ShortCircuit` |
-| `IsShortCircuited` | `bool` | Read-only; true after any plugin calls ShortCircuit |
-| `ResponseCaptureCallback` | `Func<int, string?, string, Task>?` | Set before calling `next` to receive `(statusCode, contentType, body)` after the upstream responds (2xx only, subject to `ResponseCaptureLimitBytes`). Used by `CachePlugin`. |
-| `ResponseCaptureLimitBytes` | `long` | Caps captured response size; larger bodies still stream to the client but are not captured. Zero = no limit. |
-| `FinalizeResponseCapture` | `Func<Task>?` | Set by the Host. A plugin that armed capture should call this right after `next()` returns so it has the body in hand before doing its own post-processing (e.g. the cache publishing to coalesced followers). Idempotent; no-op if the response wasn't produced in-chain — the Host finalizes the fallback-proxy path itself. |
+Two members exist so the gateway can budget a plugin's resource use rather than discover it
+under load:
+
+| Member | Meaning |
+|---|---|
+| `ReadsRequestBody` | The plugin needs the whole body, rewindable. Returning `true` forces the route onto the buffered path — and makes a `streamOnly` route carrying this plugin a startup error, rather than silently handing it a forward-only stream. Prefer `false` plus a bounded read where possible. |
+| `CaptureMemoryBytes(config)` | Bytes the plugin holds in RAM *outside* the gateway's body buffer, for a route with this config. Non-zero puts that memory under `Gateway:RequestLimits:MaxRamBufferedBodyBytes`: the gateway reserves it for the life of the request and sheds with a 503 at the ceiling. Read once at chain-compile time, not per request. Without it a bounded-per-request footprint multiplies by concurrency with nothing to shed it. |
+
+### Reading and writing the body
+
+`context.Request.Body` is seekable **only** when something on the route already caused
+buffering — a retry policy, or a plugin declaring `ReadsRequestBody`. Check
+`Request.Body.CanSeek` rather than assuming; rewind with `Position = 0` both before and
+after reading, since the forward (and any retry) reads the same stream. Never call
+`Request.EnableBuffering()`, which buffers a second copy outside the gateway's budget.
+
+To observe a response, swap `context.Response.Body` for a wrapper before calling `next` and
+restore it after — the pattern `CachePlugin` uses. There is no response-capture callback on
+the contract.
 
 ### Naming constraint — `PluginName` + `Variant`
 
@@ -235,38 +253,62 @@ that consumes it.
 
 **Header injection** — mutate `context.Request.Headers` before calling `next`:
 ```csharp
-public async Task ExecuteAsync(PluginContext context, PluginDelegate next)
+public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
 {
     context.Request.Headers["X-Request-Id"] = Guid.NewGuid().ToString();
     await next(context);
 }
 ```
 
-**Short-circuit (block/respond)** — call `ShortCircuit` and return without calling `next`:
+**Short-circuit (block/respond)** — write the response and return without calling `next`:
 ```csharp
-public async Task ExecuteAsync(PluginContext context, PluginDelegate next)
+public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
 {
     if (!IsAuthorised(context.Request))
     {
-        context.ShortCircuit(401, "Unauthorized.");
-        return;
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        await context.Response.WriteAsync("Unauthorized.");
+        return;                       // not calling next is what blocks the request
     }
     await next(context);
 }
 ```
 
-**Response capture** — set `ResponseCaptureCallback` before calling `next`, then call
-`context.FinalizeResponseCapture?.Invoke()` right after `next()` returns so the body is
-in hand before any post-processing:
+**Response capture** — swap `Response.Body` for a wrapper before `next`, restore after. The
+forward runs inside `next`, so the wrapper sees the upstream's bytes; restoring in a `finally`
+matters because an upstream throw must not leave the swapped stream in place:
 ```csharp
-public async Task ExecuteAsync(PluginContext context, PluginDelegate next)
+public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
 {
-    context.ResponseCaptureCallback = async (status, contentType, body) =>
+    var original = context.Response.Body;
+    using var buffer = new MemoryStream();       // bound this in production — see CaptureMemoryBytes
+    context.Response.Body = buffer;
+    try
     {
-        await _cache.SetAsync(CacheKey(context.Request), body);
-    };
+        await next(context);
+        buffer.Position = 0;
+        await _cache.SetAsync(CacheKey(context.Request), buffer.ToArray());
+        buffer.Position = 0;
+        await buffer.CopyToAsync(original);      // the client still gets the body
+    }
+    finally
+    {
+        context.Response.Body = original;
+    }
+}
+```
+
+**Request body inspection** — only where the route already buffers, and always rewind:
+```csharp
+public bool ReadsRequestBody => true;            // forces the buffered path for this route
+
+public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
+{
+    context.Request.Body.Position = 0;
+    using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+    var body = await reader.ReadToEndAsync();
+    context.Request.Body.Position = 0;           // the forward — and any retry — reads it next
     await next(context);
-    if (context.FinalizeResponseCapture is { } finalize) await finalize();
 }
 ```
 
@@ -278,13 +320,16 @@ response without forwarding:
 public PluginName Name    => PluginName.Custom;
 public string?    Variant => "fan-out";
 
-public async Task ExecuteAsync(PluginContext context, PluginDelegate next)
+public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestDelegate next)
 {
-    var config = FanOutConfig.From(context.PluginConfig);
-    var tasks  = config.Targets.Select(t => _http.GetStringAsync(t.Url));
+    var typed  = FanOutConfig.From(config);
+    var tasks  = typed.Targets.Select(t => _http.GetStringAsync(t.Url));
     var bodies = await Task.WhenAll(tasks);
-    var merged = Merge(config.Targets.Zip(bodies));
-    context.ShortCircuit(200, merged);
+    var merged = Merge(typed.Targets.Zip(bodies));
+
+    context.Response.StatusCode  = StatusCodes.Status200OK;
+    context.Response.ContentType = "application/json";
+    await context.Response.WriteAsync(merged);
     // do not call next — no single upstream to forward to
 }
 ```
@@ -533,7 +578,7 @@ holds a `Meter`. Both sources are named `"ConduitSharp.Gateway"` /
   `http.request.method`, `url.path`, `conduitsharp.route_id` (set after route match),
   `http.response.status_code`, `conduitsharp.short_circuited` (when applicable). Status
   set to `Error` only on 5xx (Ok is reserved for explicit operator vetting).
-- `PluginPipelineExecutor` starts one `plugin.{Name}` (or `plugin.{Name}:{Variant}` for
+- The compiled route chain starts one `plugin.{Name}` (or `plugin.{Name}:{Variant}` for
   Custom) child span per plugin invocation, tagged `conduitsharp.plugin` — gives
   per-plugin latency breakdown inside a request's trace.
 - Admin route reloads add an `admin.routes.reloaded` activity event with
@@ -618,20 +663,28 @@ first regardless).
 
 ---
 
-## Response capture (middleware-owned tee)
+## Response capture (plugin-owned swap)
 
-The cache plugin (and any future response-observing plugin) needs the response body
-without buffering it twice or requiring the response-producing plugin to cooperate.
-`GatewayMiddleware` wraps `IHttpResponseBodyFeature` in `CapturingResponseBodyFeature`
-before the plugin chain runs — dormant unless a plugin sets
-`PluginContext.ResponseCaptureCallback`. It intercepts **both** write surfaces
-(`Response.Body`, a `Stream`, used by the built-in proxy; `Response.BodyWriter`, a
-`PipeWriter`, used by YARP's `IHttpForwarder`), so any response producer is capturable
-with zero cooperation. Capture is finalized (callback invoked) at the earlier of: the
-requesting plugin calling `context.FinalizeResponseCapture()` right after `next()`
-returns, or `GatewayMiddleware` itself after the fallback proxy completes. Only a 2xx
-response within `ResponseCaptureLimitBytes` is captured; larger or non-2xx responses
-still stream to the client, just uncaptured.
+There is no middleware-owned tee and no capture callback on the plugin contract. A plugin that
+wants the response body swaps `context.Response.Body` for its own stream before calling `next`,
+and restores the original afterwards — `CachePlugin` is the reference implementation
+(`src/ConduitSharp.Traffic/Caching/CachePlugin.cs`).
+
+This works because the forward runs *inside* the plugin chain's `next()`: the chain's terminal
+step invokes YARP's `ProxyNext`, so a stream installed before `next` sees the upstream's bytes.
+
+Swapping `Response.Body` reroutes `Response.Body`, `WriteAsync` **and** `Response.BodyWriter`
+through the replacement, because ASP.NET Core rebuilds the response-body feature around the
+assigned stream (`StreamResponseBodyFeature`). A plugin that captured a raw
+`IHttpResponseBodyFeature` reference *before* the swap would bypass it, but nothing in-tree does.
+
+Two obligations the reference implementation demonstrates:
+
+- **Bound the capture.** `CapturingStream` takes a max size and stops retaining beyond it, so a
+  large response streams to the client without being held. A plugin holding response bytes should
+  also declare `CaptureMemoryBytes` so the RAM is budgeted and sheds with a 503 rather than
+  growing with concurrency.
+- **Restore in a `finally`.** An upstream throw must not leave the swapped stream installed.
 
 ---
 
@@ -852,10 +905,10 @@ a `PluginKey` = `(PluginName, Variant)`; any number of `Custom` plugins coexist 
 distinct variants with **no `Core` recompile**. Adding a new *built-in* `PluginName`
 value still requires editing the enum and recompiling `Core`.
 
-**GatewayRequest has no ASP.NET dependency.** `RouteMatcher` and `PluginContext`
-operate on `GatewayRequest`, a plain DTO. The gateway library maps `HttpRequest →
-GatewayRequest` before entering the pipeline. This keeps Core independently testable
-without a web host.
+**Plugins run on ASP.NET Core types directly.** `IPipelinePlugin.ExecuteAsync` takes
+`HttpContext` and `RequestDelegate` — there is no gateway-specific request DTO or context
+type to map to. Routing is ASP.NET Core endpoint routing (a DFA over path/method/header/
+query), not a hand-written matcher.
 
 **First-match-wins routing.** Route priority is determined by position in
 `routes.json`. There is no scoring or specificity algorithm — put catch-alls last.
@@ -870,18 +923,19 @@ caller just lacks permission for this route. `RequiredClaim.ValidateAll` runs at
 time (both plugins' `From()` and `ValidateConfig`), so a malformed `requiredClaims` block
 fails at startup like any other plugin config error.
 
-**Plugin chain is a delegate chain built in reverse.** `PluginPipelineExecutor` sorts
-plugins by `Order` ascending, then wraps them inside-out into a nested `PluginDelegate`
-so the lowest-order plugin is the outermost call. `PluginConfig` on `PluginContext` is
-reassigned before each plugin is invoked — plugins that need their config after calling
-`next` must capture it in a local variable first. Each plugin invocation is also wrapped
-in a `plugin.{Name}` OTel span.
+**Each route compiles to one RequestDelegate, once.** `BuildRouteChain` sorts the route's
+enabled plugins by `Order` ascending and appends each as an `IApplicationBuilder.Use` step,
+so the lowest-order plugin is the outermost call; the terminal step invokes YARP's
+`ProxyNext`. Plugin instances are resolved at compile time, not per request, and the whole
+table is swapped atomically on admin reload (`GatewayRouteTable`). Each plugin's per-route
+`config` is passed as an argument on every call, so there is no shared mutable field to
+copy before calling `next`. Each plugin invocation is wrapped in a `plugin.{Name}` OTel span.
 
 **Per-plugin config validation is opt-in but startup-enforced when present.**
-`IPipelinePlugin.ValidateConfig` defaults to a no-op; `PluginPipelineExecutor
-.ValidateRouteConfigs` runs it for every enabled plugin at startup and on admin
-reload, wrapping failures with route/plugin context so a bad config value fails the
-deploy/reload instead of the first request that hits it.
+`IPipelinePlugin.ValidateConfig` defaults to a no-op; route-table validation runs it for
+every enabled plugin at startup and on admin reload, wrapping failures with route/plugin
+context so a bad config value fails the deploy/reload instead of the first request that
+hits it.
 
 **The forward runs INSIDE the plugin chain's `next()`.** A route's chain is compiled once into a
 `RequestDelegate` whose terminal step invokes `Items["ConduitSharp.ProxyNext"]` — the continuation
@@ -975,7 +1029,7 @@ classes write process-level env vars concurrently.
 
 ### OTel tracing in tests
 
-To cover non-null activity branches in `GatewayMiddleware` or `PluginPipelineExecutor`,
+To cover non-null activity branches in the gateway's request span or a plugin span,
 register an `ActivityListener` before creating the gateway client:
 
 ```csharp

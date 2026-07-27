@@ -1,8 +1,9 @@
 # ConduitSharp load benchmarks (Phase 2/3)
 
 APISIX-style macro benchmarks: gateway in Docker, nginx serving a 1 KB response as
-two round-robin upstream nodes, bombardier as load generator. Method and rationale:
-[docs/planning/BENCHMARKS_PLAN.md](../../docs/planning/BENCHMARKS_PLAN.md).
+two round-robin upstream nodes, bombardier as load generator. The method and its
+rationale are documented inline in `run.sh` — each scenario carries a comment
+explaining what shape it measures and why the comparison is fair.
 
 ## Run
 
