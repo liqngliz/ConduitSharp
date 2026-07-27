@@ -45,10 +45,10 @@ HTTP request
                                 body-reading plugin. All other requests stream (same as streamOnly).
                                 Buffered: route.MaxRequestBodyBytes (else Gateway:RequestLimits
                                 .MaxRequestBodyBytes) → 413. Two tiers, via RequestBodyBudget:
-                                RAM while MaxMemoryBufferedBodyBytes (default 64 MiB) has headroom
-                                (≤ MemoryBufferThresholdBytes, default 1 MiB, per body); disk spill
+                                RAM while MaxRamBufferedBodyBytes (default 64 MiB) has headroom
+                                (≤ RamBufferThresholdBytes, default 1 MiB, per body); disk spill
                                 once it doesn't (FileBufferingReadStream temp file, SpillDirectory);
-                                503 only when MaxTotalBufferedBodyBytes (RAM + spill) is exhausted.
+                                503 only when MaxDiskBufferedBodyBytes (spilled bytes) is gone too.
                                 Leaves a seekable body so plugins can inspect it and the retry loop
                                 can rewind it.
           → ordered plugin chain (jwt-auth → rate-limit → cache → header-transform → …)
@@ -591,21 +591,23 @@ Configured under `Gateway:RequestLimits` (`RequestLimitsOptions`):
 - **`MaxRequestBodyBytes`** (default 8 MiB) — per-request cap; a route's
   `maxRequestBodyBytes` overrides it. Over the limit → 413. Zero/negative disables the
   per-request check.
-- **`MaxTotalBufferedBodyBytes`** (default 128 MiB) — aggregate cap across all
-  concurrently in-flight bodies (RAM + spill), enforced by `RequestBodyBudget` (an
+- **`MaxDiskBufferedBodyBytes`** (default 128 MiB) — aggregate cap across all
+  concurrently in-flight bodies, enforced by `RequestBodyBudget` (an
   interlocked counter). A request that would push the total over budget is rejected with
   503 (retryable). Zero/negative disables it — meaning *unlimited*, not zero.
-- **`MaxMemoryBufferedBodyBytes`** (default 64 MiB) — the RAM tier, carved out of the
+- **`MaxRamBufferedBodyBytes`** (default 64 MiB) — the RAM budget, independent of the
   total. While it has headroom a body buffers in memory (~3–5x faster than spilling);
   once full, further bodies spill from the first byte but are still served. This is what
-  bounds buffering's RAM footprint, which is why `MemoryBufferThresholdBytes` can be
+  bounds buffering's RAM footprint, which is why `RamBufferThresholdBytes` can be
   generous per request. Zero/negative disables the tier — meaning *no RAM at all*, the
   opposite direction from the total.
-- **`MemoryBufferThresholdBytes`** (default 1 MiB, clamped `[4 KiB, 1 MiB]`) — per-request
-  RAM ceiling. The 1 MiB clamp is structural: `FileBufferingReadStream` serves thresholds
-  up to 1 MiB from `ArrayPool`, and above it grows a bare `MemoryStream` by doubling,
-  allocating ~2x the body on the LOH. A body whose `Content-Length` already exceeds the
-  threshold skips the RAM buffer and spills immediately.
+- **`RamBufferThresholdBytes`** (default 1 MiB, floored at 4 KiB, no upper cap) — per-request
+  RAM ceiling. 1 MiB is an inflection point, not a limit: `FileBufferingReadStream` serves
+  thresholds up to 1 MiB from `ArrayPool`, and above it grows a bare `MemoryStream` by doubling,
+  allocating ~2x the body on the LOH. Raising it past 1 MiB trades that LOH cost for bodies that
+  skip the disk round-trip. It can never lift total RAM above `MaxRamBufferedBodyBytes` — a body
+  is granted the threshold only if that tier has headroom. A body whose `Content-Length` already
+  exceeds the threshold skips the RAM buffer and spills immediately.
 - **`SpillDirectory`** (default: system temp) — where the disk tier writes. In containers
   `/tmp` is often `tmpfs` (RAM), which turns the disk tier back into a memory tier and
   OOMs instead of degrading. Point it at a real volume.

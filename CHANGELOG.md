@@ -5,6 +5,62 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.0]
+
+### Breaking — request-limit settings split into one budget per resource
+
+`Gateway:RequestLimits` counted RAM and disk spill in a single combined total, which could not be
+sized correctly for either: raising it to suit a large spill volume silently licensed the same
+growth in RAM, so an overloaded gateway could be OOM-killed where it should have shed with a 503.
+The combined total is replaced by two independent budgets.
+
+| Removed | Replacement | Meters |
+|---|---|---|
+| `MaxTotalBufferedBodyBytes` (RAM + disk, 128 MiB) | `MaxDiskBufferedBodyBytes` (64 MiB) | spill-file bytes only — size against free disk |
+| `MaxMemoryBufferedBodyBytes` (64 MiB) | `MaxRamBufferedBodyBytes` (64 MiB) | heap only — size against available memory |
+| `MemoryBufferThresholdBytes` (1 MiB) | `RamBufferThresholdBytes` (1 MiB) | unchanged meaning; renamed for symmetry |
+
+The removed keys are **rejected at startup** with a message naming the replacement, rather than
+ignored — a config that still looks deliberate while silently running on defaults is the failure
+mode this change exists to prevent.
+
+Behaviour changes that follow:
+
+- A buffered body is charged to exactly one budget at a time, moving from RAM to disk when it
+  spills. Nothing is double-counted.
+- The 503 load-shed now fires when **neither** budget has room, rather than when a combined total is
+  gone. A body that fits entirely in RAM is served regardless of the disk budget.
+- Body-capture prefixes are RAM-only (a tee holds pooled segments; a prefix read rents from
+  `ArrayPool`; neither ever spills) and are now charged to `MaxRamBufferedBodyBytes`. Previously
+  they were charged to the combined total, so a deployment with a large disk budget and a small
+  memory tier could accumulate capture buffers in RAM up to the disk-inclusive number.
+- `0` now reads the same way on both budgets: none of that resource is available. `0` RAM means
+  every body spills; `0` disk means a body must fit RAM or be shed. Negative values are rejected at
+  startup.
+- `RamBufferThresholdBytes` is floored at 4 KiB with no upper cap (previously clamped to 1 MiB).
+  Raising it past 1 MiB trades large-object-heap allocation for skipping the disk round-trip.
+
+### Breaking — body-capture plugins consolidated
+
+`BodyCapturePlugin` is removed. `StreamingBodyCapturePlugin` (variant `body-capture`, formerly
+`body-capture-streaming`) now covers both cases by choosing its path per request: it reuses the
+gateway's existing seekable buffer when there is one (a retry route, or a body-reading plugin on the
+same route), and otherwise tees a bounded prefix through `HttpLogging`. It keeps
+`ReadsRequestBody => false`, so unlike the removed plugin it never forces whole-body buffering.
+
+Existing routes using `"variant": "body-capture"` keep working unchanged. Routes using
+`"variant": "body-capture-streaming"` must switch to `"body-capture"`.
+
+The plugin's ceiling on a route's `maxSize` is configurable via `BodyCapture:MaxCaptureBytes`
+(default 32 KiB), and a value beyond the addressable `int` range is rejected at startup.
+
+### Added
+
+- `retry.retryNonIdempotent` — opt in, per route, to retrying `POST`/`PATCH`. Off by default,
+  because a non-idempotent request may already have been applied upstream, so a replay can
+  double-apply it. Enabling it forces the route to buffer, since the retry loop needs a rewindable
+  body.
+
 ## [1.0.0] — 2026-07-25
 
 First stable release — promotes `1.0.0-rc.1` to GA.
@@ -26,7 +82,7 @@ container image. Plugin packages for PowerShell and sliding-window rate limiting
 - **Streaming-path capture memory is now budgeted** — `IPipelinePlugin` gains
   `CaptureMemoryBytes(JsonElement config)`, defaulting to `0`. A plugin that captures on the
   streaming path holds a bounded prefix per request, but that multiplies by concurrency and never
-  touched `Gateway:RequestLimits:MaxTotalBufferedBodyBytes` — so nothing shed load as it grew, while
+  touched `Gateway:RequestLimits:MaxDiskBufferedBodyBytes` — so nothing shed load as it grew, while
   a *buffering* plugin, whose bytes are budgeted, would already be returning 503. Declaring a
   non-zero value puts that memory under the same ceiling and the same 503. Plugins cannot reserve
   directly (the budget type is internal to the gateway assembly), hence a declared footprint read
@@ -135,10 +191,10 @@ auditing.
   anyone who implemented the old interface; nothing in-repo did.
 
 - **Two-tier body buffering — RAM, then disk, then 503.** Buffering used to degrade in one step:
-  every body past `MemoryBufferThresholdBytes` (64 KiB) spilled to a temp file, and a single
+  every body past `RamBufferThresholdBytes` (64 KiB) spilled to a temp file, and a single
   budget counted RAM and spill alike. The spill measures 2.8–4.7x slower than holding the body in
-  memory. New `Gateway:RequestLimits:MaxMemoryBufferedBodyBytes` (default 64 MiB) carves a RAM
-  tier out of `MaxTotalBufferedBodyBytes`: while it has headroom bodies buffer in memory; once
+  memory. New `Gateway:RequestLimits:MaxRamBufferedBodyBytes` (default 64 MiB) carves a RAM
+  tier out of `MaxDiskBufferedBodyBytes`: while it has headroom bodies buffer in memory; once
   full they spill from the first byte — slower, still served — and only when the combined budget
   is exhausted does the gateway shed with a 503. Buffered path, same machine: a 1 MB body drops
   870 → 262 µs (3.3x), a 10 MB body 6,490 → 5,409 µs (1.2x, since a body `Content-Length` proves
@@ -150,13 +206,13 @@ auditing.
   container memory limit and records where each one stops coping (503 load-shed vs OOM-kill).
 
 ### Changed
-- **`MemoryBufferThresholdBytes` default 64 KiB → 1 MiB**, clamp `[4 KiB, 512 KiB]` → `[4 KiB, 1 MiB]`.
+- **`RamBufferThresholdBytes` default 64 KiB → 1 MiB**, clamp `[4 KiB, 512 KiB]` → `[4 KiB, 1 MiB]`.
   The threshold previously had to stay tiny because it was the only thing bounding aggregate RAM;
   the memory tier now does that, so per-request RAM can be generous. 1 MiB is a structural ceiling,
   not a preference: `FileBufferingReadStream` serves thresholds up to 1 MiB from `ArrayPool` and
   above it grows a bare `MemoryStream` by doubling, allocating ~2x the body on the LOH (measured
   cliff at exactly 1 MiB: 472 KB/req → 2.36 MB/req).
-- **`MaxTotalBufferedBodyBytes` is now explicitly the RAM+spill outer bound**, with the memory tier
+- **`MaxDiskBufferedBodyBytes` is now explicitly the RAM+spill outer bound**, with the memory tier
   carved out of it rather than added to it. Existing configs keep their meaning; RAM used by
   buffering is now explicitly bounded at 64 MiB where it was previously implicit in the 128 MiB
   combined budget.
@@ -169,10 +225,10 @@ auditing.
 - **Method-aware buffering:** on a retry route, non-idempotent methods (`POST`, `PATCH`) stream —
   the retry loop can never replay them, so their buffer had no consumer.
 - **Buffered bodies spill to disk.** The buffered path now uses `FileBufferingReadStream`:
-  at most `Gateway:RequestLimits:MemoryBufferThresholdBytes` (new setting, default 64 KiB)
+  at most `Gateway:RequestLimits:RamBufferThresholdBytes` (new setting, default 64 KiB)
   lives on the heap; the rest goes to a temp file, nginx-style. A buffered 1 MB body drops
   from ~2 MB of heap allocation to ~51 KB; 10 MB drops from ~42 MB (with Gen2/LOH pressure)
-  to the streaming baseline with zero Gen2 collections. `MaxTotalBufferedBodyBytes` now
+  to the streaming baseline with zero Gen2 collections. `MaxDiskBufferedBodyBytes` now
   bounds memory + spill combined; the 413/503 limits are unchanged.
 
 ## [0.1.5] — 2026-07-16

@@ -39,6 +39,11 @@ public static class GatewayApplicationBuilderExtensions
         var gatewayOptions = app.Services.GetRequiredService<IOptions<GatewayOptions>>().Value;
         var gatewayRoutes  = app.Services.GetRequiredService<GatewayRoutesConfiguration>();
 
+        // Resolved eagerly so its configuration is validated at startup rather than on the first
+        // request that happens to buffer — a removed or negative limit should fail the host, not one
+        // unlucky request much later.
+        _ = app.Services.GetRequiredService<Middleware.RequestBodyBudget>();
+
         if (options.EnableAdminApi)
         {
             var routesPath = options.RoutesPath ?? gatewayOptions.RoutesPath;
@@ -326,7 +331,10 @@ public static class GatewayApplicationBuilderExtensions
                 SetMaxRequestBodySize(context, route, gatewayOptions);
 
                 var budget = context.RequestServices.GetRequiredService<Middleware.RequestBodyBudget>();
-                if (!budget.TryReserve(captureBytes))
+                // Capture is RAM-only — a tee holds pooled segments, a prefix read rents from
+                // ArrayPool, and neither ever spills — so it charges the RAM budget. Unlike a body,
+                // there is no disk to fall back to, which makes a refusal here the 503.
+                if (!budget.TryReserveRam(captureBytes))
                 {
                     context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                     await context.Response.WriteAsync("The gateway is at capacity capturing request bodies. Retry shortly.");
@@ -341,7 +349,7 @@ public static class GatewayApplicationBuilderExtensions
                 {
                     // Released on every path — an abort or an upstream throw must not leak the
                     // reservation, or the ceiling ratchets down until the gateway 503s permanently.
-                    budget.Release(captureBytes);
+                    budget.ReleaseRam(captureBytes);
                 }
             });
         }
@@ -410,9 +418,9 @@ public static class GatewayApplicationBuilderExtensions
     // budget (503).
     //
     // Buffering degrades in two tiers rather than one cliff. While the memory tier
-    // (MaxMemoryBufferedBodyBytes) has headroom a body buffers in RAM, which measures ~3-5x faster
+    // (MaxRamBufferedBodyBytes) has headroom a body buffers in RAM, which measures ~3-5x faster
     // than spilling. Once it is full, further bodies spill to a temp file from the first byte —
-    // slower, but still served — until the combined budget (MaxTotalBufferedBodyBytes) is gone and
+    // slower, but still served — until the disk budget (MaxDiskBufferedBodyBytes) is gone and
     // the gateway sheds with a 503.
     //
     // The per-request RAM ceiling can be generous (up to 1 MiB) precisely because the memory tier
@@ -421,12 +429,15 @@ public static class GatewayApplicationBuilderExtensions
     // threshold is clamped there and not left to the operator.
     //
     // Non-idempotent methods on retry-only routes stream: the retry loop can never replay them,
-    // so their buffer would have no consumer.
+    // so their buffer would have no consumer — unless the route opts in with retryNonIdempotent,
+    // which makes the loop replay them and so requires the buffer.
     // ---------------------------------------------------------------------------
     private static Func<HttpContext, RequestDelegate, Task> BufferRequestBody(
         GatewayRoute route, GatewayOptions gatewayOptions, bool readsBody) => async (context, next) =>
     {
-        if (!readsBody && !Proxy.UpstreamRetry.IsIdempotent(context.Request.Method))
+        if (!readsBody
+            && !Proxy.UpstreamRetry.IsIdempotent(context.Request.Method)
+            && route.Retry is not { MaxAttempts: > 1, RetryNonIdempotent: true })
         {
             SetMaxRequestBodySize(context, route, gatewayOptions);
             await next(context);
@@ -450,36 +461,46 @@ public static class GatewayApplicationBuilderExtensions
             await context.Response.WriteAsync("Request body exceeds the maximum allowed size.");
             return;
         }
-        if (budget.MaxTotalBytes > 0 && context.Request.ContentLength > budget.MaxTotalBytes)
+        // A body larger than the bigger of the two budgets can land nowhere — shed before reading it
+        // rather than streaming it in only to refuse it chunk by chunk.
+        var largestBudget = Math.Max(budget.MaxRamBytes, budget.MaxDiskBytes);
+        if (largestBudget > 0 && context.Request.ContentLength > largestBudget)
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
             await context.Response.WriteAsync("The gateway is at capacity buffering request bodies. Retry shortly.");
             return;
         }
 
-        // Ask the memory tier for this body's RAM ceiling. The reservation covers the buffer's
-        // capacity, not its fill: FileBufferingReadStream rents the whole threshold from ArrayPool
-        // at construction and hands it back the instant it spills. A refusal is routine, not an
-        // error — threshold 0 means "spill from the first byte", which is the disk tier doing its
-        // job, and the request is still served.
-        var configuredThreshold = Math.Clamp(gatewayOptions.RequestLimits.MemoryBufferThresholdBytes, 4 * 1024, 1024 * 1024);
+        // Ask the RAM budget for this body's ceiling. The reservation covers the buffer's capacity,
+        // not its fill: FileBufferingReadStream rents the whole threshold from ArrayPool at
+        // construction and hands it back the instant it spills. A refusal is routine, not an error —
+        // threshold 0 means "spill from the first byte", which is the disk budget doing its job, and
+        // the request is still served.
+        //
+        // Only a 4 KiB floor is enforced. Up to 1 MiB the threshold is served from ArrayPool; above
+        // it FileBufferingReadStream grows a bare MemoryStream that doubles on the large object heap
+        // (~2x the body). That is a real cost, but it is the operator's to accept — bodies that fit
+        // in RAM at a raised threshold skip the spill entirely — so the ceiling is configurable, not
+        // clamped. The RAM budget still bounds the aggregate.
+        var configuredThreshold = Math.Clamp(
+            gatewayOptions.RequestLimits.RamBufferThresholdBytes, 4 * 1024, int.MaxValue);
 
-        // A body Content-Length already proves cannot fit the RAM tier gains nothing from a buffer:
+        // A body Content-Length already proves cannot fit in RAM gains nothing from a memory buffer:
         // it would rent the threshold, fill it, then copy every one of those bytes to disk anyway.
-        // Spilling from the first byte skips that copy and leaves the tier for bodies that can
-        // actually be served out of it. Chunked bodies have no Content-Length, so they still try —
-        // being wrong there just costs the copy this branch avoids.
+        // Spilling from the first byte skips that copy and leaves RAM for bodies that can actually be
+        // served out of it. Chunked bodies have no Content-Length, so they still try — being wrong
+        // there just costs the copy this branch avoids.
         var tooBigForMemory = context.Request.ContentLength > configuredThreshold;
 
         var memoryThreshold = tooBigForMemory
             ? 0
-            : (int)Math.Min(configuredThreshold, budget.MemoryHeadroom);
+            : (int)Math.Min(configuredThreshold, budget.RamHeadroom);
 
-        long memoryReserved = 0;
-        if (memoryThreshold >= 4 * 1024 && budget.TryReserveMemory(memoryThreshold))
-            memoryReserved = memoryThreshold;
+        long ramReserved = 0;
+        if (memoryThreshold >= 4 * 1024 && budget.TryReserveRam(memoryThreshold))
+            ramReserved = memoryThreshold;
         else
-            memoryThreshold = 0; // known too big, no headroom, or the tier is off — spill this one
+            memoryThreshold = 0; // known too big, no headroom, or no RAM budget — spill this one
 
         var spillDirectory = string.IsNullOrWhiteSpace(gatewayOptions.RequestLimits.SpillDirectory)
             ? Path.GetTempPath()
@@ -488,7 +509,8 @@ public static class GatewayApplicationBuilderExtensions
         var buffered = new Microsoft.AspNetCore.WebUtilities.FileBufferingReadStream(
             context.Request.Body, memoryThreshold, bufferLimit: null, spillDirectory);
         var scratch  = System.Buffers.ArrayPool<byte>.Shared.Rent(64 * 1024);
-        long reserved = 0;
+        long diskReserved = 0;
+        var  spilled      = false;
         try
         {
             long total = 0;
@@ -502,26 +524,38 @@ public static class GatewayApplicationBuilderExtensions
                     return;
                 }
 
-                // The budget bounds bytes buffered concurrently gateway-wide (memory + spill),
-                // keeping the 503 load-shed behavior as the backstop.
-                if (!budget.TryReserve(read))
-                {
-                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                    await context.Response.WriteAsync("The gateway is at capacity buffering request bodies. Retry shortly.");
-                    return;
-                }
-
-                reserved += read;
                 total += read;
 
-                // The body outgrew its RAM ceiling: FileBufferingReadStream has copied everything to
-                // the temp file and returned the rented buffer to the pool, so that RAM is genuinely
-                // free — hand it back to the tier so the next request can use it. The bytes stay
-                // counted against the total; only the tier holding them changed.
-                if (memoryReserved > 0 && !buffered.InMemory)
+                // While the body is still in RAM its bytes are already covered by the capacity
+                // reservation taken above, so there is nothing to charge per chunk. Only spilled
+                // bytes are metered here, against the disk budget.
+                if (!spilled && !buffered.InMemory)
                 {
-                    budget.ReleaseMemory(memoryReserved);
-                    memoryReserved = 0;
+                    // Just crossed over: FileBufferingReadStream has copied everything read so far to
+                    // the temp file and returned its rented buffer to the pool. Charge the whole body
+                    // so far to disk, then hand the RAM back so the next request can use it.
+                    if (!budget.TryReserveDisk(total))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                        await context.Response.WriteAsync("The gateway is at capacity buffering request bodies. Retry shortly.");
+                        return;
+                    }
+
+                    spilled       = true;
+                    diskReserved  = total;
+                    budget.ReleaseRam(ramReserved);
+                    ramReserved   = 0;
+                }
+                else if (spilled)
+                {
+                    if (!budget.TryReserveDisk(read))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                        await context.Response.WriteAsync("The gateway is at capacity buffering request bodies. Retry shortly.");
+                        return;
+                    }
+
+                    diskReserved += read;
                 }
             }
 
@@ -533,8 +567,8 @@ public static class GatewayApplicationBuilderExtensions
         finally
         {
             System.Buffers.ArrayPool<byte>.Shared.Return(scratch);
-            budget.Release(reserved);
-            budget.ReleaseMemory(memoryReserved); // no-op if the spill already handed it back
+            budget.ReleaseDisk(diskReserved);
+            budget.ReleaseRam(ramReserved); // no-op if the spill already handed it back
             await buffered.DisposeAsync(); // deletes the spill file, if any
         }
     };

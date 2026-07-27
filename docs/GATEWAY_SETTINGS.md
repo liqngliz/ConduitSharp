@@ -21,9 +21,9 @@ All gateway settings live in `Configuration/appsettings.json` next to the binary
     },
     "RequestLimits": {
       "MaxRequestBodyBytes": 8388608,
-      "MaxTotalBufferedBodyBytes": 134217728,
-      "MaxMemoryBufferedBodyBytes": 67108864,
-      "MemoryBufferThresholdBytes": 1048576,
+      "MaxDiskBufferedBodyBytes": 134217728,
+      "MaxRamBufferedBodyBytes": 67108864,
+      "RamBufferThresholdBytes": 1048576,
       "SpillDirectory": null
     }
   }
@@ -37,32 +37,69 @@ All gateway settings live in `Configuration/appsettings.json` next to the binary
 | `Gateway.Observability.Otlp.Enabled` | `Gateway__Observability__Otlp__Enabled` | `false` |
 | `Gateway.Observability.Otlp.Endpoint` | `Gateway__Observability__Otlp__Endpoint` | *(OTel SDK default)* |
 | `Gateway.RequestLimits.MaxRequestBodyBytes` | `Gateway__RequestLimits__MaxRequestBodyBytes` | `8388608` (8 MiB) |
-| `Gateway.RequestLimits.MaxTotalBufferedBodyBytes` | `Gateway__RequestLimits__MaxTotalBufferedBodyBytes` | `134217728` (128 MiB) |
-| `Gateway.RequestLimits.MaxMemoryBufferedBodyBytes` | `Gateway__RequestLimits__MaxMemoryBufferedBodyBytes` | `67108864` (64 MiB) |
-| `Gateway.RequestLimits.MemoryBufferThresholdBytes` | `Gateway__RequestLimits__MemoryBufferThresholdBytes` | `1048576` (1 MiB) |
+| `Gateway.RequestLimits.MaxRamBufferedBodyBytes` | `Gateway__RequestLimits__MaxRamBufferedBodyBytes` | `67108864` (64 MiB) |
+| `Gateway.RequestLimits.MaxDiskBufferedBodyBytes` | `Gateway__RequestLimits__MaxDiskBufferedBodyBytes` | `67108864` (64 MiB) |
+| `Gateway.RequestLimits.RamBufferThresholdBytes` | `Gateway__RequestLimits__RamBufferThresholdBytes` | `1048576` (1 MiB) |
 | `Gateway.RequestLimits.SpillDirectory` | `Gateway__RequestLimits__SpillDirectory` | *(system temp path)* |
 
+### Which body limit is which
+
+Five settings bound request bodies and they are easy to confuse, because they meter **different
+resources** and fire **different outcomes**:
+
+| Setting | Applies to | Meters | Exceeding it means | Size it against |
+|---|---|---|---|---|
+| `MaxRequestBodyBytes` | one request | body size | **413** to the client | your API contract — how big a body you accept |
+| `MaxRamBufferedBodyBytes` | all in-flight, combined | **RAM** — buffered bodies + capture prefixes | that body spills to disk (not an error) | memory available to the process |
+| `MaxDiskBufferedBodyBytes` | all in-flight, combined | **spill-file bytes** | **503**, the load-shed | free space on `SpillDirectory` |
+| `RamBufferThresholdBytes` | one body | RAM, before it spills | that body spills to disk | leave at default unless large bodies must avoid disk |
+| `SpillDirectory` | — | *where* spilled bytes go | — | pick tmpfs vs real storage deliberately (see below) |
+
+**One budget per physical resource, and they are independent on purpose.** Raising the disk budget
+to suit a large spill volume must not silently enlarge what may be held in RAM — that is how a
+gateway gets OOM-killed instead of shedding. Set each against the resource it actually meters.
+
+A body is charged to exactly one of them at a time: RAM while it fits the threshold, disk once it
+spills. Body-capture prefixes are RAM-only — they never spill — so they are charged to the RAM
+budget.
+
+> **The tmpfs trap.** If `SpillDirectory` resolves to a `tmpfs` mount — `/tmp` often is inside
+> containers — then "disk" *is* RAM and `MaxDiskBufferedBodyBytes` becomes a second memory budget.
+> See [Spilling to tmpfs](#tuning-the-buffered-path) below for the limit ordering that keeps overload
+> a 503 rather than a 500 or an OOM-kill.
+
+Note that `BodyCapture:MaxCaptureBytes` is **not** in this family: it bounds how much of a body gets
+*logged*, not how much is buffered for the forward. See the body-capture plugin's README.
+
+### When buffering happens at all
+
 A request body is buffered only when something on the route consumes the buffer — a retry
-policy (idempotent methods only) or a body-reading plugin; every other request streams
-straight through.
+policy (idempotent methods only, or non-idempotent too if the route sets `retryNonIdempotent`)
+or a body-reading plugin; every other request streams straight through.
 
 When a body *is* buffered, buffering degrades in two tiers rather than one step:
 
-1. **RAM**, while `MaxMemoryBufferedBodyBytes` has headroom. Each body gets up to
-   `MemoryBufferThresholdBytes` of heap; this is ~3–5x faster than spilling.
+1. **RAM**, while `MaxRamBufferedBodyBytes` has headroom. Each body gets up to
+   `RamBufferThresholdBytes` of heap; this is ~3–5x faster than spilling.
 2. **Disk**, once the RAM tier is full. Further bodies spill to a temp file from the first
    byte — slower, but still served.
-3. **503**, only when `MaxTotalBufferedBodyBytes` (RAM + spill combined) is exhausted.
+3. **503**, only when `MaxDiskBufferedBodyBytes` has no room either — neither resource can take it.
 
-The memory tier is carved *out of* the total, not added to it, so `MaxTotalBufferedBodyBytes`
-remains the worst-case ceiling. It is what bounds buffering's RAM footprint — which is why
-`MemoryBufferThresholdBytes` can be generous per request without the aggregate running away.
-A body whose `Content-Length` already exceeds the threshold skips the RAM buffer entirely
-and spills from the first byte, since filling a buffer only to copy it to disk helps nobody.
+When a body spills, its bytes move from the RAM budget to the disk budget: the rented buffer goes
+back to the pool, so that RAM is genuinely free for the next request. Nothing is double-counted.
 
-`MemoryBufferThresholdBytes` is clamped to `[4 KiB, 1 MiB]`. The upper bound is not taste:
-`FileBufferingReadStream` serves thresholds up to 1 MiB from `ArrayPool`, and above it grows
-a bare `MemoryStream` by doubling — allocating roughly 2x the body on the Large Object Heap.
+The RAM budget is why `RamBufferThresholdBytes` can be generous per request without memory running
+away: a body is only granted the threshold if the RAM budget still has headroom, so the per-body
+number can never lift total RAM above the budget. A body whose `Content-Length` already exceeds the
+threshold skips the RAM buffer entirely and spills from the first byte, since filling a buffer only
+to copy it to disk helps nobody.
+
+`RamBufferThresholdBytes` is floored at 4 KiB with no upper cap, but 1 MiB is a real inflection
+point: `FileBufferingReadStream` serves thresholds up to 1 MiB from `ArrayPool`, and above it grows
+a bare `MemoryStream` by doubling — allocating roughly 2x the body on the Large Object Heap. Raising
+it past 1 MiB is a deliberate trade: bodies that fit in the raised ceiling skip the disk round-trip
+entirely, paid for in LOH allocation. Raise it only alongside a `MaxRamBufferedBodyBytes` that can
+actually cover the concurrency you expect.
 
 `MaxRequestBodyBytes` rejects an individual oversized buffered request with `413`; a route's
 own `"maxRequestBodyBytes"` (see [Configuring routes](ROUTING.md)) overrides it per route. The
@@ -92,8 +129,8 @@ reproduces the ordering:
 
 - **Keep bodies in the RAM tier.** That is the whole design: with defaults, ~91% of bodies at c=96
   never touched storage and the gateway outran APISIX; forced entirely onto disk it ran ~4.6x
-  behind. A body qualifies if it is no larger than `MemoryBufferThresholdBytes` (≤ 1 MiB) *and*
-  `MaxMemoryBufferedBodyBytes` has headroom — at 1 MB per body a 64 MiB tier covers ~64 in flight.
+  behind. A body qualifies if it is no larger than `RamBufferThresholdBytes` (≤ 1 MiB) *and*
+  `MaxRamBufferedBodyBytes` has headroom — at 1 MB per body a 64 MiB tier covers ~64 in flight.
   Size the tier against the pod: a tier near the container limit thrashes the GC (.NET's heap hard
   limit is 75% of the container's memory) and is far worse than spilling.
 - **When bodies must spill, the storage is the speed.** Container overlayfs and a mounted volume
@@ -107,7 +144,7 @@ spill, and only one of them fails gracefully:
 
 | Limit | Default | What happens when it binds |
 |---|---|---|
-| `MaxTotalBufferedBodyBytes` | 128 MiB | **503** — the gateway sheds deliberately |
+| `MaxDiskBufferedBodyBytes` | 128 MiB | **503** — the gateway sheds deliberately |
 | tmpfs mount `size=` | **half the host's RAM** if unset | `ENOSPC` → the spill write throws → **500** |
 | container memory limit (cgroup) | none | **OOM-kill** — tmpfs pages are charged to the cgroup |
 | `/dev/shm` | **64 MB** in Docker | `ENOSPC` → **500** |
@@ -115,7 +152,7 @@ spill, and only one of them fails gracefully:
 So size them in this order:
 
 ```
-MaxTotalBufferedBodyBytes  <  tmpfs size=  <  (container memory limit − heap headroom)
+MaxDiskBufferedBodyBytes  <  tmpfs size=  <  (container memory limit − heap headroom)
 ```
 
 The budget must be the binding constraint, because it is the only limit that turns overload into a
@@ -126,7 +163,7 @@ mysterious slowness instead of a kill; Kubernetes usually has swap off, where it
 
 **The `tmpfs` trade.** `/tmp` is `tmpfs` — RAM — on many container images, and that cuts both ways:
 
-- It makes the disk tier fast, and `MaxTotalBufferedBodyBytes` still bounds it. Spilling to `tmpfs`
+- It makes the disk tier fast, and `MaxDiskBufferedBodyBytes` still bounds it. Spilling to `tmpfs`
   with a total budget that fits in the pod is a legitimate, deliberate, fast configuration.
 - It does **not** relieve memory pressure, because the "disk" tier is RAM. If your total budget is
   sized assuming spill lands on real storage, pointing it at `tmpfs` converts the step-down into an

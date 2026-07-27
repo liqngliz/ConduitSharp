@@ -58,7 +58,7 @@ public interface IPipelinePlugin
     /// <summary>
     /// Per-request bytes this plugin holds in memory <em>outside</em> the gateway's request-body
     /// buffer, for a route configured by <paramref name="config"/>. Returning a non-zero value puts
-    /// that memory under <c>Gateway:RequestLimits:MaxTotalBufferedBodyBytes</c>: the gateway reserves
+    /// that memory under <c>Gateway:RequestLimits:MaxRamBufferedBodyBytes</c>: the gateway reserves
     /// it for the life of the request and sheds with a 503 when the ceiling is reached.
     ///
     /// Exists because such a footprint is bounded per request but multiplies by concurrency, and

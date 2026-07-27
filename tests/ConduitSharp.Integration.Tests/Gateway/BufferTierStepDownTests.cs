@@ -31,8 +31,8 @@ public sealed class BufferTierStepDownTests
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl), settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MaxMemoryBufferedBodyBytes"] = "0",
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"]  = "10485760",
+            ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"] = "0",
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"]  = "10485760",
         });
         using var client = factory.CreateClient();
 
@@ -51,8 +51,8 @@ public sealed class BufferTierStepDownTests
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl), settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MaxMemoryBufferedBodyBytes"] = "512",
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"]  = "10485760",
+            ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"] = "512",
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"]  = "10485760",
         });
         using var client = factory.CreateClient();
 
@@ -72,9 +72,9 @@ public sealed class BufferTierStepDownTests
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl), settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MemoryBufferThresholdBytes"] = "4096",
-            ["Gateway:RequestLimits:MaxMemoryBufferedBodyBytes"] = "1048576",
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"]  = "10485760",
+            ["Gateway:RequestLimits:RamBufferThresholdBytes"] = "4096",
+            ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"] = "1048576",
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"]  = "10485760",
         });
         using var client = factory.CreateClient();
 
@@ -96,9 +96,9 @@ public sealed class BufferTierStepDownTests
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl), settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MemoryBufferThresholdBytes"] = "65536",
-            ["Gateway:RequestLimits:MaxMemoryBufferedBodyBytes"] = "65536", // exactly one body's worth
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"]  = "10485760",
+            ["Gateway:RequestLimits:RamBufferThresholdBytes"] = "65536",
+            ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"] = "65536", // exactly one body's worth
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"]  = "10485760",
         });
         using var client = factory.CreateClient();
 
@@ -114,20 +114,22 @@ public sealed class BufferTierStepDownTests
     }
 
     [Fact]
-    public async Task TotalBudgetExhausted_Returns503_EvenWithMemoryTierHeadroom()
+    public async Task DiskBudgetExhausted_Returns503_WhenTheBodyMustSpill()
     {
-        // The last rung. A generous memory tier must not let a request past the combined budget —
-        // the total is the backstop, and the memory tier is carved out of it, not added to it.
+        // The last rung. A body too large for the per-request RAM threshold spills, and the disk
+        // budget is what bounds spilled bytes — exhaust it and the request sheds. RAM headroom does
+        // not rescue it: the body was already routed to disk because it could not fit the threshold.
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl), settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MaxRequestBodyBytes"]        = "1048576",
-            ["Gateway:RequestLimits:MaxMemoryBufferedBodyBytes"] = "1048576",
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"]  = "1024",
+            ["Gateway:RequestLimits:MaxRequestBodyBytes"]      = "1048576",
+            ["Gateway:RequestLimits:RamBufferThresholdBytes"]  = "4096",    // floor — a 100 KiB body cannot fit
+            ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"]  = "1048576", // plenty of RAM, and irrelevant once it spills
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"] = "1024",    // ...but nowhere to spill to
         });
         using var client = factory.CreateClient();
 
-        var response = await client.PutAsync("/api/data", new ByteArrayContent(new byte[4096]));
+        var response = await client.PutAsync("/api/data", new ByteArrayContent(new byte[100 * 1024]));
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Empty(upstream.ReceivedRequests);
@@ -145,9 +147,9 @@ public sealed class BufferTierStepDownTests
             await using var upstream = await FakeUpstream.StartAsync();
             await using var factory  = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl), settings: new Dictionary<string, string?>
             {
-                ["Gateway:RequestLimits:MemoryBufferThresholdBytes"] = "4096",
-                ["Gateway:RequestLimits:MaxMemoryBufferedBodyBytes"] = "0", // force the spill
-                ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"]  = "10485760",
+                ["Gateway:RequestLimits:RamBufferThresholdBytes"] = "4096",
+                ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"] = "0", // force the spill
+                ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"]  = "10485760",
                 ["Gateway:RequestLimits:SpillDirectory"]             = spillDir,
             });
             using var client = factory.CreateClient();
@@ -174,9 +176,9 @@ public sealed class BufferTierStepDownTests
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl), settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MemoryBufferThresholdBytes"] = "4096",
-            ["Gateway:RequestLimits:MaxMemoryBufferedBodyBytes"] = "0", // force the spill
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"]  = "10485760",
+            ["Gateway:RequestLimits:RamBufferThresholdBytes"] = "4096",
+            ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"] = "0", // force the spill
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"]  = "10485760",
             ["Gateway:RequestLimits:SpillDirectory"]             = Path.Combine(Path.GetTempPath(), "conduitsharp-does-not-exist-" + Guid.NewGuid().ToString("N")),
         });
         using var client = factory.CreateClient();

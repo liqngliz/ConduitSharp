@@ -96,17 +96,28 @@ public sealed class SwaggerHostOptions
 }
 
 /// <summary>
-/// Caps on request body buffering. A buffered body is held in RAM up to
-/// <see cref="MemoryBufferThresholdBytes"/> and spills to a temp file beyond it, so the gateway
-/// degrades in tiers rather than falling off a cliff: fast while the memory tier has room, slower
-/// on disk once it doesn't, and 503 only when both are exhausted.
+/// Caps on request body buffering. There are <b>two independent resource budgets</b>, one per
+/// resource, because they are bounded by different physical things and confusing them is how a
+/// gateway gets OOM-killed instead of shedding:
+///
+/// <list type="bullet">
+/// <item><see cref="MaxRamBufferedBodyBytes"/> — total RAM. Size against available memory.</item>
+/// <item><see cref="MaxDiskBufferedBodyBytes"/> — total spill-file bytes. Size against free disk.</item>
+/// </list>
+///
+/// A buffered body is held in RAM up to <see cref="RamBufferThresholdBytes"/> and charged to the RAM
+/// budget; beyond that it spills to a temp file and is charged to the disk budget instead. So the
+/// gateway degrades in tiers rather than falling off a cliff: fast while RAM has room, slower on disk
+/// once it doesn't, and <b>503 only when neither has room</b>.
+///
+/// Body-capture prefixes are RAM-only (they never spill) and are charged to
+/// <see cref="MaxRamBufferedBodyBytes"/>.
 ///
 /// Kestrel's transport-level limit (~28.6 MB by default) still applies first; these limits act at
 /// the gateway layer and are enforced for chunked bodies too.
 ///
 /// Defaults are sized for a small container (256–512 MiB), not for the host you develop on:
-/// buffering can hold at most <see cref="MaxMemoryBufferedBodyBytes"/> of RAM, and the worst case
-/// including spill stays at <see cref="MaxTotalBufferedBodyBytes"/>. Raise both deliberately.
+/// 64 MiB of RAM and 64 MiB of spill. Raise each deliberately, against the resource it meters.
 /// </summary>
 public sealed class RequestLimitsOptions
 {
@@ -118,42 +129,49 @@ public sealed class RequestLimitsOptions
     public long MaxRequestBodyBytes { get; init; } = 8 * 1024 * 1024;
 
     /// <summary>
-    /// Maximum bytes buffered across all concurrently in-flight request bodies
-    /// (heap-resident and disk-spilled combined). Requests that would exceed the budget
-    /// are rejected with 503 Service Unavailable (retryable) rather than growing the
-    /// buffer pool without bound. Zero or negative disables the check. Default: 128 MiB.
+    /// Total RAM, across all in-flight requests, that buffered bodies and body-capture prefixes may
+    /// hold at once. Default: 64 MiB.
     ///
-    /// This is the outer bound and the 503 trigger; <see cref="MaxMemoryBufferedBodyBytes"/>
-    /// carves the RAM-resident tier out of it. Whatever is left is the disk-spill tier.
+    /// <b>Size this against memory actually available to the process</b> —
+    /// <c>GC.GetGCMemoryInfo().TotalAvailableMemoryBytes</c> reports the cgroup/container limit where
+    /// one is set. This is the number that decides whether an overload degrades or OOM-kills.
+    ///
+    /// A body that cannot get RAM here is not refused: it spills to disk and is charged to
+    /// <see cref="MaxDiskBufferedBodyBytes"/> instead. <c>0</c> means "no RAM for bodies" — everything
+    /// spills. Negative is rejected at startup.
     /// </summary>
-    public long MaxTotalBufferedBodyBytes { get; init; } = 128 * 1024 * 1024;
+    public long MaxRamBufferedBodyBytes { get; init; } = 64 * 1024 * 1024;
 
     /// <summary>
-    /// Maximum bytes of buffered bodies held in RAM at once, across all in-flight requests.
-    /// While this tier has room a body buffers in memory (fast); once it is full, further bodies
-    /// spill to disk immediately (slower, but still served) until
-    /// <see cref="MaxTotalBufferedBodyBytes"/> is reached and the gateway sheds with a 503.
-    /// Zero or negative disables the memory tier entirely — every buffered body spills.
-    /// Default: 64 MiB.
+    /// Total spill-file bytes, across all in-flight requests, that buffered bodies may occupy on
+    /// <see cref="SpillDirectory"/>. Default: 64 MiB.
     ///
-    /// This is what bounds buffering's RAM footprint. Without it, the per-request threshold would
-    /// have to stay tiny to keep aggregate memory sane; with it, the threshold can be generous
-    /// because the aggregate is capped here.
+    /// Size this against free space on the spill path. A body that can get neither RAM nor disk is
+    /// shed with <b>503 Service Unavailable</b> (retryable) — this budget is the load-shed trigger for
+    /// bodies too large for the RAM budget. <c>0</c> means "no spilling" — a body must fit the RAM
+    /// budget or be shed. Negative is rejected at startup.
+    ///
+    /// <b>The tmpfs trap.</b> If <see cref="SpillDirectory"/> resolves to a <c>tmpfs</c> mount — which
+    /// <c>/tmp</c> often is in containers — then this "disk" budget is really a second memory budget,
+    /// charged to the same cgroup. Either point the spill at real storage, or size this as if it were
+    /// memory and count it against the same limit as <see cref="MaxRamBufferedBodyBytes"/>.
     /// </summary>
-    public long MaxMemoryBufferedBodyBytes { get; init; } = 64 * 1024 * 1024;
+    public long MaxDiskBufferedBodyBytes { get; init; } = 64 * 1024 * 1024;
 
     /// <summary>
     /// Per-request RAM ceiling for a buffered body; bytes beyond it spill transparently to a temp
-    /// file (nginx-style). A request only gets this much if <see cref="MaxMemoryBufferedBodyBytes"/>
+    /// file (nginx-style). A request only gets this much if <see cref="MaxRamBufferedBodyBytes"/>
     /// still has headroom — otherwise it spills from the first byte.
-    /// Clamped to [4 KiB, 1 MiB]. Default: 1 MiB.
+    /// Floored at 4 KiB; no upper cap. Default: 1 MiB.
     ///
-    /// 1 MiB is the ceiling because <c>FileBufferingReadStream</c> serves thresholds up to 1 MiB
-    /// from <c>ArrayPool</c>; above it, the buffer becomes a bare <c>MemoryStream</c> that doubles
-    /// as it grows, allocating ~2x the body on the large object heap. Staying at or under 1 MiB
-    /// keeps every buffered body on pooled, reused arrays.
+    /// Up to 1 MiB, <c>FileBufferingReadStream</c> serves the threshold from <c>ArrayPool</c>. Above
+    /// it, the buffer becomes a bare <c>MemoryStream</c> that doubles as it grows, allocating ~2x the
+    /// body on the large object heap. That is the cost of raising this past 1 MiB — paid to let bodies
+    /// that fit in the raised ceiling skip the disk spill. It is a deliberate operator trade, so the
+    /// ceiling is configurable rather than clamped; <see cref="MaxRamBufferedBodyBytes"/> still bounds
+    /// the aggregate RAM footprint regardless of what a single body is allowed.
     /// </summary>
-    public long MemoryBufferThresholdBytes { get; init; } = 1024 * 1024;
+    public long RamBufferThresholdBytes { get; init; } = 1024 * 1024;
 
     /// <summary>
     /// Directory for temp-file spill. Null or empty uses the system temp path.
@@ -163,7 +181,7 @@ public sealed class RequestLimitsOptions
     /// about equal to each other), which is a larger factor than anything in the buffering code.
     ///
     /// <c>/tmp</c> is <c>tmpfs</c> on many container images, and that cuts both ways. It makes the
-    /// disk tier fast, and <see cref="MaxTotalBufferedBodyBytes"/> still bounds it — so spilling to
+    /// disk tier fast, and <see cref="MaxDiskBufferedBodyBytes"/> still bounds it — so spilling to
     /// tmpfs with a total budget that fits in the pod is a deliberate, legitimate configuration. But
     /// it does not relieve memory pressure, because the "disk" tier is RAM: a budget sized on the
     /// assumption that spill lands on real storage will OOM the process where it would otherwise

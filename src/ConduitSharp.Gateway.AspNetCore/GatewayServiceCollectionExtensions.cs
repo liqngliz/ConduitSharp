@@ -72,6 +72,30 @@ public static class GatewayServiceCollectionExtensions
 
         builder.Services.AddHttpContextAccessor();
 
+        static void RejectRemovedRequestLimitKeys(IConfiguration configuration, string sectionName)
+        {
+            var requestLimits = configuration.GetSection($"{sectionName}:RequestLimits");
+            // v2.0.0 replaced one RAM+disk total with two independent per-resource budgets. Silently
+            // ignoring the old keys would leave an upgraded deployment running on defaults while its
+            // config still looks deliberate — and the failure mode is an OOM, so this fails loudly.
+            if (requestLimits["MaxTotalBufferedBodyBytes"] is not null)
+                throw new InvalidOperationException(
+                    "Gateway:RequestLimits:MaxTotalBufferedBodyBytes was removed in v2.0.0. It counted RAM and disk " +
+                    "together, which cannot be sized correctly for either. Replace it with " +
+                    "'MaxDiskBufferedBodyBytes' (spill-file bytes, sized against free disk) and " +
+                    "'MaxRamBufferedBodyBytes' (heap, sized against available memory).");
+
+            if (requestLimits["MaxMemoryBufferedBodyBytes"] is not null)
+                throw new InvalidOperationException(
+                    "Gateway:RequestLimits:MaxMemoryBufferedBodyBytes was renamed in v2.0.0. Use " +
+                    "'MaxRamBufferedBodyBytes' — same meaning, named to pair with 'MaxDiskBufferedBodyBytes'.");
+
+            if (requestLimits["MemoryBufferThresholdBytes"] is not null)
+                throw new InvalidOperationException(
+                    "Gateway:RequestLimits:MemoryBufferThresholdBytes was renamed in v2.0.0. Use " +
+                    "'RamBufferThresholdBytes' — same meaning.");
+        }
+
         // Used by JwksJwtAuthPlugin to fetch the public key set from the identity provider.
         // Upstream forwarding no longer uses IHttpClientFactory — YARP builds one
         // HttpMessageInvoker per cluster (see UpstreamForwarderHttpClientFactory).
@@ -94,16 +118,30 @@ public static class GatewayServiceCollectionExtensions
 
         builder.Services.AddSingleton(sp =>
         {
+            // Checked here rather than at AddConduitSharpGateway time so the whole configuration —
+            // including sources a host layers on after the gateway is wired — is visible.
+            RejectRemovedRequestLimitKeys(
+                sp.GetRequiredService<IConfiguration>(), options.ConfigurationSectionName);
+
             var limits = sp.GetRequiredService<IOptions<GatewayOptions>>().Value.RequestLimits;
-            // The memory tier is carved out of the total, so a memory limit above it would never
-            // bind — clamp rather than reject, since the pair is usually set independently and the
-            // safe reading of "memory 256 MiB, total 128 MiB" is "all 128 MiB may be RAM".
-            var maxMemory = limits.MaxTotalBufferedBodyBytes > 0
-                ? Math.Min(limits.MaxMemoryBufferedBodyBytes, limits.MaxTotalBufferedBodyBytes)
-                : limits.MaxMemoryBufferedBodyBytes;
+
+            // The two budgets meter different physical resources and are independent — neither
+            // clamps the other. Negatives are meaningless for both (0 already means "none of this
+            // resource"), so they are rejected rather than silently coerced.
+            if (limits.MaxRamBufferedBodyBytes < 0)
+                throw new InvalidOperationException(
+                    $"Gateway:RequestLimits:MaxRamBufferedBodyBytes cannot be negative (was {limits.MaxRamBufferedBodyBytes}). " +
+                    "Use 0 to allow no RAM buffering (every body spills to disk).");
+            if (limits.MaxDiskBufferedBodyBytes < 0)
+                throw new InvalidOperationException(
+                    $"Gateway:RequestLimits:MaxDiskBufferedBodyBytes cannot be negative (was {limits.MaxDiskBufferedBodyBytes}). " +
+                    "Use 0 to disallow spilling (a body must fit the RAM budget or be shed with 503).");
+            if (limits.RamBufferThresholdBytes < 0)
+                throw new InvalidOperationException(
+                    $"Gateway:RequestLimits:RamBufferThresholdBytes cannot be negative (was {limits.RamBufferThresholdBytes}).");
 
             return new ConduitSharp.Gateway.Middleware.RequestBodyBudget(
-                limits.MaxTotalBufferedBodyBytes, maxMemory);
+                limits.MaxRamBufferedBodyBytes, limits.MaxDiskBufferedBodyBytes);
         });
 
         return builder;

@@ -82,8 +82,8 @@ public sealed class RetryBodyReplayTests
         await using var factory = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl),
             settings: new Dictionary<string, string?>
             {
-                ["Gateway:RequestLimits:MemoryBufferThresholdBytes"] = "4096", // force the spill
-                ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"]  = "10485760",
+                ["Gateway:RequestLimits:RamBufferThresholdBytes"] = "4096", // force the spill
+                ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"]  = "10485760",
             });
         using var client = factory.CreateClient();
 

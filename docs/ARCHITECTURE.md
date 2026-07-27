@@ -247,7 +247,7 @@ HTTP request
               → terminal step invokes ProxyNext — i.e. the rest of YARP's pipeline runs
                 INSIDE the plugins' next(), so the cache plugin's tee wraps the real forward
       → UpstreamProtocol   inbound HTTP/2 → swap in an h2c prior-knowledge cluster model (gRPC)
-      → UpstreamRetry      Polly-driven attempt loop (idempotent methods only):
+      → UpstreamRetry      Polly-driven attempt loop (idempotent methods, or non-idempotent when the route opts in):
                              rewind body → restore destination set → forward → judge outcome
                              a retryable attempt's response is suppressed, never reaching the client
       → UseLoadBalancing        picks a destination per attempt (RoundRobin by default)
@@ -433,7 +433,7 @@ What YARP does not do, the gateway keeps around the forwarder:
 
   | Gateway | Retryable body lives in | When it does not fit |
   |---|---|---|
-  | ConduitSharp | RAM tier, then disk spill | `503` when the combined budget is gone |
+  | ConduitSharp | RAM budget, then disk budget | `503` when neither has room |
   | Envoy | memory only (`request_body_buffer_limit`) | `507`, retry abandoned |
   | nginx / APISIX | `client_body_buffer_size`, then a temp file | unbounded spill |
   | Ocelot | nothing shipped; a retry built on its official `AddPolly` seam must `LoadIntoBufferAsync` | whole body on the heap, no ceiling |
@@ -569,7 +569,7 @@ visibly in that deployment's plugin set instead of silently in the core.
 | `Observability` — OpenTelemetry | **Implemented** — `GatewayTelemetry` (ActivitySource + Meter), `OtelMetricsObserver` |
 | `Gateway.AspNetCore` — embeddable library | **Implemented** — `AddConduitSharpGateway` / `UseConduitSharpGateway` + `ConduitSharpGatewayOptions` composition knobs; ships as a NuGet package |
 | `Gateway.AspNetCore` — request pipeline | **Implemented** — OTel tracing, body limits/budget, per-route compiled plugin chains, hot reload (`GatewayRouteTable`) |
-| `Gateway.AspNetCore` — forwarding | **YARP `IHttpForwarder`** — HTTP/2, gRPC, WebSockets, streaming, trailers. Around it: `YarpConfigTranslator` (routes.json → route/cluster config), `UpstreamRetry` (Polly-driven, idempotent-only, body rewind, cross-node failover), `ConsecutiveFailuresHealthPolicy` (circuit breaker), `UpstreamForwarderHttpClientFactory` (per-route mTLS), `UpstreamProtocol` (h2c prior knowledge) |
+| `Gateway.AspNetCore` — forwarding | **YARP `IHttpForwarder`** — HTTP/2, gRPC, WebSockets, streaming, trailers. Around it: `YarpConfigTranslator` (routes.json → route/cluster config), `UpstreamRetry` (Polly-driven, idempotent by default / opt-in non-idempotent, body rewind, cross-node failover), `ConsecutiveFailuresHealthPolicy` (circuit breaker), `UpstreamForwarderHttpClientFactory` (per-route mTLS), `UpstreamProtocol` (h2c prior knowledge) |
 | `Gateway.AspNetCore` — admin API | **Implemented** — `POST /admin/routes/reload`, `DELETE /admin/cache/{routeId}`, gated by `Gateway:AdminKeyHash` |
 | `Gateway.AspNetCore` — plugin loader | **Implemented** — `PluginAssemblyLoader` (loads into the shared default `AssemblyLoadContext`; no isolation) |
 | `Gateway.AspNetCore.Swagger` — add-on | **Implemented** — `UseConduitSharpGatewaySwagger()`; `SwaggerAggregationExtensions` (fetchFrom + specFile modes, SSRF/path-traversal guards) |

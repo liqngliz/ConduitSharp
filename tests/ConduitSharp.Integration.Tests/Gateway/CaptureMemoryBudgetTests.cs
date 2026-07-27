@@ -11,7 +11,7 @@ namespace ConduitSharp.Integration.Tests.Gateway;
 /// <summary>
 /// Memory a plugin holds on the *streaming* path is still memory. A capture plugin bounds itself per
 /// request but multiplies by concurrency, and because it never touched the body buffer it used to be
-/// invisible to <c>MaxTotalBufferedBodyBytes</c> — so a connection flood grew it unchecked while a
+/// invisible to the RAM budget — so a connection flood grew it unchecked while a
 /// buffering plugin, whose bytes are budgeted, would already be shedding. Declaring
 /// <see cref="IPipelinePlugin.CaptureMemoryBytes"/> puts it under the same ceiling and the same 503.
 /// </summary>
@@ -87,7 +87,7 @@ public sealed class CaptureMemoryBudgetTests : IAsyncLifetime
         """;
 
     [Fact]
-    public async Task CaptureMemory_CountsAgainstTotalBudget_ShedsWith503()
+    public async Task CaptureMemory_CountsAgainstRamBudget_ShedsWith503()
     {
         // Capture wants 32 KiB per request against a 4 KiB gateway-wide ceiling: the reservation
         // cannot fit, so the request sheds rather than quietly growing the process.
@@ -95,7 +95,7 @@ public sealed class CaptureMemoryBudgetTests : IAsyncLifetime
             plugins: [new StreamingCapturePlugin()],
             settings: new Dictionary<string, string?>
             {
-                ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"] = "4096",
+                ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"] = "4096",
             });
         using var client = factory.CreateClient();
 
@@ -106,7 +106,7 @@ public sealed class CaptureMemoryBudgetTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CaptureMemory_OnTheBufferedPath_StillCountsAgainstTotalBudget_ShedsWith503()
+    public async Task CaptureMemory_OnTheBufferedPath_StillCountsAgainstRamBudget_ShedsWith503()
     {
         // The reservation used to live inside the streaming branch only. Put the same capture plugin
         // on a route that also carries a body-reading plugin and the chain takes the buffered branch,
@@ -116,7 +116,7 @@ public sealed class CaptureMemoryBudgetTests : IAsyncLifetime
             plugins: [new StreamingCapturePlugin(), new BodyReadingPlugin()],
             settings: new Dictionary<string, string?>
             {
-                ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"] = "4096",
+                ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"] = "4096",
             });
         using var client = factory.CreateClient();
 
@@ -136,7 +136,7 @@ public sealed class CaptureMemoryBudgetTests : IAsyncLifetime
             plugins: [new StreamingCapturePlugin()],
             settings: new Dictionary<string, string?>
             {
-                ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"] = "8192",
+                ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"] = "8192",
             });
         using var client = factory.CreateClient();
 
@@ -147,5 +147,50 @@ public sealed class CaptureMemoryBudgetTests : IAsyncLifetime
         }
 
         Assert.Equal(10, _upstream.ReceivedRequests.Count);
+    }
+
+    [Fact]
+    public async Task CaptureMemory_IsBoundedByTheRamBudget_NotTheDiskBudget()
+    {
+        // Capture is RAM-only — a tee holds pooled segments and never spills — so it meters against
+        // the RAM budget and is unaffected by the disk budget. This is the realistic shape of a
+        // memory-constrained host with a large spill volume: generous disk, small RAM. A generous
+        // disk budget must not license capture to grow in memory.
+        await using var factory = await GatewayFactory.CreateAsync(_upstream, Routes(_upstream.BaseUrl, 32 * 1024),
+            plugins: [new StreamingCapturePlugin()],
+            settings: new Dictionary<string, string?>
+            {
+                ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"]  = "1048576", // 1 MiB — 32 KiB fits easily
+                ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"] = "4096",    // 4 KiB — 32 KiB does not
+            });
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync("/a/x", new StringContent("hello"));
+
+        // Bounded by the 4 KiB RAM budget; the 1 MiB disk budget is irrelevant to capture.
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Empty(_upstream.ReceivedRequests);
+    }
+
+    [Fact]
+    public async Task CaptureMemory_WithNoRamBudget_Sheds_BecauseCaptureCannotSpill()
+    {
+        // MaxRamBufferedBodyBytes = 0 means "no RAM for bodies" — every buffered body spills. A
+        // buffered body can honour that; capture cannot, because a captured prefix is held in memory
+        // and has no disk path. So capture sheds rather than quietly allocating outside any budget.
+        // A generous disk budget does not rescue it: disk is not the resource capture consumes.
+        await using var factory = await GatewayFactory.CreateAsync(_upstream, Routes(_upstream.BaseUrl, 4096),
+            plugins: [new StreamingCapturePlugin()],
+            settings: new Dictionary<string, string?>
+            {
+                ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"] = "1048576",
+                ["Gateway:RequestLimits:MaxRamBufferedBodyBytes"]  = "0",
+            });
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync("/a/x", new StringContent("hello"));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Empty(_upstream.ReceivedRequests);
     }
 }

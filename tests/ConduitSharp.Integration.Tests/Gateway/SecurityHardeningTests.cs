@@ -93,19 +93,21 @@ public sealed class SecurityHardeningTests
     }
 
     [Fact]
-    public async Task RequestBody_TotalBufferBudgetExceeded_Returns503()
+    public async Task RequestBody_DiskBufferBudgetExceeded_Returns503()
     {
-        // Per-request limit admits the body, but the shared buffering budget does not.
+        // Per-request limit admits the body, but it is too large for the RAM threshold, so it must
+        // spill — and the shared disk budget has no room for it.
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl), settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MaxRequestBodyBytes"]       = "1048576",
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"] = "1024",
+            ["Gateway:RequestLimits:MaxRequestBodyBytes"]      = "1048576",
+            ["Gateway:RequestLimits:RamBufferThresholdBytes"]  = "4096",
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"] = "1024",
         });
         using var client = factory.CreateClient();
 
         var response = await client.PutAsync("/api/data",
-            new ByteArrayContent(new byte[4096]));
+            new ByteArrayContent(new byte[100 * 1024]));
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         Assert.Empty(upstream.ReceivedRequests);
@@ -119,7 +121,7 @@ public sealed class SecurityHardeningTests
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"] = "1024",
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"] = "1024",
         });
         using var client = factory.CreateClient();
 
@@ -139,7 +141,7 @@ public sealed class SecurityHardeningTests
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl), settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"] = "1024",
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"] = "1024",
         });
         using var client = factory.CreateClient();
 
@@ -154,14 +156,14 @@ public sealed class SecurityHardeningTests
     [Fact]
     public async Task RequestBody_LargerThanMemoryThreshold_SpillsToDiskAndForwardsIntact()
     {
-        // Buffered path with a body well past MemoryBufferThresholdBytes: FileBufferingReadStream
+        // Buffered path with a body well past RamBufferThresholdBytes: FileBufferingReadStream
         // spills to a temp file; the forwarded bytes must be identical.
         // The threshold is pinned rather than left to the default — otherwise raising the default
         // (it is now 1 MiB) silently parks this body in memory and the spill goes untested.
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, RetryRoutes(upstream.BaseUrl), settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MemoryBufferThresholdBytes"] = "4096",
+            ["Gateway:RequestLimits:RamBufferThresholdBytes"] = "4096",
         });
         using var client = factory.CreateClient();
 
@@ -188,7 +190,7 @@ public sealed class SecurityHardeningTests
             
         await using var factory  = await GatewayFactory.CreateAsync(upstream, routesJson, settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"] = "1024",
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"] = "1024",
         });
         using var client = factory.CreateClient();
 
@@ -226,7 +228,7 @@ public sealed class SecurityHardeningTests
     {
         // ReadsRequestBody forces the buffered path even for POST (which would otherwise
         // stream): the plugin must see the full body AND the upstream must still get it.
-        // Body > MemoryBufferThresholdBytes so the read spans the disk-spill boundary.
+        // Body > RamBufferThresholdBytes so the read spans the disk-spill boundary.
         await using var upstream = await FakeUpstream.StartAsync();
         var routes = GatewayFactory.DefaultRoutes(upstream.BaseUrl)
             .Replace("\"plugins\": []",
@@ -375,7 +377,7 @@ public sealed class SecurityHardeningTests
         await using var upstream = await FakeUpstream.StartAsync();
         await using var factory  = await GatewayFactory.CreateAsync(upstream, settings: new Dictionary<string, string?>
         {
-            ["Gateway:RequestLimits:MaxTotalBufferedBodyBytes"] = "6144",
+            ["Gateway:RequestLimits:MaxDiskBufferedBodyBytes"] = "6144",
         });
         using var client = factory.CreateClient();
 
