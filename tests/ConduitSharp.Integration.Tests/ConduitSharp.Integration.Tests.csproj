@@ -18,6 +18,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ConduitSharp.Host\ConduitSharp.Host.csproj" />
+    <ProjectReference Include="..\..\examples\ConduitSharp.Plugin.BodyCapture\src\ConduitSharp.Plugin.BodyCapture\ConduitSharp.Plugin.BodyCapture.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\E2E\CaptureMemoryHarness.cs" Link="Shared\CaptureMemoryHarness.cs" />
   </ItemGroup>
 
   <ItemGroup>

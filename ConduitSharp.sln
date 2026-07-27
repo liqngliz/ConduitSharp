@@ -111,6 +111,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{CAB0FF4C-A2C
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.BodyCaptureToFile", "examples\ConduitSharp.Plugin.BodyCaptureToFile\src\ConduitSharp.Plugin.BodyCaptureToFile\ConduitSharp.Plugin.BodyCaptureToFile.csproj", "{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.BodyCaptureMemory.E2E.Tests", "tests\ConduitSharp.BodyCaptureMemory.E2E.Tests\ConduitSharp.BodyCaptureMemory.E2E.Tests.csproj", "{62CA240B-C066-47C1-BAD8-0503CF1865FD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -577,6 +579,18 @@ Global
 		{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C}.Release|x64.Build.0 = Release|Any CPU
 		{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C}.Release|x86.ActiveCfg = Release|Any CPU
 		{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C}.Release|x86.Build.0 = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|x64.Build.0 = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|x86.Build.0 = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|x64.ActiveCfg = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|x64.Build.0 = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|x86.ActiveCfg = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -631,5 +645,6 @@ Global
 		{8BC4CF4D-CCAB-4BB2-94F0-FB662BD62BBF} = {0D6AA347-D46F-C6F9-3140-87E9D4E9B1CC}
 		{CAB0FF4C-A2C1-AE03-78CC-47722EE5850D} = {2475FC54-10BF-35D2-8917-66ADC99B5168}
 		{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C} = {CAB0FF4C-A2C1-AE03-78CC-47722EE5850D}
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD} = {8AAD7522-76A2-4A17-9AAF-DF969D591643}
 	EndGlobalSection
 EndGlobal
