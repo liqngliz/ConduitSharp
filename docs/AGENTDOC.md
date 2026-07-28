@@ -154,6 +154,33 @@ To observe a response, swap `context.Response.Body` for a wrapper before calling
 restore it after — the pattern `CachePlugin` uses. There is no response-capture callback on
 the contract.
 
+### Request and response phases (the chain model)
+
+There is **one** ordered `plugins[]` per route and **no** separate request/response arrays. The
+chain is Envoy's HTTP-filter model, not Kong/APISIX's phase-handler model: a single ordered chain
+where the forward is terminal and runs *inside* the innermost plugin's `next()`. So every plugin has
+both phases in one method — work **before** `await next(context)` is the request phase, work **after**
+it returns is the response phase.
+
+Consequences, which response-side plugins (capture, header/body transform) are built around:
+
+- **Request phase runs in ascending `order`; the response phase unwinds in the reverse** — the
+  highest-`order` plugin's post-`next` code runs first, the lowest-`order`'s last. This is the same
+  reverse-unwind as ASP.NET middleware and Envoy's `encode*` path; it is *not* Kong/APISIX, where a
+  static priority sorts every phase the same direction.
+- **Ordering is expressed with the one `order` field.** "Capture must wrap the cache" (so a cache HIT
+  is still recorded) is just: give capture a lower `order` than `cache`, so its `Response.Body` swap
+  is outermost and sees the bytes `CachePlugin` writes on a hit.
+- **Response headers are one-shot.** Mutate them from `context.Response.OnStarting(...)` (fires just
+  before the headers flush) or before `HasStarted`; once started they are on the wire. Among several
+  header-mutating plugins, `OnStarting` callbacks run in reverse registration order — reverse `order`.
+- **A body transform holds back** (buffer the whole response, transform, emit) rather than teeing;
+  two of them nest, inner buffering first, outer buffering the inner's output — reverse `order` again.
+
+If a plugin genuinely needs its response-phase order decoupled from its request-phase order, add an
+optional per-plugin `responseOrder` rather than a second array — but reverse-of-`order` covers every
+case in the plan, so that seam does not exist yet (YAGNI).
+
 ### Naming constraint — `PluginName` + `Variant`
 
 Every plugin has a `Name` matching a value in the closed `PluginName` enum
