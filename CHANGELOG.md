@@ -37,6 +37,13 @@ Behaviour changes that follow:
 - `0` now reads the same way on both budgets: none of that resource is available. `0` RAM means
   every body spills; `0` disk means a body must fit RAM or be shed. Negative values are rejected at
   startup.
+- **There is no longer an "unlimited" value, and `0` is its exact inverse.** On the old combined
+  total, `0` disabled the check and meant "buffer without bound"; on either new budget it means
+  "none of this resource". A config carried across unchanged does not merely lose a cap — it gains
+  the opposite one. To keep unbounded behaviour, set the budget to a value large enough never to
+  bind rather than to `0`. (The removed-key rejection catches the direct rename, but an operator
+  who *re-types* `MaxDiskBufferedBodyBytes: 0` intending "unlimited" gets a gateway that refuses to
+  spill; this is the one silent inversion in the change.)
 - `RamBufferThresholdBytes` is floored at 4 KiB with no upper cap (previously clamped to 1 MiB).
   Raising it past 1 MiB trades large-object-heap allocation for skipping the disk round-trip.
 

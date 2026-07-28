@@ -151,6 +151,10 @@ public sealed class RequestLimitsOptions
     /// bodies too large for the RAM budget. <c>0</c> means "no spilling" — a body must fit the RAM
     /// budget or be shed. Negative is rejected at startup.
     ///
+    /// <b>There is no "unlimited" value.</b> Before v2.0.0 a <c>0</c> on the combined total disabled
+    /// the check and meant "buffer without bound"; here it means the opposite. For effectively
+    /// unbounded spilling, set a value large enough never to bind rather than <c>0</c>.
+    ///
     /// <b>The tmpfs trap.</b> If <see cref="SpillDirectory"/> resolves to a <c>tmpfs</c> mount — which
     /// <c>/tmp</c> often is in containers — then this "disk" budget is really a second memory budget,
     /// charged to the same cgroup. Either point the spill at real storage, or size this as if it were

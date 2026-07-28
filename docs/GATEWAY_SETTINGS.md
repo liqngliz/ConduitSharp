@@ -107,11 +107,14 @@ limit is handed to the server (Kestrel) on both paths — streaming and buffered
 configured value *is* the transport limit; the buffered path additionally re-checks it while
 reading, as the backstop for chunked bodies with no `Content-Length`. `0` disables the limit on
 both paths (genuinely unlimited); a negative value leaves the server's own default in place
-(Kestrel: ~28.6 MiB). The two buffering budgets disable in opposite directions: no total means
-*unlimited* buffering, while no memory tier means *no RAM at all* (every body spills).
+(Kestrel: ~28.6 MiB). Note that `0` means something different on `MaxRequestBodyBytes` than on the
+two buffering budgets: here it disables the limit, whereas on a budget it means *none of that
+resource*. The budgets have no "unlimited" value — for effectively unbounded buffering set a number
+large enough never to bind. This is the one place the v2.0.0 rename inverts a meaning rather than
+just moving it: pre-2.0.0 `MaxTotalBufferedBodyBytes: 0` meant unlimited.
 
 Defaults are sized for a small container (256–512 MiB), not for a development host: at most
-64 MiB of RAM across all in-flight buffered bodies, 128 MiB worst case including spill.
+64 MiB of RAM and 64 MiB of spill across all in-flight buffered bodies.
 
 ### Tuning the buffered path
 
