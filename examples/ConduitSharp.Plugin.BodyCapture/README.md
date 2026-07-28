@@ -73,6 +73,28 @@ Raise `BodyCapture:MaxCaptureBytes` only alongside a RAM budget that can cover i
 concurrency. If you need whole bodies, send them to a dedicated audit sink
 (`body-capture-file`) rather than routing full payloads through your log pipeline.
 
+### Memory and disk
+
+Capture is **RAM-only** — a streaming tee holds pooled segments, a reuse-path read rents from
+`ArrayPool`, and neither ever spills. So it is metered against the gateway's **RAM** budget, never
+its disk budget:
+
+| Setting | Where | Governs |
+| :--- | :--- | :--- |
+| `maxSize` (route `config`) | `routes.json` | bytes captured per request — the per-request RAM this plugin reserves |
+| `BodyCapture:MaxCaptureBytes` | gateway config | gateway-wide ceiling on any route's `maxSize` (default 32 KiB) |
+| `Gateway:RequestLimits:MaxRamBufferedBodyBytes` | gateway config | the aggregate RAM budget the reservation counts against; capture sheds (503) when it is exhausted |
+
+The gateway reserves `maxSize` against `MaxRamBufferedBodyBytes` for the life of each captured
+request (declared via `CaptureMemoryBytes`), so a connection flood sheds with a 503 instead of
+growing capture memory unbounded. `MaxDiskBufferedBodyBytes` is **not** involved — capture writes no
+spill files. Rough ceiling: `concurrent captures × maxSize ≤ MaxRamBufferedBodyBytes` before shedding
+(with defaults, 64 MiB ÷ 4 KiB ≈ 16k concurrent).
+
+See [Request body limits](../../docs/GATEWAY_SETTINGS.md) for the two-budget model, and
+[Observability → body capture and log level](../../docs/OBSERVABILITY.md) for what makes captured
+bodies actually leave the process.
+
 ### What gets captured, and what deliberately does not
 
 Capture is **scoped to the body's potential cause**: on the streaming path the body is logged only

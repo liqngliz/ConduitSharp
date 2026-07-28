@@ -606,6 +606,20 @@ are also available, independent of OTLP.
 **W3C traceparent** propagation to upstream services is automatic via
 `AddHttpClientInstrumentation()`.
 
+**Azure Monitor / App Insights** is not a direct OTLP target: its native OTLP ingestion is preview
+and needs Entra auth + per-signal DCE endpoints + delta metrics. Route through an OpenTelemetry
+Collector (config-only, no gateway change), or — when embedding the library — set
+`ConfigureObservability = false` and let the host wire `UseAzureMonitor()`. Detail in
+`docs/OBSERVABILITY.md`.
+
+**Body-capture logging.** Captured request bodies are `ILogger` records at `Information` under
+category `ConduitSharp.Plugin.BodyCapture.*` (the plugin re-homes `HttpLogging`'s records there to
+dodge the `Microsoft.AspNetCore: Warning` filter). They ride whatever logging exporter is wired — so
+with `ConfigureObservability = false` the host must wire the **logging** provider, not just
+tracing/metrics, or captured bodies are silently dropped. A body is deliberately not captured when
+the failure is not the body's cause (upstream unreachable, 401/403 rejection) — see
+`docs/OBSERVABILITY.md` for the full table.
+
 ### IRequestObserver
 
 ```csharp
@@ -636,16 +650,22 @@ Configured under `Gateway:RequestLimits` (`RequestLimitsOptions`):
 - **`MaxRequestBodyBytes`** (default 8 MiB) — per-request cap; a route's
   `maxRequestBodyBytes` overrides it. Over the limit → 413. Zero/negative disables the
   per-request check.
-- **`MaxDiskBufferedBodyBytes`** (default 128 MiB) — aggregate cap across all
-  concurrently in-flight bodies, enforced by `RequestBodyBudget` (an
-  interlocked counter). A request that would push the total over budget is rejected with
-  503 (retryable). Zero/negative disables it — meaning *unlimited*, not zero.
-- **`MaxRamBufferedBodyBytes`** (default 64 MiB) — the RAM budget, independent of the
-  total. While it has headroom a body buffers in memory (~3–5x faster than spilling);
-  once full, further bodies spill from the first byte but are still served. This is what
-  bounds buffering's RAM footprint, which is why `RamBufferThresholdBytes` can be
-  generous per request. Zero/negative disables the tier — meaning *no RAM at all*, the
-  opposite direction from the total.
+- **`MaxRamBufferedBodyBytes`** (default 64 MiB) — total heap held by buffered bodies **and
+  body-capture prefixes**, across all in-flight requests, enforced by `RequestBodyBudget` (an
+  interlocked counter). While it has headroom a body buffers in RAM (~3–5x faster than spilling);
+  a body that cannot get RAM is not refused — it spills to disk (charged to the disk budget below).
+  Size against memory available to the process. `0` means *no RAM for bodies* (everything spills);
+  negative is rejected at startup.
+- **`MaxDiskBufferedBodyBytes`** (default 64 MiB) — total spill-file bytes on `SpillDirectory`,
+  across all in-flight requests. A body that can get neither RAM nor disk is shed with **503**
+  (retryable) — this budget is the load-shed trigger. **Independent of the RAM budget, on purpose:**
+  the two meter different resources, so raising disk to suit a large spill volume must not enlarge
+  what may be held in RAM. `0` means *no spilling* (a body must fit RAM or be shed). There is **no
+  "unlimited" value** — for effectively unbounded, set a number too large to bind; `0` is its
+  inverse. Negative is rejected at startup.
+- **A buffered body is charged to exactly one budget at a time**, moving RAM → disk when it spills
+  (the rented buffer returns to the pool, so that RAM is genuinely freed). Body-capture prefixes are
+  RAM-only — they never spill — and are charged to `MaxRamBufferedBodyBytes`.
 - **`RamBufferThresholdBytes`** (default 1 MiB, floored at 4 KiB, no upper cap) — per-request
   RAM ceiling. 1 MiB is an inflection point, not a limit: `FileBufferingReadStream` serves
   thresholds up to 1 MiB from `ArrayPool`, and above it grows a bare `MemoryStream` by doubling,
@@ -657,9 +677,11 @@ Configured under `Gateway:RequestLimits` (`RequestLimitsOptions`):
   `/tmp` is often `tmpfs` (RAM), which turns the disk tier back into a memory tier and
   OOMs instead of degrading. Point it at a real volume.
 
-Both are enforced in `GatewayMiddleware` before the plugin pipeline runs (bodies are
-buffered in memory; Kestrel's own transport-level limit, ~28.6 MB by default, applies
-first regardless).
+All are enforced in the buffering middleware before the plugin pipeline forwards (Kestrel's own
+transport-level limit, ~28.6 MB by default, applies first regardless). The three removed v1.x keys
+(`MaxTotalBufferedBodyBytes`, `MaxMemoryBufferedBodyBytes`, `MemoryBufferThresholdBytes`) are
+**rejected at startup** with a message naming the replacement, so a stale config fails loudly rather
+than silently running on defaults.
 
 ---
 
