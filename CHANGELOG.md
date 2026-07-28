@@ -61,8 +61,26 @@ Existing routes using `"variant": "body-capture"` keep working unchanged. Routes
 The plugin's ceiling on a route's `maxSize` is configurable via `BodyCapture:MaxCaptureBytes`
 (default 32 KiB), and a value beyond the addressable `int` range is rejected at startup.
 
+### Breaking — header-transform config is nested by direction
+
+`header-transform` config moved from a flat `{ add, set, remove }` to `{ request: {...}, response: {...} }`.
+The flat shape is **rejected at startup** with a migration message. This closes a silent bug: the flat
+config deserialized to an empty transform and did nothing, so a route that looked like it stripped
+headers was a no-op. Migrate:
+
+```json
+// before
+"config": { "set": { "X-Forwarded-By": "gw" }, "remove": ["X-Debug"] }
+// after
+"config": { "request": { "set": { "X-Forwarded-By": "gw" }, "remove": ["X-Debug"] } }
+```
+
 ### Added
 
+- **Response header transform.** `header-transform` now mutates response headers too, via a
+  `response` block applied from `Response.OnStarting` just before the reply is sent. `remove` a leaky
+  upstream header (`Server`, `X-Powered-By`) or `set` a security header (`X-Frame-Options`) on the way
+  out. (`Server` note: Kestrel writes its own unless `AddServerHeader=false` on the host.)
 - `retry.retryNonIdempotent` — opt in, per route, to retrying `POST`/`PATCH`. Off by default,
   because a non-idempotent request may already have been applied upstream, so a replay can
   double-apply it. Enabling it forces the route to buffer, since the retry loop needs a rewindable

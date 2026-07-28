@@ -286,7 +286,7 @@ JWT auth, JWKS validation, API key (plain and hashed), rate limiting, response c
   { "name": "jwt-auth",        "order": 1, "config": { "signingKey": "..." } },
   { "name": "rate-limit",      "order": 2, "config": { "windowSeconds": 60, "maxRequests": 100 } },
   { "name": "cache",           "order": 3, "config": { "ttlSeconds": 300 } },
-  { "name": "header-transform","order": 4, "config": { "set": { "X-Forwarded-By": "ConduitSharp" } } }
+  { "name": "header-transform","order": 4, "config": { "request": { "set": { "X-Forwarded-By": "ConduitSharp" } }, "response": { "remove": ["Server"] } } }
 ]
 ```
 

@@ -218,7 +218,7 @@ leave it `null`, to inherit the global limit.
 | `api-key-auth-hashed` | Validates API keys by comparing SHA-256 hash; keys never stored raw  |
 | `rate-limit`          | Fixed-window quota enforcement per route or per client header value  |
 | `cache`               | Response caching with configurable TTL and vary-by-header rules      |
-| `header-transform`    | Add, remove, or rewrite request headers before forwarding upstream   |
+| `header-transform`    | Add, remove, or rewrite request headers (upstream) and response headers (client) |
 | `http-proxy`          | Not a plugin — names where in the chain YARP forwards to the upstream. Declare it to place the forward explicitly, or omit it and the forward is appended at the end of the chain |
 
 ---

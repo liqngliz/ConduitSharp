@@ -7,92 +7,132 @@ using Microsoft.AspNetCore.Http;
 namespace ConduitSharp.Transformation.Plugins;
 
 /// <summary>
-/// Adds, removes, and rewrites HTTP request headers before the request is forwarded upstream.
+/// Adds, removes, and rewrites HTTP headers on the request (before it is forwarded upstream) and on
+/// the response (before it is sent to the client). Direction is chosen by which block the operation
+/// sits in.
 ///
 /// routes.json config block:
 /// <code>
 /// {
-///   "add":    { "X-Request-Id": "static-value", "X-Source": "gateway" },
-///   "set":    { "X-Forwarded-By": "conduit" },
-///   "remove": [ "X-Internal-Token", "X-Debug" ]
+///   "request":  { "add": { "X-Source": "gateway" }, "set": { "X-Forwarded-By": "conduit" }, "remove": [ "X-Internal-Secret" ] },
+///   "response": { "remove": [ "Server", "X-Powered-By" ] }
 /// }
 /// </code>
-/// <list type="bullet">
-///   <item><c>add</c>    — adds the header only if it is not already present.</item>
-///   <item><c>set</c>    — adds or overwrites the header unconditionally.</item>
-///   <item><c>remove</c> — removes the header if present (case-insensitive).</item>
-/// </list>
+/// Within a block, operations apply in a fixed order: <c>remove</c>, then <c>add</c> (adds only if
+/// absent), then <c>set</c> (adds or overwrites). Either block may be omitted.
+///
+/// Response headers are applied from <see cref="HttpResponse.OnStarting"/>, which fires just before
+/// the headers flush. A note on <c>Server</c>: Kestrel writes its own <c>Server</c> header during
+/// flush unless <c>AddServerHeader=false</c> on the host, so removing <c>Server</c> here strips the
+/// upstream's copy but may not stop Kestrel adding one back. Disable it at the Kestrel level if that
+/// matters.
 /// </summary>
 public sealed class HeaderTransformPlugin : IPipelinePlugin
 {
     public PluginName Name => PluginName.HeaderTransform;
     public string Id => Name.ToId();
 
+    public void ValidateConfig(JsonElement configElement)
+    {
+        // Catch the pre-2.0 flat shape ({ "add", "set", "remove" } at the top level). It parses into
+        // an empty request/response and would silently do nothing on every request — which is exactly
+        // how a live config went dead unnoticed. Fail the load instead.
+        if (configElement.ValueKind == JsonValueKind.Object
+            && (configElement.TryGetProperty("add", out _)
+                || configElement.TryGetProperty("set", out _)
+                || configElement.TryGetProperty("remove", out _)))
+        {
+            throw new InvalidOperationException(
+                "header-transform config uses the removed flat shape ({ \"add\", \"set\", \"remove\" }). " +
+                "Nest operations under 'request' and/or 'response', e.g. " +
+                "{ \"request\": { \"remove\": [\"X-Debug\"] }, \"response\": { \"remove\": [\"Server\"] } }.");
+        }
+
+        // Parse now so a malformed block fails at startup rather than on the first request.
+        _ = HeaderTransformConfig.From(configElement);
+    }
+
     public async Task ExecuteAsync(HttpContext context, JsonElement configElement, RequestDelegate next)
     {
-        var config  = HeaderTransformConfig.From(configElement);
-        var headers = context.Request.Headers;
+        var config = HeaderTransformConfig.From(configElement);
 
-        foreach (var name in config.Remove)
+        Apply(config.Request, context.Request.Headers);
+
+        if (config.Response.HasWork)
         {
-            headers.Remove(name);
+            context.Response.OnStarting(() =>
+            {
+                Apply(config.Response, context.Response.Headers);
+                return Task.CompletedTask;
+            });
         }
-
-        foreach (var (key, value) in config.Add)
-        {
-            if (!headers.ContainsKey(key))
-                headers[key] = value;
-        }
-
-        foreach (var (key, value) in config.Set)
-            headers[key] = value;
 
         await next(context);
+    }
+
+    private static void Apply(HeaderOperations ops, IHeaderDictionary headers)
+    {
+        foreach (var name in ops.Remove)
+            headers.Remove(name);
+
+        foreach (var (key, value) in ops.Add)
+            if (!headers.ContainsKey(key))
+                headers[key] = value;
+
+        foreach (var (key, value) in ops.Set)
+            headers[key] = value;
     }
 }
 
 /// <summary>
-/// Configuration for the <c>header-transform</c> plugin.
-/// Mutates request headers before forwarding to the upstream. Three independent operations
-/// are applied in order: <c>remove</c> first, then <c>set</c>, then <c>add</c>.
-/// Place inside the route's <c>"config"</c> block.
+/// Configuration for the <c>header-transform</c> plugin. Operations are split by direction:
+/// <see cref="Request"/> mutates headers before the upstream call, <see cref="Response"/> mutates
+/// them before the reply reaches the client. Place inside the route's <c>"config"</c> block.
 /// </summary>
-/// <remarks>
-/// <list type="bullet">
-///   <item><c>remove</c> — deletes the named header if present; no-op if absent.</item>
-///   <item><c>set</c>    — overwrites the header value, or creates it if absent.</item>
-///   <item><c>add</c>    — appends a new header; does not overwrite an existing one.</item>
-/// </list>
-/// </remarks>
 /// <example>
 /// <code>
 /// {
 ///   "name": "header-transform",
 ///   "order": 2,
-///   "enabled": true,
 ///   "config": {
-///     "remove": ["X-Internal-Debug"],
-///     "set":    { "X-Forwarded-By": "ConduitSharp", "X-Environment": "production" },
-///     "add":    { "X-Request-Id": "generated-by-upstream" }
+///     "request":  { "remove": ["X-Internal-Debug"], "set": { "X-Forwarded-By": "ConduitSharp" } },
+///     "response": { "remove": ["Server", "X-Powered-By"] }
 ///   }
 /// }
 /// </code>
 /// </example>
 public sealed record HeaderTransformConfig
 {
-    /// <summary>Headers to add. Does not overwrite an existing header with the same name.</summary>
-    [JsonPropertyName("add")]    public Dictionary<string, string> Add    { get; init; } = [];
+    /// <summary>Header operations applied to the outgoing upstream request.</summary>
+    [JsonPropertyName("request")]  public HeaderOperations Request  { get; init; } = new();
 
-    /// <summary>Headers to set. Creates the header if absent, overwrites if present.</summary>
-    [JsonPropertyName("set")]    public Dictionary<string, string> Set    { get; init; } = [];
-
-    /// <summary>Header names to remove before forwarding.</summary>
-    [JsonPropertyName("remove")] public List<string>               Remove { get; init; } = [];
+    /// <summary>Header operations applied to the response before it is sent to the client.</summary>
+    [JsonPropertyName("response")] public HeaderOperations Response { get; init; } = new();
 
     internal static HeaderTransformConfig From(JsonElement raw) =>
-        raw.Deserialize<HeaderTransformConfig>(JsonOptions)
-        ?? throw new InvalidOperationException("header-transform plugin config is null or invalid.");
+        raw.ValueKind == JsonValueKind.Object
+            ? raw.Deserialize<HeaderTransformConfig>(JsonOptions) ?? new HeaderTransformConfig()
+            : new HeaderTransformConfig();
 
     private static readonly JsonSerializerOptions JsonOptions =
         new() { PropertyNameCaseInsensitive = true };
+}
+
+/// <summary>
+/// One direction's header operations. Applied in order: <c>remove</c>, then <c>add</c> (only if the
+/// header is absent), then <c>set</c> (creates or overwrites).
+/// </summary>
+public sealed record HeaderOperations
+{
+    /// <summary>Headers to add only if not already present.</summary>
+    [JsonPropertyName("add")]    public Dictionary<string, string> Add    { get; init; } = [];
+
+    /// <summary>Headers to set unconditionally (creates if absent, overwrites if present).</summary>
+    [JsonPropertyName("set")]    public Dictionary<string, string> Set    { get; init; } = [];
+
+    /// <summary>Header names to remove (case-insensitive).</summary>
+    [JsonPropertyName("remove")] public List<string>               Remove { get; init; } = [];
+
+    /// <summary>True when this block has any operation, so the response path can skip a no-op OnStarting.</summary>
+    [JsonIgnore] public bool HasWork => Add.Count > 0 || Set.Count > 0 || Remove.Count > 0;
 }
