@@ -94,8 +94,8 @@ would be pure cost. That is exactly what s1 asks, and `written÷uploaded` is the
 means the gateway worked out it could not retry this request and declined to pay for the option.
 s4/s5 use `PUT` on the same route shape precisely to exercise the path where the retry *is* live.
 
-s4 deliberately hands ConduitSharp nginx's settings rather than its own: `MemoryBufferThresholdBytes=16384`
-(nginx's `client_body_buffer_size`) and `MaxTotalBufferedBodyBytes=0` (unlimited, never sheds), so
+s4 deliberately hands ConduitSharp nginx's settings rather than its own: `RamBufferThresholdBytes=16384`
+(nginx's `client_body_buffer_size`) and a disk budget too large to bind (never sheds), so
 both sides buffer every upload to disk and serve it. No budget advantage, no policy difference.
 
 <!-- BENCH-MATRIX:START -->
