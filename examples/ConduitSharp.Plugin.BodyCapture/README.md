@@ -73,6 +73,27 @@ Raise `BodyCapture:MaxCaptureBytes` only alongside a RAM budget that can cover i
 concurrency. If you need whole bodies, send them to a dedicated audit sink
 (`body-capture-file`) rather than routing full payloads through your log pipeline.
 
+### What gets captured, and what deliberately does not
+
+Capture is **scoped to the body's potential cause**: on the streaming path the body is logged only
+when it was actually forwarded — read by the forwarder. That is not a limitation, it is the design.
+A request whose body never reached upstream is not one the body could explain:
+
+| outcome | body captured (streaming path)? | why |
+|---|---|---|
+| forwarded, upstream returned any status (2xx…5xx) | **yes** | the payload was sent; it can be the cause |
+| upstream unreachable / connection refused or dropped before the body was read | **no** | transport/availability failure — the body is not the cause and not needed to diagnose it |
+| rejected by an earlier plugin (401 / 403 auth, rate-limit) | **no** | the rejection is the cause; the payload is not. In the shipped order (auth `order: 1`, capture `order: 10`) capture never runs for a rejected request |
+
+This keeps the log to bodies you acted on, rather than storing every payload anyone sent — including
+rejected, malformed, or never-forwarded ones, which is added liability (PII, secrets, attacker
+payloads) and volume for no diagnostic gain.
+
+If you specifically need to **audit rejected payloads** (attack-forensics), that is a deliberate,
+scoped choice, not the default: order this plugin *before* auth **and** run it on a buffered/retry
+route so it takes the reuse path (which logs the prefix before the forward). On a plain streaming
+route it cannot capture a rejected body, by construction.
+
 ### Behaviour inherited from HttpLogging (streaming path only)
 
 These apply when the route is streaming and the tee is used. On the reuse path the plugin reads raw

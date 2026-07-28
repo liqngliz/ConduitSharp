@@ -28,6 +28,52 @@ public sealed class StreamingBodyCapturePluginTests
     // HttpLogging capture stream the plugin installed.
     private static Task ForwardByDrainingBody(HttpContext ctx) => ctx.Request.Body.CopyToAsync(Stream.Null);
 
+    // How an upstream error actually surfaces: YARP's forward is terminal, reads the body to stream
+    // it, and on an upstream failure writes a 502 — it does NOT throw (see ConsecutiveFailuresHealth
+    // Policy, which detects failure by status code + IForwarderErrorFeature, not by catching).
+    private static async Task ForwardDrainThenReturn502(HttpContext ctx)
+    {
+        await ctx.Request.Body.CopyToAsync(Stream.Null);
+        ctx.Response.StatusCode = StatusCodes.Status502BadGateway;
+    }
+
+    // Upstream unreachable — YARP fails to connect and writes 502 before the request body is read.
+    private static Task Return502BeforeReading(HttpContext ctx)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status502BadGateway;
+        return Task.CompletedTask;
+    }
+
+    // A throw, by contrast, models what genuinely propagates through the plugin chain: a client
+    // abort mid-request, or a plugin throwing in its post-next() code — NOT an upstream error.
+    private static async Task ForwardDrainThenThrow(HttpContext ctx)
+    {
+        await ctx.Request.Body.CopyToAsync(Stream.Null);
+        throw new IOException("client reset after body sent");
+    }
+
+    // A later auth/RBAC plugin rejecting the request: writes 401/403 and returns WITHOUT reading the
+    // body or reaching the forward — the same short-circuit JwtAuthPlugin does. Only reachable when
+    // capture is ordered BEFORE auth; in the shipped routes auth is order 1 and capture order 10, so
+    // a rejection short-circuits before capture runs at all and neither branch sees the body.
+    private static Task RejectWithoutReading(HttpContext ctx, int status)
+    {
+        ctx.Response.StatusCode = status;
+        return Task.CompletedTask;
+    }
+
+    // Seekable body → the plugin takes its reuse branch (models a retry route or a body-reading
+    // plugin having already buffered the body upstream in the chain).
+    private static DefaultHttpContext SeekableRequest(string body, string? contentType = "application/json")
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/test";
+        context.Request.Method = "POST";
+        if (contentType is not null) context.Request.ContentType = contentType;
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body)); // CanSeek == true
+        return context;
+    }
+
     private static DefaultHttpContext Request(string body, string? contentType = "application/json")
     {
         var context = new DefaultHttpContext();
@@ -286,6 +332,128 @@ public sealed class StreamingBodyCapturePluginTests
             Assert.Contains($"route-{i}", record);
             Assert.Contains($"/api/req-{i}", record);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Capture is scoped to its potential cause: the body is logged only when it entered the causal
+    // chain — i.e. was actually forwarded (read). A body that never reached upstream (502 before
+    // read, connection refused/dropped) or was rejected before the forward is not the cause of that
+    // outcome, and logging it would be storing payloads for failures they did not cause. The tee's
+    // read-gated capture IS that scoping, not a limitation of it.
+    //
+    // The forward is terminal (chain.Run) and turns upstream failure into a 502 RESPONSE, not an
+    // exception, so the realistic cases below are 502-returning forwards; a throw models the
+    // narrower client-abort / plugin-throw path.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task TeePath_UpstreamReadsBodyThenReturns502_BodyIsCaptured_ItWasForwarded()
+    {
+        // The body was read and sent upstream, then upstream failed → 502. Here the body IS a
+        // potential cause (a malformed payload upstream rejected), so it is in scope and logged.
+        var (plugin, logs) = Build();
+        var context = Request("tee: read then 502");
+
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, ForwardDrainThenReturn502);
+
+        Assert.Equal(StatusCodes.Status502BadGateway, context.Response.StatusCode);
+        Assert.Contains("tee: read then 502", logs.Text);
+    }
+
+    [Fact]
+    public async Task TeePath_UpstreamUnreachable_Returns502WithoutReadingBody_BodyNotCaptured_NotItsCause()
+    {
+        // Upstream unreachable: 502 written before the body is read. This is a transport/availability
+        // failure — the body did not cause it and is not needed to diagnose it — so it is correctly
+        // out of scope and not logged. Read-gated capture doing its job, not a gap.
+        var (plugin, logs) = Build();
+        var context = Request("tee: never read");
+
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, Return502BeforeReading);
+
+        Assert.Equal(StatusCodes.Status502BadGateway, context.Response.StatusCode);
+        Assert.DoesNotContain("tee: never read", logs.Text);
+    }
+
+    [Fact]
+    public async Task ReusePath_UpstreamUnreachable_Returns502WithoutReadingBody_LogsAnyway_OverScopes()
+    {
+        // Counterpoint: the reuse branch logs the prefix BEFORE next(), unconditionally, because that
+        // is where the already-buffered seekable body is in hand. So it records a body for a request
+        // that never forwarded — a body that was not the cause. By the scope-to-cause rule this is a
+        // mild over-capture, tolerated because it is the free path on routes that already buffer, and
+        // because in the shipped ordering auth (order 1) has narrowed the traffic before capture runs.
+        var (plugin, logs) = Build();
+        var context = SeekableRequest("reuse: logged though never forwarded");
+
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, Return502BeforeReading);
+
+        Assert.Equal(StatusCodes.Status502BadGateway, context.Response.StatusCode);
+        Assert.Contains("reuse: logged though never forwarded", logs.Text);
+    }
+
+    [Fact]
+    public async Task TeePath_ReadsBodyThenThrows_BodyCaptured_ModelsClientAbortNotUpstreamError()
+    {
+        // A throw is NOT how upstream failure surfaces (that is a 502). It models a client abort
+        // after the body was sent, or a plugin throwing post-next(). The body was read and forwarded,
+        // so it was in the causal chain — HttpLogging still emits the record on the exception path.
+        var (plugin, logs) = Build();
+        var context = Request("tee: read then abort");
+
+        await Assert.ThrowsAsync<IOException>(() =>
+            plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, ForwardDrainThenThrow));
+
+        Assert.Contains("tee: read then abort", logs.Text);
+    }
+
+    // -------------------------------------------------------------------------
+    // Auth rejection (401 / 403). Same scope-to-cause rule: for a rejected request the AUTH decision
+    // is the cause, not the payload, so the body is out of scope. In the shipped routes auth is order
+    // 1 and capture order 10, so a rejection short-circuits before capture even runs — the body is
+    // never logged regardless of branch. These tests cover the deliberate forensic arrangement
+    // (capture ordered before auth to record what a rejected caller sent); only the reuse branch, by
+    // logging pre-forward, actually widens scope to include it.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(401)]
+    [InlineData(403)]
+    public async Task TeePath_LaterAuthRejects_BodyNotCaptured(int status)
+    {
+        // Even ordered before auth, the tee needs the forward to read the body — a rejection
+        // short-circuits before that, so nothing is teed. Read-gated capture keeps the rejected
+        // payload out of scope; deliberately auditing rejected bodies is not possible on the
+        // streaming path.
+        var (plugin, logs) = Build();
+        var context = Request($"tee: rejected {status}");
+
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement,
+            ctx => RejectWithoutReading(ctx, status));
+
+        Assert.Equal(status, context.Response.StatusCode);
+        Assert.DoesNotContain($"tee: rejected {status}", logs.Text);
+    }
+
+    [Theory]
+    [InlineData(401)]
+    [InlineData(403)]
+    public async Task ReusePath_OrderedBeforeAuth_RejectedBodyIsCaptured(int status)
+    {
+        // Widening scope on purpose: the reuse branch logs before next(), so ordering capture ahead
+        // of auth on a buffered route DOES record what a rejected caller sent. This is a deliberate
+        // forensic choice (attack-payload capture), not the default — it stores bodies that were not
+        // the cause of the rejection, which is exactly what the scope-to-cause rule warns against, so
+        // enable it only where that trade is intended. (Requires a buffered/seekable route; a plain
+        // streaming route falls to the tee above and captures nothing.)
+        var (plugin, logs) = Build();
+        var context = SeekableRequest($"reuse: rejected {status}");
+
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement,
+            ctx => RejectWithoutReading(ctx, status));
+
+        Assert.Equal(status, context.Response.StatusCode);
+        Assert.Contains($"reuse: rejected {status}", logs.Text);
     }
 
     private sealed class CapturedLogs : ILoggerProvider
