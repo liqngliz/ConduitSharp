@@ -299,7 +299,7 @@ public static class CaptureRoutes
     public static string Build(string upstreamBaseUrl, CaptureStyle style, int maxSize, bool retry)
     {
         var pluginsArray = style == CaptureStyle.Capture
-            ? $$"""[{ "name": "custom", "variant": "body-capture", "order": 1, "config": { "maxSize": {{maxSize}} } }]"""
+            ? $$"""[{ "name": "custom", "variant": "body-capture", "order": 1, "config": { "request": { "maxSize": {{maxSize}} } } }]"""
             : "[]";
         var retryBlock = retry ? """, "retry": { "maxAttempts": 2, "delayMs": 0 }""" : "";
 

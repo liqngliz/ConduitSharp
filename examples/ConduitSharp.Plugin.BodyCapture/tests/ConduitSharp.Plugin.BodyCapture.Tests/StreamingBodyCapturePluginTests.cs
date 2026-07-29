@@ -103,35 +103,44 @@ public sealed class StreamingBodyCapturePluginTests
     }
 
     [Fact]
-    public void ValidateConfig_ValidMaxSize_DoesNotThrow()
+    public void ValidateConfig_FlatShape_Throws_WithMigrationHint()
     {
+        // The pre-2.0 flat shape captures nothing now, so it must fail the load, not no-op.
         var config = JsonDocument.Parse("""{ "maxSize": 1024 }""").RootElement;
-        Build().Plugin.ValidateConfig(config); // Should not throw
+        var ex = Assert.Throws<InvalidOperationException>(() => Build().Plugin.ValidateConfig(config));
+        Assert.Contains("flat shape", ex.Message);
+        Assert.Contains("request", ex.Message);
+        Assert.Contains("response", ex.Message);
     }
 
     [Fact]
-    public void ValidateConfig_InvalidMaxSize_Throws()
+    public void ValidateConfig_NestedValidMaxSize_DoesNotThrow()
     {
-        var config = JsonDocument.Parse("""{ "maxSize": -5 }""").RootElement;
-        Assert.Throws<InvalidOperationException>(() => Build().Plugin.ValidateConfig(config));
+        Build().Plugin.ValidateConfig(JsonDocument.Parse("""{ "request": { "maxSize": 1024 }, "response": { "maxSize": 2048 } }""").RootElement);
     }
 
     [Fact]
     public void ValidateConfig_MaxSizeAtCeiling_DoesNotThrow()
     {
-        var config = JsonDocument.Parse("""{ "maxSize": 32768 }""").RootElement;
-        Build().Plugin.ValidateConfig(config); // 32 KiB is the ceiling, not past it
+        Build().Plugin.ValidateConfig(JsonDocument.Parse("""{ "request": { "maxSize": 32768 } }""").RootElement);
+    }
+
+    [Theory]
+    [InlineData("request")]
+    [InlineData("response")]
+    public void ValidateConfig_MaxSizeAboveCeiling_Throws(string direction)
+    {
+        var config = JsonDocument.Parse($$"""{ "{{direction}}": { "maxSize": 32769 } }""").RootElement;
+        var ex = Assert.Throws<InvalidOperationException>(() => Build().Plugin.ValidateConfig(config));
+        Assert.Contains("32768", ex.Message);
+        Assert.Contains(direction, ex.Message);
     }
 
     [Fact]
-    public void ValidateConfig_MaxSizeAboveCeiling_Throws()
+    public void ValidateConfig_NonIntegerMaxSize_Throws()
     {
-        // Capture memory rides the streaming path, which never reserves against the gateway's
-        // buffering budget — so an unbounded maxSize is heap nothing can shed. 32 KiB also keeps
-        // the prefix under the 85 KiB LOH threshold.
-        var config = JsonDocument.Parse("""{ "maxSize": 32769 }""").RootElement;
-        var ex = Assert.Throws<InvalidOperationException>(() => Build().Plugin.ValidateConfig(config));
-        Assert.Contains("32768", ex.Message);
+        var config = JsonDocument.Parse("""{ "response": { "maxSize": "big" } }""").RootElement;
+        Assert.Throws<InvalidOperationException>(() => Build().Plugin.ValidateConfig(config));
     }
 
     [Fact]
@@ -139,7 +148,7 @@ public sealed class StreamingBodyCapturePluginTests
     {
         // BodyCapture:MaxCaptureBytes lifts the default 32 KiB ceiling. A 48 KiB maxSize that the
         // default rejects is accepted once the ceiling is raised to 64 KiB.
-        var config = JsonDocument.Parse("""{ "maxSize": 49152 }""").RootElement;
+        var config = JsonDocument.Parse("""{ "request": { "maxSize": 49152 } }""").RootElement;
 
         var factory = LoggerFactory.Create(_ => { });
         var configuration = new ConfigurationBuilder()
@@ -176,7 +185,7 @@ public sealed class StreamingBodyCapturePluginTests
         var (plugin, logs) = Build();
         var context = Request(new string('z', 64 * 1024));
 
-        var config = JsonDocument.Parse("""{ "maxSize": 1048576 }""").RootElement;
+        var config = JsonDocument.Parse("""{ "request": { "maxSize": 1048576 } }""").RootElement;
         await plugin.ExecuteAsync(context, config, ForwardByDrainingBody);
 
         Assert.Contains("[Truncated by RequestBodyLogLimit]", logs.Text);
@@ -195,7 +204,7 @@ public sealed class StreamingBodyCapturePluginTests
         var (plugin, logs) = Build();
         var context = Request("hello full body");
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, ForwardByDrainingBody);
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardByDrainingBody);
 
         Assert.Contains("hello full body", logs.Text);
     }
@@ -206,7 +215,7 @@ public sealed class StreamingBodyCapturePluginTests
         var (plugin, logs) = Build();
         var context = Request("1234567890");
 
-        var config = JsonDocument.Parse("""{ "maxSize": 5 }""").RootElement;
+        var config = JsonDocument.Parse("""{ "request": { "maxSize": 5 } }""").RootElement;
         await plugin.ExecuteAsync(context, config, ForwardByDrainingBody);
 
         Assert.Contains("RequestBody: 12345", logs.Text);
@@ -225,7 +234,7 @@ public sealed class StreamingBodyCapturePluginTests
         var context = Request(new string('x', 200_000));
 
         var forwarded = new MemoryStream();
-        var config = JsonDocument.Parse("""{ "maxSize": 64 }""").RootElement;
+        var config = JsonDocument.Parse("""{ "request": { "maxSize": 64 } }""").RootElement;
         await plugin.ExecuteAsync(context, config, ctx => ctx.Request.Body.CopyToAsync(forwarded));
 
         Assert.Equal(payload, forwarded.ToArray());
@@ -238,7 +247,7 @@ public sealed class StreamingBodyCapturePluginTests
         var context = Request("body");
         var original = context.Request.Body;
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, ForwardByDrainingBody);
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardByDrainingBody);
 
         Assert.Same(original, context.Request.Body);
     }
@@ -251,7 +260,7 @@ public sealed class StreamingBodyCapturePluginTests
         var (plugin, logs) = Build();
         var context = Request("1234567890", contentType: "application/octet-stream");
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, ForwardByDrainingBody);
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardByDrainingBody);
 
         Assert.DoesNotContain("1234567890", logs.Text);
         Assert.Contains("Unrecognized Content-Type", logs.Text);
@@ -267,7 +276,7 @@ public sealed class StreamingBodyCapturePluginTests
         var (plugin, logs) = Build();
         var context = Request("hello full body");
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, ForwardByDrainingBody);
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardByDrainingBody);
 
         Assert.Contains(typeof(StreamingBodyCapturePlugin).FullName!, logs.Categories);
         Assert.DoesNotContain(logs.Categories, c => c.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal));
@@ -287,7 +296,7 @@ public sealed class StreamingBodyCapturePluginTests
         });
         var plugin = new StreamingBodyCapturePlugin(factory);
 
-        await plugin.ExecuteAsync(Request("hello full body"), JsonDocument.Parse("{}").RootElement, ForwardByDrainingBody);
+        await plugin.ExecuteAsync(Request("hello full body"), JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardByDrainingBody);
 
         Assert.Contains("hello full body", logs.Text);
     }
@@ -301,7 +310,7 @@ public sealed class StreamingBodyCapturePluginTests
         var context = Request("attributed body");
         context.Items["ConduitSharp.RouteId"] = "route-orders";
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, ForwardByDrainingBody);
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardByDrainingBody);
 
         var record = Assert.Single(logs.Records, r => r.Contains("attributed body"));
         Assert.Contains("route-orders", record);
@@ -315,7 +324,7 @@ public sealed class StreamingBodyCapturePluginTests
         // One singleton plugin, many in-flight requests across "routes": every combined record
         // must pair route-i with body-i — a cross-pairing means per-request state leaked.
         var (plugin, logs) = Build();
-        var config = JsonDocument.Parse("{}").RootElement;
+        var config = JsonDocument.Parse("""{"request":{}}""").RootElement;
 
         await Task.WhenAll(Enumerable.Range(0, 50).Select(i => Task.Run(async () =>
         {
@@ -354,7 +363,7 @@ public sealed class StreamingBodyCapturePluginTests
         var (plugin, logs) = Build();
         var context = Request("tee: read then 502");
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, ForwardDrainThenReturn502);
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardDrainThenReturn502);
 
         Assert.Equal(StatusCodes.Status502BadGateway, context.Response.StatusCode);
         Assert.Contains("tee: read then 502", logs.Text);
@@ -369,7 +378,7 @@ public sealed class StreamingBodyCapturePluginTests
         var (plugin, logs) = Build();
         var context = Request("tee: never read");
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, Return502BeforeReading);
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, Return502BeforeReading);
 
         Assert.Equal(StatusCodes.Status502BadGateway, context.Response.StatusCode);
         Assert.DoesNotContain("tee: never read", logs.Text);
@@ -386,7 +395,7 @@ public sealed class StreamingBodyCapturePluginTests
         var (plugin, logs) = Build();
         var context = SeekableRequest("reuse: logged though never forwarded");
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, Return502BeforeReading);
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, Return502BeforeReading);
 
         Assert.Equal(StatusCodes.Status502BadGateway, context.Response.StatusCode);
         Assert.Contains("reuse: logged though never forwarded", logs.Text);
@@ -402,7 +411,7 @@ public sealed class StreamingBodyCapturePluginTests
         var context = Request("tee: read then abort");
 
         await Assert.ThrowsAsync<IOException>(() =>
-            plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, ForwardDrainThenThrow));
+            plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardDrainThenThrow));
 
         Assert.Contains("tee: read then abort", logs.Text);
     }
@@ -428,7 +437,7 @@ public sealed class StreamingBodyCapturePluginTests
         var (plugin, logs) = Build();
         var context = Request($"tee: rejected {status}");
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement,
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement,
             ctx => RejectWithoutReading(ctx, status));
 
         Assert.Equal(status, context.Response.StatusCode);
@@ -449,11 +458,134 @@ public sealed class StreamingBodyCapturePluginTests
         var (plugin, logs) = Build();
         var context = SeekableRequest($"reuse: rejected {status}");
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement,
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement,
             ctx => RejectWithoutReading(ctx, status));
 
         Assert.Equal(status, context.Response.StatusCode);
         Assert.Contains($"reuse: rejected {status}", logs.Text);
+    }
+
+    // -------------------------------------------------------------------------
+    // Response capture (§2a) — the bounded write-through tee on Response.Body
+    // -------------------------------------------------------------------------
+
+    // A forward that writes a response body, the way YARP writes the upstream's response.
+    private static Task ForwardWritingResponse(HttpContext ctx, string body) => ctx.Response.WriteAsync(body);
+
+    [Fact]
+    public async Task Response_block_capturesResponseBody()
+    {
+        var (plugin, logs) = Build();
+        var context = Request("req");
+        var config = JsonDocument.Parse("""{ "response": { "maxSize": 4096 } }""").RootElement;
+
+        await plugin.ExecuteAsync(context, config, ctx => ForwardWritingResponse(ctx, "the response payload"));
+
+        var record = Assert.Single(logs.Records, r => r.Contains("Captured response body"));
+        Assert.Contains("the response payload", record);
+    }
+
+    [Fact]
+    public async Task Response_truncatesAtMaxSize()
+    {
+        var (plugin, logs) = Build();
+        var context = Request("req");
+        var config = JsonDocument.Parse("""{ "response": { "maxSize": 5 } }""").RootElement;
+
+        await plugin.ExecuteAsync(context, config, ctx => ForwardWritingResponse(ctx, "1234567890"));
+
+        var record = Assert.Single(logs.Records, r => r.Contains("Captured response body"));
+        Assert.Contains("12345", record);
+        Assert.Contains("(truncated)", record);
+        Assert.DoesNotContain("67890", record);
+    }
+
+    [Fact]
+    public async Task Response_capturesBinary_UnlikeTheRequestTee()
+    {
+        // The response tee reads raw bytes, so it captures a binary response — the request streaming
+        // path (HttpLogging) would skip it. Content type does not gate response capture.
+        var (plugin, logs) = Build();
+        var context = Request("req");
+        var config = JsonDocument.Parse("""{ "response": { "maxSize": 16 } }""").RootElement;
+
+        await plugin.ExecuteAsync(context, config, async ctx =>
+        {
+            ctx.Response.ContentType = "application/octet-stream";
+            await ctx.Response.WriteAsync("BINARYBYTES");
+        });
+
+        var record = Assert.Single(logs.Records, r => r.Contains("Captured response body"));
+        Assert.Contains("BINARYBYTES", record);
+    }
+
+    [Fact]
+    public async Task Response_isTransparent_ClientGetsEveryByte()
+    {
+        var (plugin, _) = Build();
+        var context = Request("req");
+        var sink = new MemoryStream();
+        context.Response.Body = sink;
+        var payload = new string('y', 200_000);
+        var config = JsonDocument.Parse("""{ "response": { "maxSize": 64 } }""").RootElement;
+
+        await plugin.ExecuteAsync(context, config, ctx => ForwardWritingResponse(ctx, payload));
+
+        Assert.Equal(payload, Encoding.UTF8.GetString(sink.ToArray()));
+        Assert.Same(sink, context.Response.Body); // original restored after the forward
+    }
+
+    [Fact]
+    public async Task Request_and_response_bothCaptured_inOneConfig()
+    {
+        var (plugin, logs) = Build();
+        var context = Request("the request body");
+        var config = JsonDocument.Parse("""{ "request": { "maxSize": 4096 }, "response": { "maxSize": 4096 } }""").RootElement;
+
+        await plugin.ExecuteAsync(context, config, async ctx =>
+        {
+            await ctx.Request.Body.CopyToAsync(Stream.Null); // forward reads the request (tees it)
+            await ctx.Response.WriteAsync("the response body");
+        });
+
+        Assert.Contains("the request body", logs.Text);
+        Assert.Contains("the response body", logs.Text);
+        Assert.Single(logs.Records, r => r.Contains("Captured response body"));
+    }
+
+    [Fact]
+    public async Task NoResponseBlock_doesNotCaptureResponse()
+    {
+        var (plugin, logs) = Build();
+        var context = Request("req");
+
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{ "request": {} }""").RootElement,
+            ctx => ForwardWritingResponse(ctx, "unwanted response"));
+
+        Assert.DoesNotContain("Captured response body", logs.Text);
+        Assert.DoesNotContain("unwanted response", logs.Text);
+    }
+
+    [Fact]
+    public void CaptureMemoryBytes_sumsBothDirections()
+    {
+        var plugin = Build().Plugin;
+        var config = JsonDocument.Parse("""{ "request": { "maxSize": 4096 }, "response": { "maxSize": 8192 } }""").RootElement;
+        Assert.Equal(4096 + 8192, plugin.CaptureMemoryBytes(config));
+    }
+
+    [Fact]
+    public void CaptureMemoryBytes_zeroWhenNoDirectionConfigured()
+    {
+        Assert.Equal(0, Build().Plugin.CaptureMemoryBytes(JsonDocument.Parse("{}").RootElement));
+    }
+
+    [Fact]
+    public void CaptureMemoryBytes_ceilingCapsEachDirection()
+    {
+        // maxSize above the ceiling clamps to it, per direction, so the reservation stays honest.
+        var config = JsonDocument.Parse("""{ "request": { "maxSize": 999999 }, "response": { "maxSize": 999999 } }""").RootElement;
+        Assert.Equal(32 * 1024 + 32 * 1024, Build().Plugin.CaptureMemoryBytes(config));
     }
 
     private sealed class CapturedLogs : ILoggerProvider

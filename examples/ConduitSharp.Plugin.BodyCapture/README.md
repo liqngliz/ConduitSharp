@@ -40,7 +40,8 @@ Heap cost is the captured prefix, never the body: a 10 MB upload and a 1 KB one 
       "order": 10,
       "enabled": true,
       "config": {
-        "maxSize": 4096
+        "request":  { "maxSize": 4096 },
+        "response": { "maxSize": 8192 }
       }
     },
     {
@@ -54,12 +55,24 @@ Heap cost is the captured prefix, never the body: a 10 MB upload and a 1 KB one 
 
 ### Options
 
+Config is nested by direction. A direction is captured only when its block is present with a positive
+`maxSize`. Omit the block (or set `maxSize: 0`) to skip it.
+
 | Setting | Type | Required | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `maxSize` | `integer` | No | `4096` (4 KiB) | Bytes of the request body to log. Bodies longer than this are logged truncated. Must not exceed the ceiling below — a larger value is rejected at startup. |
+| `request.maxSize` | `integer` | No | none (off) | Bytes of the **request** body to log. Present block with no `maxSize` uses 4 KiB. Longer bodies log truncated. |
+| `response.maxSize` | `integer` | No | none (off) | Bytes of the **response** body to log. Same rules. |
 
-The ceiling on `maxSize` defaults to 32 KiB and is set gateway-wide with
-`BodyCapture:MaxCaptureBytes`.
+Request capture picks the cheap path: it reads off the gateway's buffer on a retry/buffered route
+(raw bytes, binary included), and tees via HttpLogging on a plain streaming route (text media types
+only). Response capture is a bounded write-through tee on `Response.Body`, so it runs on every route
+and captures binary responses too.
+
+Each direction's `maxSize` is capped by a gateway-wide ceiling (`BodyCapture:MaxCaptureBytes`, default
+32 KiB); a larger value is rejected at startup.
+
+> **Migrating from 1.x:** the flat `{ "maxSize": N }` shape is removed and rejected at startup. Wrap
+> it: `{ "request": { "maxSize": N } }`.
 
 #### Why there is a ceiling at all
 
@@ -81,15 +94,16 @@ its disk budget:
 
 | Setting | Where | Governs |
 | :--- | :--- | :--- |
-| `maxSize` (route `config`) | `routes.json` | bytes captured per request — the per-request RAM this plugin reserves |
-| `BodyCapture:MaxCaptureBytes` | gateway config | gateway-wide ceiling on any route's `maxSize` (default 32 KiB) |
-| `Gateway:RequestLimits:MaxRamBufferedBodyBytes` | gateway config | the aggregate RAM budget the reservation counts against; capture sheds (503) when it is exhausted |
+| `request.maxSize` / `response.maxSize` | `routes.json` | bytes captured per direction — the per-request RAM this plugin reserves |
+| `BodyCapture:MaxCaptureBytes` | gateway config | per-direction ceiling (default 32 KiB) |
+| `Gateway:RequestLimits:MaxRamBufferedBodyBytes` | gateway config | the aggregate RAM budget the reservation counts against; capture sheds (503) when exhausted |
 
-The gateway reserves `maxSize` against `MaxRamBufferedBodyBytes` for the life of each captured
-request (declared via `CaptureMemoryBytes`), so a connection flood sheds with a 503 instead of
-growing capture memory unbounded. `MaxDiskBufferedBodyBytes` is **not** involved — capture writes no
-spill files. Rough ceiling: `concurrent captures × maxSize ≤ MaxRamBufferedBodyBytes` before shedding
-(with defaults, 64 MiB ÷ 4 KiB ≈ 16k concurrent).
+The gateway reserves `request.maxSize + response.maxSize` against `MaxRamBufferedBodyBytes` for the
+life of each captured request (declared via `CaptureMemoryBytes`), so a connection flood sheds with a
+503 instead of growing capture memory unbounded. The sum, not the max: HttpLogging holds the request
+prefix until the response completes, so both are live at once. `MaxDiskBufferedBodyBytes` is **not**
+involved — capture writes no spill files. Turning on response capture roughly doubles the reservation,
+so a route capturing both sheds at about half the concurrency of a request-only route.
 
 See [Request body limits](../../docs/GATEWAY_SETTINGS.md) for the two-budget model, and
 [Observability → body capture and log level](../../docs/OBSERVABILITY.md) for what makes captured

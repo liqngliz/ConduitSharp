@@ -2,7 +2,7 @@
   "routes": [
     {
       "id": "inventory-service",
-      "description": "Inventory API — API key auth, rate limited, round-robin across two nodes",
+      "description": "Inventory API \u2014 API key auth, rate limited, round-robin across two nodes",
       "route": {
         "match": {
           "path": "/api/inventory/{**rest}",
@@ -56,7 +56,9 @@
           "order": 10,
           "enabled": true,
           "config": {
-            "maxSize": 1024
+            "request": {
+              "maxSize": 1024
+            }
           }
         },
         {
@@ -69,7 +71,7 @@
     },
     {
       "id": "order-service",
-      "description": "Order API — JWT (HS256) auth, forwarded to order service",
+      "description": "Order API \u2014 JWT (HS256) auth, forwarded to order service",
       "route": {
         "match": {
           "path": "/api/orders/{**rest}",
@@ -110,7 +112,9 @@
           "order": 10,
           "enabled": true,
           "config": {
-            "maxSize": 1024
+            "request": {
+              "maxSize": 1024
+            }
           }
         },
         {
@@ -122,7 +126,7 @@
     },
     {
       "id": "upload-service",
-      "description": "Upload API — streamed directly without buffering, no body capture",
+      "description": "Upload API \u2014 streamed directly without buffering, no body capture",
       "route": {
         "match": {
           "path": "/api/upload/{**rest}",
@@ -154,7 +158,7 @@
     },
     {
       "id": "erp-report",
-      "description": "ERP erp report — JWT auth + role-based access, rate limited, cached 60s, executed via PowerShell plugin",
+      "description": "ERP erp report \u2014 JWT auth + role-based access, rate limited, cached 60s, executed via PowerShell plugin",
       "route": {
         "match": {
           "path": "/erp/reports/summary",
@@ -217,7 +221,7 @@
     },
     {
       "id": "health",
-      "description": "Health check — passthrough, no auth, no policies",
+      "description": "Health check \u2014 passthrough, no auth, no policies",
       "route": {
         "match": {
           "path": "/health",
@@ -250,7 +254,7 @@
     },
     {
       "id": "greeter-grpc",
-      "description": "gRPC passthrough — the YARP forwarder relays HTTP/2 verbatim to the Greeter service (no transcoding)",
+      "description": "gRPC passthrough \u2014 the YARP forwarder relays HTTP/2 verbatim to the Greeter service (no transcoding)",
       "route": {
         "match": {
           "path": "/greet.Greeter/{**method}",
