@@ -21,7 +21,7 @@ All gateway settings live in `Configuration/appsettings.json` next to the binary
     },
     "RequestLimits": {
       "MaxRequestBodyBytes": 8388608,
-      "MaxDiskBufferedBodyBytes": 134217728,
+      "MaxDiskBufferedBodyBytes": 67108864,
       "MaxRamBufferedBodyBytes": 67108864,
       "RamBufferThresholdBytes": 1048576,
       "SpillDirectory": null
@@ -50,7 +50,7 @@ resources** and fire **different outcomes**:
 | Setting | Applies to | Meters | Exceeding it means | Size it against |
 |---|---|---|---|---|
 | `MaxRequestBodyBytes` | one request | body size | **413** to the client | your API contract — how big a body you accept |
-| `MaxRamBufferedBodyBytes` | all in-flight, combined | **RAM** — buffered bodies + capture prefixes | that body spills to disk (not an error) | memory available to the process |
+| `MaxRamBufferedBodyBytes` | all in-flight, combined | **RAM** — buffered bodies + capture prefixes | a buffered body spills to disk; a capture reservation that will not fit sheds **503** | memory available to the process |
 | `MaxDiskBufferedBodyBytes` | all in-flight, combined | **spill-file bytes** | **503**, the load-shed | free space on `SpillDirectory` |
 | `RamBufferThresholdBytes` | one body | RAM, before it spills | that body spills to disk | leave at default unless large bodies must avoid disk |
 | `SpillDirectory` | — | *where* spilled bytes go | — | pick tmpfs vs real storage deliberately (see below) |
@@ -59,9 +59,12 @@ resources** and fire **different outcomes**:
 to suit a large spill volume must not silently enlarge what may be held in RAM — that is how a
 gateway gets OOM-killed instead of shedding. Set each against the resource it actually meters.
 
-A body is charged to exactly one of them at a time: RAM while it fits the threshold, disk once it
-spills. Body-capture prefixes are RAM-only — they never spill — so they are charged to the RAM
-budget.
+A buffered body is charged to exactly one budget at a time: RAM while it fits the threshold, disk
+once it spills. Body-capture is different — its prefix is RAM-only and never spills, so the gateway
+**reserves** it against the RAM budget up front and sheds a **503** if the reservation will not fit,
+rather than spilling. A route capturing both directions reserves `request.maxSize + response.maxSize`
+(see the [body-capture plugin](../examples/ConduitSharp.Plugin.BodyCapture/README.md#memory-and-disk)),
+so enabling response capture roughly halves the concurrency at which it starts shedding.
 
 > **The tmpfs trap.** If `SpillDirectory` resolves to a `tmpfs` mount — `/tmp` often is inside
 > containers — then "disk" *is* RAM and `MaxDiskBufferedBodyBytes` becomes a second memory budget.
@@ -147,7 +150,7 @@ spill, and only one of them fails gracefully:
 
 | Limit | Default | What happens when it binds |
 |---|---|---|
-| `MaxDiskBufferedBodyBytes` | 128 MiB | **503** — the gateway sheds deliberately |
+| `MaxDiskBufferedBodyBytes` | 64 MiB | **503** — the gateway sheds deliberately |
 | tmpfs mount `size=` | **half the host's RAM** if unset | `ENOSPC` → the spill write throws → **500** |
 | container memory limit (cgroup) | none | **OOM-kill** — tmpfs pages are charged to the cgroup |
 | `/dev/shm` | **64 MB** in Docker | `ENOSPC` → **500** |

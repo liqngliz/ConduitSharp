@@ -692,7 +692,12 @@ Configured under `Gateway:RequestLimits` (`RequestLimitsOptions`):
   inverse. Negative is rejected at startup.
 - **A buffered body is charged to exactly one budget at a time**, moving RAM → disk when it spills
   (the rented buffer returns to the pool, so that RAM is genuinely freed). Body-capture prefixes are
-  RAM-only — they never spill — and are charged to `MaxRamBufferedBodyBytes`.
+  RAM-only — they never spill. A plugin declares its per-request capture RAM through
+  `IPipelinePlugin.CaptureMemoryBytes`, and the gateway **reserves** the summed declaration against
+  `MaxRamBufferedBodyBytes` before the request runs (both the streaming and buffered paths), shedding
+  **503** if it will not fit. A route capturing request and response declares `request.maxSize +
+  response.maxSize` (the sum, because HttpLogging holds the request prefix until the response
+  completes, so both are live at once).
 - **`RamBufferThresholdBytes`** (default 1 MiB, floored at 4 KiB, no upper cap) — per-request
   RAM ceiling. 1 MiB is an inflection point, not a limit: `FileBufferingReadStream` serves
   thresholds up to 1 MiB from `ArrayPool`, and above it grows a bare `MemoryStream` by doubling,
