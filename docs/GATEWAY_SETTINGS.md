@@ -60,11 +60,14 @@ to suit a large spill volume must not silently enlarge what may be held in RAM �
 gateway gets OOM-killed instead of shedding. Set each against the resource it actually meters.
 
 A buffered body is charged to exactly one budget at a time: RAM while it fits the threshold, disk
-once it spills. Body-capture is different — its prefix is RAM-only and never spills, so the gateway
-**reserves** it against the RAM budget up front and sheds a **503** if the reservation will not fit,
-rather than spilling. A route capturing both directions reserves `request.maxSize + response.maxSize`
-(see the [body-capture plugin](../examples/ConduitSharp.Plugin.BodyCapture/README.md#memory-and-disk)),
-so enabling response capture roughly halves the concurrency at which it starts shedding.
+once it spills.
+
+These budgets bound the gateway's **own** body buffering. A plugin that holds RAM of its own — the
+`body-capture` prefix — reserves it against the same `MaxRamBufferedBodyBytes` **additively**, on top
+of any buffering, and sheds a **503** if it will not fit (it never spills, being RAM-only). How much a
+plugin reserves is the plugin's concern; for body-capture, size this budget for the sum of buffering
+plus its prefixes. See the
+[body-capture plugin README](../examples/ConduitSharp.Plugin.BodyCapture/README.md#memory-and-disk).
 
 > **The tmpfs trap.** If `SpillDirectory` resolves to a `tmpfs` mount — `/tmp` often is inside
 > containers — then "disk" *is* RAM and `MaxDiskBufferedBodyBytes` becomes a second memory budget.

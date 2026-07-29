@@ -105,6 +105,13 @@ prefix until the response completes, so both are live at once. `MaxDiskBufferedB
 involved — capture writes no spill files. Turning on response capture roughly doubles the reservation,
 so a route capturing both sheds at about half the concurrency of a request-only route.
 
+This reservation is **additive**, not a separate budget. It stacks on top of whatever RAM the gateway
+is already using to buffer the request body (for a retry loop, or a body-reading plugin on the route),
+all under the one `MaxRamBufferedBodyBytes` ceiling. On a retry route that both buffers and captures,
+the buffered body and the capture prefixes draw from the same budget, so size that budget for the sum.
+The gateway-core buffering budgets themselves are documented in
+[Request body limits](../../docs/GATEWAY_SETTINGS.md); this plugin only adds its declared prefix on top.
+
 See [Request body limits](../../docs/GATEWAY_SETTINGS.md) for the two-budget model, and
 [Observability → body capture and log level](../../docs/OBSERVABILITY.md) for what makes captured
 bodies actually leave the process.
