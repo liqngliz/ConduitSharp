@@ -23,7 +23,7 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
     {
         var plugin = new BodyCaptureToFilePlugin(_configSub);
         
-        var json = $$"""{ "logPath": "{{(logPath ?? _tempLogFile).Replace("\\", "\\\\")}}", "maxSize": 1024 }""";
+        var json = $$"""{ "logPath": "{{(logPath ?? _tempLogFile).Replace("\\", "\\\\")}}", "request": { "maxSize": 1024 } }""";
         var config = JsonDocument.Parse(json).RootElement;
         plugin.ValidateConfig(config);
         
@@ -37,9 +37,9 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         // drains the queue. Undeclared, that multiplies by concurrency with nothing to shed it —
         // declaring it puts the RAM under MaxRamBufferedBodyBytes and the gateway's 503.
         using var plugin = new BodyCaptureToFilePlugin(_configSub);
-        var config = JsonDocument.Parse("""{ "maxSize": 8192 }""").RootElement;
+        var config = JsonDocument.Parse("""{ "request": { "maxSize": 8192 }, "response": { "maxSize": 4096 } }""").RootElement;
 
-        Assert.Equal(8192, plugin.CaptureMemoryBytes(config));
+        Assert.Equal(8192 + 4096, plugin.CaptureMemoryBytes(config)); // sum of both directions
     }
 
     [Fact]
@@ -49,13 +49,13 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         // gap this closes: a route omitting maxSize still rents the 4 KiB default.
         using var plugin = new BodyCaptureToFilePlugin(_configSub);
 
-        Assert.Equal(4 * 1024, plugin.CaptureMemoryBytes(JsonDocument.Parse("{}").RootElement));
+        Assert.Equal(4 * 1024, plugin.CaptureMemoryBytes(JsonDocument.Parse("""{"request":{}}""").RootElement));
     }
 
     [Fact]
     public void ValidateConfig_ValidMaxSize_DoesNotThrow()
     {
-        var json = $$"""{ "logPath": "{{_tempLogFile.Replace("\\", "\\\\")}}", "maxSize": 1024 }""";
+        var json = $$"""{ "logPath": "{{_tempLogFile.Replace("\\", "\\\\")}}", "request": { "maxSize": 1024 } }""";
         var config = JsonDocument.Parse(json).RootElement;
         
         var plugin = new BodyCaptureToFilePlugin(_configSub);
@@ -63,12 +63,20 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
     }
 
     [Fact]
-    public void ValidateConfig_InvalidMaxSize_Throws()
+    public void ValidateConfig_FlatShape_Throws_WithMigrationHint()
     {
-        var json = """{ "maxSize": -5 }""";
-        var config = JsonDocument.Parse(json).RootElement;
-        
-        var plugin = new BodyCaptureToFilePlugin(_configSub);
+        var config = JsonDocument.Parse("""{ "maxSize": 1024 }""").RootElement;
+        using var plugin = new BodyCaptureToFilePlugin(_configSub);
+        var ex = Assert.Throws<InvalidOperationException>(() => plugin.ValidateConfig(config));
+        Assert.Contains("flat shape", ex.Message);
+        Assert.Contains("request", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateConfig_NonIntegerMaxSize_Throws()
+    {
+        var config = JsonDocument.Parse("""{ "response": { "maxSize": "big" } }""").RootElement;
+        using var plugin = new BodyCaptureToFilePlugin(_configSub);
         Assert.Throws<InvalidOperationException>(() => plugin.ValidateConfig(config));
     }
 
@@ -82,7 +90,7 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("hello full body"));
         context.TraceIdentifier = "trace-123";
 
-        var config = JsonDocument.Parse("{}").RootElement;
+        var config = JsonDocument.Parse("""{"request":{}}""").RootElement;
 
         bool nextCalled = false;
         await plugin.ExecuteAsync(context, config, ctx => 
@@ -117,7 +125,7 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("1234567890"));
         context.TraceIdentifier = "trace-456";
 
-        var config = JsonDocument.Parse("""{ "maxSize": 5 }""").RootElement;
+        var config = JsonDocument.Parse("""{ "request": { "maxSize": 5 } }""").RootElement;
 
         await plugin.ExecuteAsync(context, config, _ => Task.CompletedTask);
 
@@ -136,7 +144,7 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
     public async Task ExecuteAsync_ConcurrentRequests_MultipleWrites()
     {
         using var plugin = Build();
-        var config = JsonDocument.Parse("{}").RootElement;
+        var config = JsonDocument.Parse("""{"request":{}}""").RootElement;
 
         var tasks = Enumerable.Range(0, 100).Select(async i =>
         {
@@ -180,7 +188,7 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         context.Request.Path = "/api/big";
         context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(new string('x', 16 * 1024)));
 
-        await plugin.ExecuteAsync(context, JsonDocument.Parse("{}").RootElement, _ => Task.CompletedTask);
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, _ => Task.CompletedTask);
 
         await Task.Delay(100);
 
@@ -197,12 +205,12 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         // Without a roll the sink grows until the disk (or the tmpfs cap) stops it, and the writer
         // dies on ENOSPC with every request still succeeding. Tiny cap so a handful of entries trip it.
         var plugin = new BodyCaptureToFilePlugin(_configSub);
-        var json = $$"""{ "logPath": "{{_tempLogFile.Replace("\\", "\\\\")}}", "maxSize": 1024, "maxFileBytes": 200 }""";
+        var json = $$"""{ "logPath": "{{_tempLogFile.Replace("\\", "\\\\")}}", "request": { "maxSize": 1024 }, "maxFileBytes": 200 }""";
         plugin.ValidateConfig(JsonDocument.Parse(json).RootElement);
 
         using (plugin)
         {
-            var config = JsonDocument.Parse("{}").RootElement;
+            var config = JsonDocument.Parse("""{"request":{}}""").RootElement;
             for (var i = 0; i < 20; i++)
             {
                 var context = new DefaultHttpContext();
@@ -223,6 +231,52 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         Assert.True(liveLength < 20 * 100, $"live file should be bounded by the roll, was {liveLength}");
 
         File.Delete(backup);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CapturesResponseBody_WrittenToDisk_WithDirection()
+    {
+        using var plugin = Build();
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/resp";
+        context.Request.Body = new MemoryStream(); // no request block, so request is not captured
+        var sink = new MemoryStream();
+        context.Response.Body = sink;
+
+        var config = JsonDocument.Parse("""{ "response": { "maxSize": 4096 } }""").RootElement;
+        await plugin.ExecuteAsync(context, config, ctx => ctx.Response.WriteAsync("the response payload"));
+
+        await Task.Delay(100);
+
+        var line = (await File.ReadAllLinesAsync(_tempLogFile)).Single();
+        var doc = JsonDocument.Parse(line).RootElement;
+        Assert.Equal("response", doc.GetProperty("direction").GetString());
+        Assert.Equal("the response payload", doc.GetProperty("body").GetString());
+        Assert.Equal("the response payload", Encoding.UTF8.GetString(sink.ToArray())); // client got every byte
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CapturesBothDirections_TwoRecords()
+    {
+        using var plugin = Build();
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/both";
+        context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes("the request body"));
+        context.Response.Body = new MemoryStream();
+
+        var config = JsonDocument.Parse("""{ "request": { "maxSize": 4096 }, "response": { "maxSize": 4096 } }""").RootElement;
+        await plugin.ExecuteAsync(context, config, ctx => ctx.Response.WriteAsync("the response body"));
+
+        await Task.Delay(100);
+
+        var docs = (await File.ReadAllLinesAsync(_tempLogFile))
+            .Select(l => JsonDocument.Parse(l).RootElement)
+            .ToDictionary(d => d.GetProperty("direction").GetString()!, d => d.GetProperty("body").GetString());
+
+        Assert.Equal("the request body",  docs["request"]);
+        Assert.Equal("the response body", docs["response"]);
     }
 
     public void Dispose()

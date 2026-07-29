@@ -77,19 +77,21 @@ headers was a no-op. Migrate:
 
 ### Breaking — body-capture config is nested by direction
 
-`body-capture` config moved from flat `{ "maxSize": N }` (request only) to
-`{ "request": { "maxSize": N }, "response": { "maxSize": M } }`. The flat shape is **rejected at
-startup** with a migration hint. A direction is captured only when its block is present with a
-positive `maxSize`; omit it (or `maxSize: 0`) to skip it.
+Both capture plugins (`body-capture` and `body-capture-file`) moved from flat `{ "maxSize": N }`
+(request only) to `{ "request": { "maxSize": N }, "response": { "maxSize": M } }`. The flat shape is
+**rejected at startup** with a migration hint. A direction is captured only when its block is present
+with a positive `maxSize`; omit it (or `maxSize: 0`) to skip it. For `body-capture-file`, `logPath`
+and `maxFileBytes` stay top-level.
 
 ### Added
 
-- **Response body capture.** `body-capture` now captures response bodies via a bounded write-through
-  tee on `Response.Body`, so it runs on every route (including retry/buffered ones the request tee
-  never sees) and captures binary responses too. Both prefixes are RAM-only; the gateway reserves
-  `request.maxSize + response.maxSize` against `MaxRamBufferedBodyBytes` (the sum, since HttpLogging
-  holds the request prefix until the response completes), so enabling response capture roughly
-  doubles a route's capture reservation.
+- **Response body capture.** Both `body-capture` and `body-capture-file` now capture response bodies
+  via a bounded write-through tee on `Response.Body`, so they run on every route (including
+  retry/buffered ones the request tee never sees) and capture binary responses too. The file sink
+  tags each record with a `direction` field (`request` / `response`). Both prefixes are RAM-only; the
+  gateway reserves `request.maxSize + response.maxSize` against `MaxRamBufferedBodyBytes` (the sum,
+  since HttpLogging holds the request prefix until the response completes), so enabling response
+  capture roughly doubles a route's capture reservation.
 - **Response header transform.** `header-transform` now mutates response headers too, via a
   `response` block applied from `Response.OnStarting` just before the reply is sent. `remove` a leaky
   upstream header (`Server`, `X-Powered-By`) or `set` a security header (`X-Frame-Options`) on the way
