@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ConduitSharp.Plugin.OrderProbe</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!--
+      Test-support plugin, not shipped. Loaded as a dropped-in DLL by the plugin-chain-order E2E to
+      read the real execution order from a spawned gateway's logs.
+    -->
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\ConduitSharp.Core\ConduitSharp.Core.csproj" />
+  </ItemGroup>
+</Project>
