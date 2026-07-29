@@ -7,6 +7,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.0.0] — unreleased
 
+### Added
+
+- **Token rate limiting for AI APIs** — a `token-rate-limit` plugin that meters LLM token usage per
+  caller against a fixed-window budget, not request count. It reads the token counts from the response
+  body (`usageFields`, config-driven so one plugin covers OpenAI / Anthropic / Gemini / Ollama), sums
+  them, and charges the caller's window; the next request over budget gets a 429. Per-caller by header
+  (`X-Api-Key`) or JWT claim (`sub`). Reuses the shared `IRateLimitStore`, so the Redis drop-in gives a
+  budget shared across replicas. Non-streaming responses only; SSE goes uncounted.
+- `IRateLimitStore` gains a weighted `Add(key, windowId, windowSeconds, amount)` and `Peek(key,
+  windowId)`, so a limiter can charge a variable cost after a request instead of one permit before it.
+  The Redis drop-in implements both (`INCRBY` + a read).
+
 ### Breaking — request-limit settings split into one budget per resource
 
 `Gateway:RequestLimits` counted RAM and disk spill in a single combined total, which could not be

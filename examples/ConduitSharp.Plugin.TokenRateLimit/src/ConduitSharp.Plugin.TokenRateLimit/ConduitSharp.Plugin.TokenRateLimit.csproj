@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ConduitSharp.Plugin.TokenRateLimit</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!--
+      Meters LLM token usage per caller against a windowed budget, reusing the gateway's
+      IRateLimitStore (in-memory, or the Redis drop-in for shared limits across replicas).
+      Charge-after: parses the response body's usage fields and charges them; the next request
+      over budget gets 429. Variant "token-rate-limit".
+    -->
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\ConduitSharp.Traffic\ConduitSharp.Traffic.csproj" />
+  </ItemGroup>
+</Project>

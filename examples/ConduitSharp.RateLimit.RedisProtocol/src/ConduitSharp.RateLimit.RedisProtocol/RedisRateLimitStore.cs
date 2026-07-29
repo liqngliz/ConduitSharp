@@ -31,6 +31,18 @@ public sealed class RedisRateLimitStore : IRateLimitStore, IDisposable
         return current
         """;
 
+    // Weighted add for token metering: INCRBY the cost, set the TTL on the first write of the window.
+    private const string AddScript = """
+        local key = KEYS[1]
+        local amount = tonumber(ARGV[1])
+        local ttl = tonumber(ARGV[2])
+        local current = redis.call('INCRBY', key, amount)
+        if current == amount then
+          redis.call('EXPIRE', key, ttl)
+        end
+        return current
+        """;
+
     private readonly IConnectionMultiplexer? _connection;
     private readonly IDatabase _database;
     private readonly string _keyPrefix;
@@ -79,6 +91,40 @@ public sealed class RedisRateLimitStore : IRateLimitStore, IDisposable
         {
             _logger.LogWarning(ex, "Redis rate-limit check failed; allowing the request through.");
             return true;
+        }
+    }
+
+    public long Add(string key, long windowId, int windowSeconds, long amount)
+    {
+        try
+        {
+            var redisKey = _keyPrefix + key + ":" + windowId;
+            var result = _database.ScriptEvaluate(
+                AddScript,
+                [new RedisKey(redisKey)],
+                [new RedisValue(amount.ToString()), new RedisValue(windowSeconds.ToString())]);
+
+            return long.TryParse(result.ToString(), out var current) ? current : 0;
+        }
+        catch (Exception ex) when (IsRedisFailure(ex))
+        {
+            _logger.LogWarning(ex, "Redis token charge failed; the tokens go uncounted.");
+            return 0;
+        }
+    }
+
+    public long Peek(string key, long windowId)
+    {
+        try
+        {
+            var value = _database.StringGet(_keyPrefix + key + ":" + windowId);
+            return value.HasValue && long.TryParse(value.ToString(), out var current) ? current : 0;
+        }
+        catch (Exception ex) when (IsRedisFailure(ex))
+        {
+            // Fail-open: a failed peek reads as 0, so the request is allowed through.
+            _logger.LogWarning(ex, "Redis token peek failed; allowing the request through.");
+            return 0;
         }
     }
 
