@@ -139,12 +139,6 @@ $rid = (dotnet --info 2>$null | Select-String 'RID:' | Select-Object -First 1) -
 dotnet publish "$Root/../../plugins/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell" -c Release -r $rid --no-self-contained -o $PluginOut -v q
 Write-Ok "PowerShellPlugin → $PluginOut"
 
-Write-Step "Building YARP proxy plugin..."
-$YarpOut = Join-Path $Root "gateway" "plugins" "greeter-grpc"
-$null = New-Item -ItemType Directory -Path $YarpOut -Force
-dotnet publish "$Root/../../plugins/ConduitSharp.Plugin.YarpProxy/src/ConduitSharp.Plugin.YarpProxy" -c Release -o $YarpOut -v q
-Write-Ok "YarpProxyPlugin → $YarpOut"
-
 Write-Step "Building SlidingWindow limiter (root drop-in IRateLimiter)..."
 $SlidingSrc = "$Root/../../plugins/ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow"
 dotnet build $SlidingSrc -c Release -v q

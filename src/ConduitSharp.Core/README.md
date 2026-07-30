@@ -38,4 +38,4 @@ Drop the compiled assembly into the gateway's `plugins/` folder — no gateway r
 ## See Also
 
 - [ConduitSharp.Gateway.AspNetCore](https://www.nuget.org/packages/ConduitSharp.Gateway.AspNetCore) — embed the gateway in your app
-- Examples: [ConduitSharp.Plugin.YarpProxy](https://www.nuget.org/packages/ConduitSharp.Plugin.YarpProxy), [ConduitSharp.Cache.RedisProtocol](https://www.nuget.org/packages/ConduitSharp.Cache.RedisProtocol)
+- Examples: [ConduitSharp.Cache.RedisProtocol](https://www.nuget.org/packages/ConduitSharp.Cache.RedisProtocol), [ConduitSharp.RateLimit.RedisProtocol](https://www.nuget.org/packages/ConduitSharp.RateLimit.RedisProtocol)
