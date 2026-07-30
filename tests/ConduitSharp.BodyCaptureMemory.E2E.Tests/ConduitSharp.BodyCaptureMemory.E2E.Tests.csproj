@@ -27,7 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ConduitSharp.Gateway.AspNetCore\ConduitSharp.Gateway.AspNetCore.csproj" />
-    <ProjectReference Include="..\..\examples\ConduitSharp.Plugin.BodyCapture\src\ConduitSharp.Plugin.BodyCapture\ConduitSharp.Plugin.BodyCapture.csproj" />
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.BodyCapture\src\ConduitSharp.Plugin.BodyCapture\ConduitSharp.Plugin.BodyCapture.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -196,7 +196,7 @@ registered and resolved under a **`PluginKey`** = `(Name, Variant)`:
   genuinely new plugin type, only for a new *built-in* `PluginName` value.
   `GatewayRoutesConfiguration.Validate()` enforces the pairing at startup: `custom`
   requires a variant, every other name must not carry one.
-- The PowerShell reference implementation at `examples/ConduitSharp.Plugin.PowerShell`
+- The PowerShell reference implementation at `plugins/ConduitSharp.Plugin.PowerShell`
   (see below) is itself a Custom-variant plugin: routes select it with
   `{ "name": "custom", "variant": "power-shell" }`.
 
@@ -718,7 +718,7 @@ under the one shared RAM budget — it never spills.
 The gateway only ever sees the declared number; how a plugin arrives at it, and how to size it, is the
 plugin's own concern and lives in the plugin's docs. For `body-capture` that is
 `request.maxSize + response.maxSize` — see its
-[README](../examples/ConduitSharp.Plugin.BodyCapture/README.md#memory-and-disk).
+[README](../plugins/ConduitSharp.Plugin.BodyCapture/README.md#memory-and-disk).
 
 All are enforced in the buffering middleware before the plugin pipeline forwards (Kestrel's own
 transport-level limit, ~28.6 MB by default, applies first regardless). The three removed v1.x keys
@@ -914,15 +914,24 @@ tests/
   ConduitSharp.Grafana.E2E.Tests    → Docker observability-pipeline E2E (Tempo/Prometheus/Loki)
   ConduitSharp.Mtls.E2E.Tests       → Docker mTLS E2E (real client-cert handshake; cross-platform)
 
-examples/
+examples/                            — runnable demos, not shipped as packages
   EmbeddedGateway/                   — embeds the gateway in a plain ASP.NET Core app and adds
                                        the Redis cache plugin from NuGet, in code
+  EmbeddedGatewayPrefixed/           — the same, mounted under a path prefix
+  LegacyGateway/                     — runnable multi-route demo stack (make run / start.ps1)
+  SharedServices/                    — the upstream services those demos route to
+  AtAGlance/                         — one-file tour of the request lifecycle
+
+plugins/                             — drop-ins, each src/ + tests/, published to NuGet
   ConduitSharp.Plugin.PowerShell/    — custom:power-shell drop-in that runs a .ps1 in-process
                                        via the embedded Microsoft.PowerShell.SDK (no system pwsh
                                        required); short-circuits with the script's output
+  ConduitSharp.Plugin.BodyCapture/   — bounded request-body prefix logging without forcing a buffer
+  ConduitSharp.Plugin.BodyCaptureToFile/ — the same capture, written to a file sink
+  ConduitSharp.Plugin.TokenRateLimit/    — meters LLM tokens per caller over the rate-limit store
   ConduitSharp.Cache.RedisProtocol/  — drop-in distributed ICacheService (Valkey / Redis 7 / RESP)
   ConduitSharp.RateLimit.RedisProtocol/ — drop-in distributed IRateLimitStore (shared limits, fail-open)
-  LegacyGateway/                         — runnable multi-route demo stack (make run / start.ps1)
+  ConduitSharp.RateLimit.SlidingWindow/ — drop-in IRateLimiter, sliding log instead of fixed window
 ```
 
 Rule: **feature packages reference only Core**; they never reference each other or
@@ -947,7 +956,7 @@ project per source package, plus E2E projects that exercise the real binary/Dock
 | `Security` — API key (hashed) | **Implemented** — `ApiKeyAuthHashedPlugin`, `ApiKeyAuthHashedHandler` |
 | `Transformation` — header-transform | **Implemented** — `HeaderTransformPlugin` (add, remove, rewrite) |
 | `Custom` | **No core-provided implementation** — `PluginName.Custom` + `Variant` is the escape hatch for terminal handlers (fan-out, DB, COM); implement as a drop-in DLL |
-| `Custom` — `power-shell` variant | **Example implementation** at `examples/ConduitSharp.Plugin.PowerShell` — runs a `.ps1` in-process via the embedded PowerShell SDK; see ARCHITECTURE.md for production-hardening considerations (runspace pooling, out-of-process execution) before heavy concurrent/ETL use |
+| `Custom` — `power-shell` variant | **Example implementation** at `plugins/ConduitSharp.Plugin.PowerShell` — runs a `.ps1` in-process via the embedded PowerShell SDK; see ARCHITECTURE.md for production-hardening considerations (runspace pooling, out-of-process execution) before heavy concurrent/ETL use |
 | `Observability` — structured logging | **Implemented** — `StructuredRequestLogger`, `StructuredLogEntry` |
 | `Observability` — OpenTelemetry | **Implemented** — `GatewayTelemetry` + `PipelineTelemetry` (per-plugin spans), `OtelMetricsObserver`, console/file/OTLP exporters |
 | `Gateway.AspNetCore` — embeddable library | **Implemented** — `AddConduitSharpGateway`/`UseConduitSharpGateway` + `ConduitSharpGatewayOptions` composition knobs |

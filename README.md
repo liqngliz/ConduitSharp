@@ -210,17 +210,17 @@ Plugins implement one interface (`IPipelinePlugin`) and can be written in **C#, 
 | `http-proxy` | Not a plugin — names where in the chain YARP forwards upstream. Omit it and the forward is appended at the end of the chain |
 
 
-## Shipped example plugins
+## Shipped plugins
 
-Runnable extensions under [examples/](examples/) — copy the source as a template, or reference the NuGet package directly:
+Drop-ins under [plugins/](plugins/), each with its own `src/` and `tests/` — copy the source as a template, or reference the NuGet package directly:
 
-| Example | Kind | NuGet package | What it shows |
+| Plugin | Kind | NuGet package | What it shows |
 | --- | --- | --- | --- |
-| [ConduitSharp.Plugin.PowerShell](examples/ConduitSharp.Plugin.PowerShell) | `IPipelinePlugin` (`custom` / `power-shell`) | `ConduitSharp.Plugin.PowerShell` | Runs an existing `.ps1` in-process via the embedded `Microsoft.PowerShell.SDK` — no system `pwsh` install |
-| [ConduitSharp.Plugin.BodyCapture](examples/ConduitSharp.Plugin.BodyCapture) | `IPipelinePlugin` (`custom` / `body-capture`) | `ConduitSharp.Plugin.BodyCapture` | Logs a bounded prefix of the request body, never forcing the gateway to buffer (`ReadsRequestBody => false`): it reuses the gateway's existing seekable buffer when a retry route already made one, and otherwise tees the prefix off the streaming path via ASP.NET Core `HttpLogging` |
-| [ConduitSharp.Cache.RedisProtocol](examples/ConduitSharp.Cache.RedisProtocol) | `ICacheService` seam | `ConduitSharp.Cache.RedisProtocol` | Swaps the in-memory `cache` store for Redis/Valkey — shared response cache across instances |
-| [ConduitSharp.RateLimit.RedisProtocol](examples/ConduitSharp.RateLimit.RedisProtocol) | `IRateLimitStore` seam | `ConduitSharp.RateLimit.RedisProtocol` | Swaps the in-memory `rate-limit` store for Redis/Valkey — shared quota across instances |
-| [ConduitSharp.RateLimit.SlidingWindow](examples/ConduitSharp.RateLimit.SlidingWindow) | `IRateLimiter` seam | `ConduitSharp.RateLimit.SlidingWindow` | Swaps the fixed-window *algorithm* for a sliding log — refuses the 2x burst a fixed window allows across its boundary. The algorithm and the store are separate seams |
+| [ConduitSharp.Plugin.PowerShell](plugins/ConduitSharp.Plugin.PowerShell) | `IPipelinePlugin` (`custom` / `power-shell`) | `ConduitSharp.Plugin.PowerShell` | Runs an existing `.ps1` in-process via the embedded `Microsoft.PowerShell.SDK` — no system `pwsh` install |
+| [ConduitSharp.Plugin.BodyCapture](plugins/ConduitSharp.Plugin.BodyCapture) | `IPipelinePlugin` (`custom` / `body-capture`) | `ConduitSharp.Plugin.BodyCapture` | Logs a bounded prefix of the request body, never forcing the gateway to buffer (`ReadsRequestBody => false`): it reuses the gateway's existing seekable buffer when a retry route already made one, and otherwise tees the prefix off the streaming path via ASP.NET Core `HttpLogging` |
+| [ConduitSharp.Cache.RedisProtocol](plugins/ConduitSharp.Cache.RedisProtocol) | `ICacheService` seam | `ConduitSharp.Cache.RedisProtocol` | Swaps the in-memory `cache` store for Redis/Valkey — shared response cache across instances |
+| [ConduitSharp.RateLimit.RedisProtocol](plugins/ConduitSharp.RateLimit.RedisProtocol) | `IRateLimitStore` seam | `ConduitSharp.RateLimit.RedisProtocol` | Swaps the in-memory `rate-limit` store for Redis/Valkey — shared quota across instances |
+| [ConduitSharp.RateLimit.SlidingWindow](plugins/ConduitSharp.RateLimit.SlidingWindow) | `IRateLimiter` seam | `ConduitSharp.RateLimit.SlidingWindow` | Swaps the fixed-window *algorithm* for a sliding log — refuses the 2x burst a fixed window allows across its boundary. The algorithm and the store are separate seams |
 
 ## Writing a custom plugin
 
@@ -265,7 +265,7 @@ public sealed class PowerShellPlugin : IPipelinePlugin
 { "name": "custom", "variant": "power-shell", "order": 99, "config": { "scriptPath": "scripts/MyReport.ps1" } }
 ```
 
-A ready-to-use build of this pattern lives at [examples/ConduitSharp.Plugin.PowerShell](examples/ConduitSharp.Plugin.PowerShell). Runspace pooling, out-of-process execution, and production guidance are in the [in-depth docs](#-documentation).
+A ready-to-use build of this pattern lives at [plugins/ConduitSharp.Plugin.PowerShell](plugins/ConduitSharp.Plugin.PowerShell). Runspace pooling, out-of-process execution, and production guidance are in the [in-depth docs](#-documentation).
 
 ---
 

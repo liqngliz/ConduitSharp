@@ -9,12 +9,12 @@ RUN dotnet publish src/ConduitSharp.Host \
 
 # Build PowerShell plugin with the correct RID for the target container arch
 RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo "linux-arm64" || echo "linux-x64") && \
-    dotnet publish examples/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell \
+    dotnet publish plugins/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell \
     -c Release -r $RID --no-self-contained \
     -o /app/plugins/erp-report -v q
 
 # Build BodyCapture plugin
-RUN dotnet publish examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture \
+RUN dotnet publish plugins/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture \
     -c Release -o /app/plugins/body-capture -v q
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0

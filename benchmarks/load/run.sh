@@ -585,7 +585,7 @@ s6_logging() {
     echo "== s6: logging — $S6_REQS fixed requests, ~4 KB JSON POST, to Loki ==" | tee -a "$RESULTS"
 
     ensure_payload_s6json
-    dotnet publish ../../examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release -o plugins/bench-logging
+    dotnet publish ../../plugins/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release -o plugins/bench-logging
 
     # Loki log counter helper — reads loki_distributor_lines_received_total from :3100/metrics
     loki_count() {
@@ -728,7 +728,7 @@ PY
 
     # --- Conduit ---
     reset_obs
-    pushd "../../examples/ConduitSharp.Plugin.BodyCaptureToFile/src/ConduitSharp.Plugin.BodyCaptureToFile" >/dev/null
+    pushd "../../plugins/ConduitSharp.Plugin.BodyCaptureToFile/src/ConduitSharp.Plugin.BodyCaptureToFile" >/dev/null
     dotnet publish -c Release -o "../../../../benchmarks/load/plugins/bench-logging-file" >/dev/null
     popd >/dev/null
     

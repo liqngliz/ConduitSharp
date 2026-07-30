@@ -67,7 +67,7 @@ These budgets bound the gateway's **own** body buffering. A plugin that holds RA
 of any buffering, and sheds a **503** if it will not fit (it never spills, being RAM-only). How much a
 plugin reserves is the plugin's concern; for body-capture, size this budget for the sum of buffering
 plus its prefixes. See the
-[body-capture plugin README](../examples/ConduitSharp.Plugin.BodyCapture/README.md#memory-and-disk).
+[body-capture plugin README](../plugins/ConduitSharp.Plugin.BodyCapture/README.md#memory-and-disk).
 
 > **The tmpfs trap.** If `SpillDirectory` resolves to a `tmpfs` mount — `/tmp` often is inside
 > containers — then "disk" *is* RAM and `MaxDiskBufferedBodyBytes` becomes a second memory budget.

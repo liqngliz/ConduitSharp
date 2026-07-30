@@ -115,7 +115,7 @@ hand the plugin a rewindable stream. If a bounded prefix is enough (logging, sam
 content type), leave `ReadsRequestBody => false` and observe the bytes as they stream past instead:
 wrap `context.Request.Body` before calling `next`, and the route keeps streaming. ASP.NET Core's own
 `HttpLogging` middleware does exactly this and is worth reaching for before writing your own wrapper.
-See [examples/ConduitSharp.Plugin.BodyCapture](../examples/ConduitSharp.Plugin.BodyCapture) for both
+See [plugins/ConduitSharp.Plugin.BodyCapture](../plugins/ConduitSharp.Plugin.BodyCapture) for both
 patterns side by side.
 
 Retries apply to **idempotent methods only** (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`, `TRACE`) by

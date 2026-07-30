@@ -15,9 +15,9 @@
          to NuGet (and the version-drift bug that caused). -->
     <ProjectReference Include="..\..\src\ConduitSharp.Gateway.AspNetCore\ConduitSharp.Gateway.AspNetCore.csproj" />
     <ProjectReference Include="..\..\src\ConduitSharp.Gateway.AspNetCore.Swagger\ConduitSharp.Gateway.AspNetCore.Swagger.csproj" />
-    <ProjectReference Include="..\ConduitSharp.Cache.RedisProtocol\src\ConduitSharp.Cache.RedisProtocol\ConduitSharp.Cache.RedisProtocol.csproj" />
-    <ProjectReference Include="..\ConduitSharp.Plugin.BodyCapture\src\ConduitSharp.Plugin.BodyCapture\ConduitSharp.Plugin.BodyCapture.csproj" />
-    <ProjectReference Include="..\ConduitSharp.Plugin.PowerShell\src\ConduitSharp.Plugin.PowerShell\ConduitSharp.Plugin.PowerShell.csproj" />
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Cache.RedisProtocol\src\ConduitSharp.Cache.RedisProtocol\ConduitSharp.Cache.RedisProtocol.csproj" />
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.BodyCapture\src\ConduitSharp.Plugin.BodyCapture\ConduitSharp.Plugin.BodyCapture.csproj" />
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.PowerShell\src\ConduitSharp.Plugin.PowerShell\ConduitSharp.Plugin.PowerShell.csproj" />
   </ItemGroup>
 
 </Project>

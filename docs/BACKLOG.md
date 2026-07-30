@@ -99,7 +99,7 @@ Each item references the test(s) that must pass (or be un-Skipped) to consider i
 ---
 
 ### R6 — Rate limiter state is in-memory only ✅ DONE (reversed from WON'T DO)
-**File**: `src/ConduitSharp.Traffic/RateLimiting/IRateLimitStore.cs`, `examples/ConduitSharp.RateLimit.RedisProtocol/`
+**File**: `src/ConduitSharp.Traffic/RateLimiting/IRateLimitStore.cs`, `plugins/ConduitSharp.RateLimit.RedisProtocol/`
 **What**: Rate limit counters are per-process — they reset on restart and are not shared across replicas.
 **Resolution**: `IRateLimitStore` is the swap seam (built-in `InMemoryRateLimitStore`, DI-registered in `GatewayServiceCollectionExtensions`). A basic Redis-backed fixed-window store now ships as an OSS drop-in example, `ConduitSharp.RateLimit.RedisProtocol` — same shape as `ConduitSharp.Cache.RedisProtocol` (own project, `Gateway:RateLimiting:Redis:*` config, plugins-directory discovery, fail-open on backend failure). This reverses the earlier "reserved for enterprise" call recorded here; `ENTERPRISE.md` §2 should be revisited so its "Distributed rate limiting" pitch differentiates on sliding-window/token-bucket/leaky-bucket algorithms, per-consumer runtime quotas, and the Admin API rather than basic Redis fixed-window counters, which are no longer enterprise-exclusive.
 

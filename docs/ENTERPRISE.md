@@ -341,7 +341,7 @@ public sealed class PowerShellPlugin : IPipelinePlugin
 `$ErrorActionPreference = 'Stop'` ensures both terminating and non-terminating script errors surface as a 500 rather than silently returning an empty body.
 
 A ready-to-use build of this pattern — no copy-pasting the shim required — lives at
-[examples/ConduitSharp.Plugin.PowerShell](examples/ConduitSharp.Plugin.PowerShell): it
+[plugins/ConduitSharp.Plugin.PowerShell](plugins/ConduitSharp.Plugin.PowerShell): it
 runs a `.ps1` in-process via the embedded `Microsoft.PowerShell.SDK` (no system `pwsh`
 install needed), so it can be dropped into `plugins/` as-is.
 

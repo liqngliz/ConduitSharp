@@ -207,8 +207,8 @@ You see exactly which instance failed, at what latency, with the route ID tagged
 
 By default, rate limiting and response caching are **in-memory and per-process**. Running multiple gateway instances behind a load balancer means:
 
-- **Rate limits are per-instance by default** — but **shared enforcement is available**: drop the `ConduitSharp.RateLimit.RedisProtocol` assembly into the gateway's plugins root and set the connection string. The gateway then counts requests in a Redis-protocol backend (Valkey, Redis 7, or any RESP-compatible server) through the `IRateLimitStore` seam, so all instances enforce one shared window. It fails open — a backend outage allows requests rather than failing them. See `examples/ConduitSharp.RateLimit.RedisProtocol`.
-- **Cache is per-instance by default** — but a **shared distributed cache is available**: drop the `ConduitSharp.Cache.RedisProtocol` assembly into the gateway's plugins root and set `Gateway:Cache:Redis:ConnectionString`. The gateway then uses a Redis-protocol backend (Valkey, Redis 7, or any RESP-compatible server) in place of the in-process cache, so all instances share one cache, with request coalescing (stampede protection) and route invalidation via `DELETE /admin/cache/{routeId}`. It fails open — a backend outage degrades to no-caching rather than failing requests. See `examples/ConduitSharp.Cache.RedisProtocol`.
+- **Rate limits are per-instance by default** — but **shared enforcement is available**: drop the `ConduitSharp.RateLimit.RedisProtocol` assembly into the gateway's plugins root and set the connection string. The gateway then counts requests in a Redis-protocol backend (Valkey, Redis 7, or any RESP-compatible server) through the `IRateLimitStore` seam, so all instances enforce one shared window. It fails open — a backend outage allows requests rather than failing them. See `plugins/ConduitSharp.RateLimit.RedisProtocol`.
+- **Cache is per-instance by default** — but a **shared distributed cache is available**: drop the `ConduitSharp.Cache.RedisProtocol` assembly into the gateway's plugins root and set `Gateway:Cache:Redis:ConnectionString`. The gateway then uses a Redis-protocol backend (Valkey, Redis 7, or any RESP-compatible server) in place of the in-process cache, so all instances share one cache, with request coalescing (stampede protection) and route invalidation via `DELETE /admin/cache/{routeId}`. It fails open — a backend outage degrades to no-caching rather than failing requests. See `plugins/ConduitSharp.Cache.RedisProtocol`.
 
 Single-instance deployments (Windows Service, single container, IIS on one node) work with the built-in in-memory cache and need no external dependency.
 
@@ -293,13 +293,20 @@ tests/
   ConduitSharp.Grafana.E2E.Tests   → Docker observability-pipeline E2E (Tempo/Prometheus/Loki)
   ConduitSharp.Mtls.E2E.Tests      → Docker mTLS E2E (real client-cert handshake; cross-platform)
 
-examples/
+examples/                            — runnable demos, not shipped as packages
   EmbeddedGateway/                   — embeds the gateway in a plain ASP.NET Core app and adds
                                        the Redis cache plugin from NuGet, in code
+  LegacyGateway/                     — runnable multi-route demo stack (make run / start.ps1)
+
+plugins/                             — drop-ins, each src/ + tests/, published to NuGet
   ConduitSharp.Plugin.PowerShell/    — PluginName.PowerShell drop-in that runs a .ps1
                                        in-process via the embedded Microsoft.PowerShell.SDK
+  ConduitSharp.Plugin.BodyCapture/   — bounded request-body prefix logging without forcing a buffer
+  ConduitSharp.Plugin.BodyCaptureToFile/ — the same capture, written to a file sink
+  ConduitSharp.Plugin.TokenRateLimit/    — meters LLM tokens per caller over the rate-limit store
   ConduitSharp.Cache.RedisProtocol/  — drop-in distributed ICacheService (Valkey / Redis 7 / RESP)
   ConduitSharp.RateLimit.RedisProtocol/ — drop-in distributed IRateLimitStore (shared limits, fail-open)
+  ConduitSharp.RateLimit.SlidingWindow/ — drop-in IRateLimiter, sliding log instead of fixed window
 ```
 
 **Rule:** feature packages reference only `Core` — never each other or the gateway library.
@@ -575,7 +582,7 @@ visibly in that deployment's plugin set instead of silently in the core.
 | `Gateway.AspNetCore.Swagger` — add-on | **Implemented** — `UseConduitSharpGatewaySwagger()`; `SwaggerAggregationExtensions` (fetchFrom + specFile modes, SSRF/path-traversal guards) |
 | `Host` — standalone shell | **Implemented** — thin executable over the library; dotnet tool (`conduitsharp`) + arch-portable Docker image (amd64/arm64) |
 | `Custom` | **No core-provided implementation** — `PluginName.Custom` + a self-chosen `Variant` is the open-ended escape hatch; implement as a drop-in DLL |
-| `PowerShell` | **Example implementation** — `examples/ConduitSharp.Plugin.PowerShell` runs a `.ps1` in-process via the embedded PowerShell SDK; see [PowerShell plugin — production considerations](#powershell-plugin--production-considerations) before heavy concurrent/ETL use |
+| `PowerShell` | **Example implementation** — `plugins/ConduitSharp.Plugin.PowerShell` runs a `.ps1` in-process via the embedded PowerShell SDK; see [PowerShell plugin — production considerations](#powershell-plugin--production-considerations) before heavy concurrent/ETL use |
 | `examples/EmbeddedGateway` | **Example** — embeds the gateway in a plain ASP.NET Core app; wires the Redis cache plugin from NuGet in code |
 | `examples/PowerShell` | **Example** — `ConduitSharp.Plugin.PowerShell`: in-process `.ps1` execution via `Microsoft.PowerShell.SDK`, no system `pwsh` required |
 | `examples/Cache.RedisProtocol` | **Example** — drop-in distributed `ICacheService` over RESP (Valkey / Redis 7) |
@@ -585,7 +592,7 @@ visibly in that deployment's plugin set instead of silently in the core.
 
 ## PowerShell plugin — production considerations
 
-`examples/ConduitSharp.Plugin.PowerShell` is a working drop-in (`PluginName.PowerShell`)
+`plugins/ConduitSharp.Plugin.PowerShell` is a working drop-in (`PluginName.PowerShell`)
 that runs a `.ps1` in-process via the embedded `Microsoft.PowerShell.SDK` — no system
 `pwsh` install required — and short-circuits with the script's output. It follows the
 same `PowerShell.Create()`-per-request shape as the README's illustrative shim below,

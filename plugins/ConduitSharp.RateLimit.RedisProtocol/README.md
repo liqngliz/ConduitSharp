@@ -17,7 +17,7 @@ discovers an `IRateLimitStore` implementation dropped into its plugins root (las
 1. **Build the drop-in:**
 
    ```bash
-   dotnet publish examples/ConduitSharp.RateLimit.RedisProtocol/src/ConduitSharp.RateLimit.RedisProtocol \
+   dotnet publish plugins/ConduitSharp.RateLimit.RedisProtocol/src/ConduitSharp.RateLimit.RedisProtocol \
      -c Release -o out/redis-ratelimit
    ```
 

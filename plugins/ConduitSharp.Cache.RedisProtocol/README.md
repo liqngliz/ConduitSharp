@@ -25,7 +25,7 @@ discovers a cache backend dropped into its plugins root.
 1. **Build the drop-in:**
 
    ```bash
-   dotnet publish examples/ConduitSharp.Cache.RedisProtocol/src/ConduitSharp.Cache.RedisProtocol \
+   dotnet publish plugins/ConduitSharp.Cache.RedisProtocol/src/ConduitSharp.Cache.RedisProtocol \
      -c Release -o out/redis-cache
    ```
 

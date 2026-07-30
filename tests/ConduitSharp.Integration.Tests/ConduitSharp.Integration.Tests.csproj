@@ -18,8 +18,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ConduitSharp.Host\ConduitSharp.Host.csproj" />
-    <ProjectReference Include="..\..\examples\ConduitSharp.Plugin.BodyCapture\src\ConduitSharp.Plugin.BodyCapture\ConduitSharp.Plugin.BodyCapture.csproj" />
-    <ProjectReference Include="..\..\examples\ConduitSharp.Plugin.TokenRateLimit\src\ConduitSharp.Plugin.TokenRateLimit\ConduitSharp.Plugin.TokenRateLimit.csproj" />
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.BodyCapture\src\ConduitSharp.Plugin.BodyCapture\ConduitSharp.Plugin.BodyCapture.csproj" />
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.TokenRateLimit\src\ConduitSharp.Plugin.TokenRateLimit\ConduitSharp.Plugin.TokenRateLimit.csproj" />
   </ItemGroup>
 
   <ItemGroup>

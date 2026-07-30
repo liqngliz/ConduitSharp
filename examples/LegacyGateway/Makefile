@@ -28,17 +28,17 @@ build:
 	@echo "▶ Building GreeterService (gRPC)..."
 	@dotnet publish ../SharedServices/GreeterService -c Release -o $(BIN)/greeter-svc -v q
 	@echo "▶ Building PowerShell plugin → gateway/plugins/erp-report/ ..."
-	@dotnet publish $(ROOT)/../ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell -c Release \
+	@dotnet publish $(ROOT)/../../plugins/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell -c Release \
 		-r $$(dotnet --info 2>/dev/null | awk '/^[[:space:]]*RID:/{print $$2; exit}') --no-self-contained \
 		-o $(ROOT)/gateway/plugins/erp-report -v q
 	@echo "▶ Building BodyCapture plugin → gateway/plugins/body-capture/ ..."
-	@dotnet publish $(ROOT)/../ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release \
+	@dotnet publish $(ROOT)/../../plugins/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release \
 		-o $(ROOT)/gateway/plugins/body-capture -v q
 	@echo "▶ Building SlidingWindow limiter → gateway/plugins/ (root drop-in IRateLimiter) ..."
-	@dotnet build $(ROOT)/../ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow -c Release -v q
+	@dotnet build $(ROOT)/../../plugins/ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow -c Release -v q
 	@# Only the algorithm DLL goes in the plugins ROOT (scanned for IRateLimiter); its lone
 	@# dependency, ConduitSharp.Traffic, is already loaded by the host and resolves from there.
-	@cp $(ROOT)/../ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow/bin/Release/net10.0/ConduitSharp.RateLimit.SlidingWindow.dll \
+	@cp $(ROOT)/../../plugins/ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow/bin/Release/net10.0/ConduitSharp.RateLimit.SlidingWindow.dll \
 		$(ROOT)/gateway/plugins/
 	@echo "✓ Build complete"
 

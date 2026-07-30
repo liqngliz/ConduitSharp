@@ -102,8 +102,8 @@ silently dropped.
 
 By default, rate limiting and response caching are **in-memory and per-process**. Running multiple gateway instances behind a load balancer means:
 
-- **Rate limits are per-instance by default — or shared via Valkey/Redis.** A client that hits two instances can make `maxRequests × instanceCount` requests per window before being throttled. Drop [`ConduitSharp.RateLimit.RedisProtocol`](../examples/ConduitSharp.RateLimit.RedisProtocol) into the gateway's plugins root and set the connection string: all instances then enforce one shared limit through the `IRateLimitStore` seam, failing open (allowing requests) if the backend is unreachable. No core changes required.
-- **Cache is per-instance by default — or shared via Valkey/Redis.** Drop [`ConduitSharp.Cache.RedisProtocol`](../examples/ConduitSharp.Cache.RedisProtocol) into the gateway's plugins root and set `Gateway:Cache:Redis:ConnectionString`: all instances then share one distributed response cache over the Redis protocol (works with Valkey, Redis 7, or any RESP-compatible server), with request coalescing (stampede protection), route invalidation (`DELETE /admin/cache/{routeId}`), and fail-open behaviour if the cache is down. No core changes required.
+- **Rate limits are per-instance by default — or shared via Valkey/Redis.** A client that hits two instances can make `maxRequests × instanceCount` requests per window before being throttled. Drop [`ConduitSharp.RateLimit.RedisProtocol`](../plugins/ConduitSharp.RateLimit.RedisProtocol) into the gateway's plugins root and set the connection string: all instances then enforce one shared limit through the `IRateLimitStore` seam, failing open (allowing requests) if the backend is unreachable. No core changes required.
+- **Cache is per-instance by default — or shared via Valkey/Redis.** Drop [`ConduitSharp.Cache.RedisProtocol`](../plugins/ConduitSharp.Cache.RedisProtocol) into the gateway's plugins root and set `Gateway:Cache:Redis:ConnectionString`: all instances then share one distributed response cache over the Redis protocol (works with Valkey, Redis 7, or any RESP-compatible server), with request coalescing (stampede protection), route invalidation (`DELETE /admin/cache/{routeId}`), and fail-open behaviour if the cache is down. No core changes required.
 
 Single-instance deployments (Windows Service, single container, IIS on one node) work out of the box with the in-memory cache and no external dependency.
 
@@ -144,7 +144,7 @@ The last three are the plugin's **scope-to-cause** behaviour, not gaps: capture 
 that were actually forwarded, so you are not storing payloads (PII, secrets, attacker input) for
 failures the payload had no part in. Auditing rejected payloads on purpose is a deliberate,
 narrower configuration — see the
-[body-capture plugin README](../examples/ConduitSharp.Plugin.BodyCapture/README.md).
+[body-capture plugin README](../plugins/ConduitSharp.Plugin.BodyCapture/README.md).
 
 To turn capture down or off without touching `routes.json`, set the category to `Warning`:
 

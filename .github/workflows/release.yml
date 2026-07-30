@@ -136,7 +136,7 @@ jobs:
   # `dotnet add package ConduitSharp.Gateway.AspNetCore` unable to restore its own
   # dependencies. Pack and push every packable project explicitly (deliberately NOT a
   # blanket `dotnet pack ConduitSharp.sln`, so nothing new ships by accident). The drop-in
-  # example plugins under examples/ are published too — they're the packaged form of the
+  # plugins under plugins/ are published too — they're the packaged form of the
   # plugin system (body capture, Redis cache, Redis rate-limit store) and their
   # ProjectReferences pack as dependencies on the same-version core packages.
   #
@@ -168,11 +168,11 @@ jobs:
             src/ConduitSharp.Gateway.AspNetCore \
             src/ConduitSharp.Gateway.AspNetCore.Swagger \
             src/ConduitSharp.Host \
-            examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture \
-            examples/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell \
-            examples/ConduitSharp.Cache.RedisProtocol/src/ConduitSharp.Cache.RedisProtocol \
-            examples/ConduitSharp.RateLimit.RedisProtocol/src/ConduitSharp.RateLimit.RedisProtocol \
-            examples/ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow \
+            plugins/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture \
+            plugins/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell \
+            plugins/ConduitSharp.Cache.RedisProtocol/src/ConduitSharp.Cache.RedisProtocol \
+            plugins/ConduitSharp.RateLimit.RedisProtocol/src/ConduitSharp.RateLimit.RedisProtocol \
+            plugins/ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow \
           ; do
             dotnet pack "$proj" -c Release -o nupkg
           done

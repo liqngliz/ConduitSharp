@@ -48,7 +48,8 @@ tests/
   ConduitSharp.Transformation.Tests/ # Unit — header-transform plugin
   ConduitSharp.Observability.Tests/  # Unit — logging and metrics
   ConduitSharp.Integration.Tests/    # End-to-end via WebApplicationFactory + FakeUpstream
-examples/
+examples/                            # Runnable demos, not shipped as packages
+plugins/                             # Drop-ins, each src/ + tests/, published to NuGet
 ```
 
 **Dependency rule:** feature packages (`Security`, `Traffic`, `Transformation`, `Observability`) reference only `Core` — never each other or `Host`. `Host` is the single aggregation point.

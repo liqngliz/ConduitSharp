@@ -41,7 +41,7 @@ public sealed class GatewayHostProcessFixture : IAsyncLifetime
         var pluginsDir = Path.Combine(_work, "plugins", "order-probe");
 
         // 1. Publish the probe project into the plugins folder as a dropped-in DLL.
-        Run("dotnet", $"publish \"{Path.Combine(_root, "examples/ConduitSharp.Plugin.OrderProbe/src/ConduitSharp.Plugin.OrderProbe/ConduitSharp.Plugin.OrderProbe.csproj")}\" -c Debug -o \"{pluginsDir}\" -v q");
+        Run("dotnet", $"publish \"{Path.Combine(_root, "tests/ConduitSharp.Plugin.OrderProbe/src/ConduitSharp.Plugin.OrderProbe/ConduitSharp.Plugin.OrderProbe.csproj")}\" -c Debug -o \"{pluginsDir}\" -v q");
 
         // 2. Real upstream: 200 with a small cacheable body; counts hits so a cache hit is provable.
         var ub = WebApplication.CreateBuilder();
