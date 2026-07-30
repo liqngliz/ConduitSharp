@@ -44,6 +44,12 @@ public sealed class TokenRateLimitLiveE2ETests
     }
     """;
 
+    // REQUIRES a running OpenAI-compatible server with a model loaded to do anything. Locally that
+    // means LM Studio started with a model loaded (Developer tab > Start Server, default
+    // http://127.0.0.1:1234), or Ollama / llama.cpp server via LLM_E2E_URL. With no server reachable
+    // this SOFT-SKIPS: it returns without asserting, so it passes in CI (where no model runs) instead
+    // of failing. So a green run here does not prove the path unless a server was up — check the test
+    // output for "Using model ..." versus "No OpenAI-compatible server ... skipping".
     [Fact]
     public async Task Meters_real_model_tokens_and_429s_over_budget()
     {
@@ -51,7 +57,8 @@ public sealed class TokenRateLimitLiveE2ETests
         string? model = await FirstChatModelOrNull(probe);
         if (model is null)
         {
-            _out.WriteLine($"No OpenAI-compatible server at {BaseUrl}; skipping live token E2E.");
+            // Soft skip: no LM Studio / OpenAI-compatible server up. Pass without exercising anything.
+            _out.WriteLine($"No OpenAI-compatible server at {BaseUrl}; skipping live token E2E. Start LM Studio (with a model loaded) or set LLM_E2E_URL to run it.");
             return;
         }
         _out.WriteLine($"Using model {model} at {BaseUrl}");
