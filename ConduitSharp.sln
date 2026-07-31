@@ -139,6 +139,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmbeddedGatewayPrefixed", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeMetrics", "tools\CodeMetrics\CodeMetrics.csproj", "{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Spend", "examples\ConduitSharp.Spend\ConduitSharp.Spend.csproj", "{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -713,6 +715,18 @@ Global
 		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Release|x64.Build.0 = Release|Any CPU
 		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Release|x86.ActiveCfg = Release|Any CPU
 		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Release|x86.Build.0 = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|x64.Build.0 = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|x86.Build.0 = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|x64.ActiveCfg = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|x64.Build.0 = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|x86.ActiveCfg = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

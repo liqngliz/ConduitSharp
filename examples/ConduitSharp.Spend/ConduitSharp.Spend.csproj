@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ConduitSharp.Spend</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ConduitSharp.Gateway.AspNetCore\ConduitSharp.Gateway.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.TokenSpend\src\ConduitSharp.Plugin.TokenSpend\ConduitSharp.Plugin.TokenSpend.csproj" />
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.BodyCaptureToFile\src\ConduitSharp.Plugin.BodyCaptureToFile\ConduitSharp.Plugin.BodyCaptureToFile.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Configuration\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,223 @@
+{
+  "routes": [
+    {
+      "id": "claude",
+      "description": "claude through the spend meter",
+      "route": {
+        "match": {
+          "path": "/llm/claude/{**rest}"
+        },
+        "transforms": [
+          {
+            "PathRemovePrefix": "/llm/claude"
+          }
+        ]
+      },
+      "cluster": {
+        "destinations": {
+          "node-0": {
+            "address": "https://api.anthropic.com"
+          }
+        }
+      },
+      "plugins": [
+        {
+          "name": "custom",
+          "variant": "token-spend",
+          "order": 4,
+          "enabled": true,
+          "config": {
+            "inputFields": [
+              "usage.prompt_tokens",
+              "usage.input_tokens",
+              "prompt_eval_count"
+            ],
+            "outputFields": [
+              "usage.completion_tokens",
+              "usage.output_tokens",
+              "eval_count"
+            ],
+            "cacheWriteFields": [
+              "usage.cache_creation_input_tokens"
+            ],
+            "cacheReadFields": [
+              "usage.cache_read_input_tokens"
+            ],
+            "maxResponseBytes": 4194304,
+            "maxRequestBytes": 4194304,
+            "capturePrompts": true,
+            "maxPromptChars": 200,
+            "keyHeader": "x-api-key"
+          }
+        },
+        {
+          "name": "custom",
+          "variant": "body-capture-file",
+          "order": 5,
+          "enabled": true,
+          "config": {
+            "request": {
+              "maxSize": 16384
+            },
+            "response": {
+              "maxSize": 16384
+            },
+            "logPath": "/tmp/conduit-wire.jsonl",
+            "maxFileBytes": 134217728
+          }
+        },
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "description": "codex through the spend meter",
+      "route": {
+        "match": {
+          "path": "/llm/codex/{**rest}"
+        },
+        "transforms": [
+          {
+            "PathRemovePrefix": "/llm/codex"
+          }
+        ]
+      },
+      "cluster": {
+        "destinations": {
+          "node-0": {
+            "address": "https://api.openai.com"
+          }
+        }
+      },
+      "plugins": [
+        {
+          "name": "custom",
+          "variant": "token-spend",
+          "order": 4,
+          "enabled": true,
+          "config": {
+            "inputFields": [
+              "usage.prompt_tokens",
+              "usage.input_tokens",
+              "prompt_eval_count"
+            ],
+            "outputFields": [
+              "usage.completion_tokens",
+              "usage.output_tokens",
+              "eval_count"
+            ],
+            "cacheWriteFields": [
+              "usage.cache_creation_input_tokens"
+            ],
+            "cacheReadFields": [
+              "usage.cache_read_input_tokens"
+            ],
+            "maxResponseBytes": 4194304,
+            "maxRequestBytes": 4194304,
+            "capturePrompts": true,
+            "maxPromptChars": 200,
+            "keyHeader": "authorization"
+          }
+        },
+        {
+          "name": "custom",
+          "variant": "body-capture-file",
+          "order": 5,
+          "enabled": true,
+          "config": {
+            "request": {
+              "maxSize": 16384
+            },
+            "response": {
+              "maxSize": 16384
+            },
+            "logPath": "/tmp/conduit-wire.jsonl",
+            "maxFileBytes": 134217728
+          }
+        },
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "local",
+      "description": "local through the spend meter",
+      "route": {
+        "match": {
+          "path": "/llm/local/{**rest}"
+        },
+        "transforms": [
+          {
+            "PathRemovePrefix": "/llm/local"
+          }
+        ]
+      },
+      "cluster": {
+        "destinations": {
+          "node-0": {
+            "address": "http://127.0.0.1:1234"
+          }
+        }
+      },
+      "plugins": [
+        {
+          "name": "custom",
+          "variant": "token-spend",
+          "order": 4,
+          "enabled": true,
+          "config": {
+            "inputFields": [
+              "usage.prompt_tokens",
+              "usage.input_tokens",
+              "prompt_eval_count"
+            ],
+            "outputFields": [
+              "usage.completion_tokens",
+              "usage.output_tokens",
+              "eval_count"
+            ],
+            "cacheWriteFields": [
+              "usage.cache_creation_input_tokens"
+            ],
+            "cacheReadFields": [
+              "usage.cache_read_input_tokens"
+            ],
+            "maxResponseBytes": 4194304,
+            "maxRequestBytes": 4194304,
+            "capturePrompts": true,
+            "maxPromptChars": 200,
+            "keyHeader": "authorization"
+          }
+        },
+        {
+          "name": "custom",
+          "variant": "body-capture-file",
+          "order": 5,
+          "enabled": true,
+          "config": {
+            "request": {
+              "maxSize": 16384
+            },
+            "response": {
+              "maxSize": 16384
+            },
+            "logPath": "/tmp/conduit-wire.jsonl",
+            "maxFileBytes": 134217728
+          }
+        },
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}
