@@ -21,7 +21,16 @@ the setup lines below.
 On macOS and Windows a local model server on the host is reachable out of the box, on its default
 loopback binding, with no extra flags.
 
-**On Linux, two things are on you.** Add the host mapping, which Docker Desktop provides
+```bash
+# Follow the gateway's output. Startup errors, plugin registration and route
+# validation failures all show up here.
+docker logs -f conduit-spend
+
+# Stop and delete it.
+docker rm -f conduit-spend
+```
+
+**On Linux** Add the host mapping, which Docker Desktop provides
 automatically and Linux does not:
 
 ```bash
@@ -31,15 +40,17 @@ automatically and Linux does not:
 and bind your model server to `0.0.0.0` rather than `127.0.0.1`, because a loopback-only service
 refuses connections from a container. Docker 20.10+ is required for `host-gateway`.
 
-```bash
-docker logs -f conduit-spend
-docker rm -f conduit-spend
-```
-
-
 ### Your own routes
 
-Three routes ship in the image. Pull the shipped config out, edit it, and mount it back:
+Three routes ship in the image:
+
+| route | for | forwards to |
+| :--- | :--- | :--- |
+| `/llm/claude` | Claude Code | `api.anthropic.com` |
+| `/llm/codex` | Codex | `chatgpt.com` |
+| `/llm/local` | LM Studio, Ollama, anything OpenAI-compatible | `host.docker.internal:1234` |
+
+To run different ones, pull the shipped config out, edit it, and mount it back:
 
 ```bash
 docker run --rm --entrypoint cat ghcr.io/liqngliz/conduit-spend \
