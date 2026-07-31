@@ -12,20 +12,30 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 // Defaults: sourceRoot=src, outputDir=TestResults/metrics. Emits metrics.csv and
 // metrics.html and prints a summary + the worst offenders.
 
-var sourceRoot = args.Length > 0 ? args[0] : "src";
+// Several roots, separated by ';', so plugins are measured alongside src rather than
+// silently left out of every report.
+var sourceRoots = (args.Length > 0 ? args[0] : "src")
+    .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 var outputDir  = args.Length > 1 ? args[1] : Path.Combine("TestResults", "metrics");
 Directory.CreateDirectory(outputDir);
 
-var files = Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
-    .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
-             && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
-             && !f.EndsWith(".g.cs") && !f.EndsWith(".Designer.cs"))
-    .OrderBy(f => f)
+// Each file keeps the root it came from, so the project column stays the first segment
+// under that root (ConduitSharp.Core under src, ConduitSharp.Plugin.X under plugins).
+var files = sourceRoots
+    .Where(Directory.Exists)
+    .SelectMany(root => Directory
+        .EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+        .Select(path => (Root: root, Path: path)))
+    .Where(f => !f.Path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+             && !f.Path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+             && !f.Path.EndsWith(".g.cs", StringComparison.Ordinal)
+             && !f.Path.EndsWith(".Designer.cs", StringComparison.Ordinal))
+    .OrderBy(f => f.Path, StringComparer.Ordinal)
     .ToList();
 
 var rows = new List<Row>();
 
-foreach (var file in files)
+foreach (var (sourceRoot, file) in files)
 {
     var text = File.ReadAllText(file);
     var tree = CSharpSyntaxTree.ParseText(text);
@@ -92,8 +102,11 @@ static int SourceLines(SyntaxNode member)
     return lines.Count(l =>
     {
         var t = l.Trim();
-        return t.Length > 0 && !t.StartsWith("//") && !t.StartsWith("///")
-            && !t.StartsWith("/*") && !t.StartsWith('*');
+        return t.Length > 0
+            && !t.StartsWith("//", StringComparison.Ordinal)
+            && !t.StartsWith("///", StringComparison.Ordinal)
+            && !t.StartsWith("/*", StringComparison.Ordinal)
+            && !t.StartsWith('*');
     });
 }
 

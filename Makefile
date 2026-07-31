@@ -61,7 +61,7 @@ coverage:
 # product code — the cross-platform equivalent of Visual Studio's "Calculate Code Metrics".
 # Emits metrics.csv + a sortable, color-coded metrics.html.
 metrics:
-	dotnet run --project tools/CodeMetrics -- src $(COVERAGE_DIR)/metrics
+	dotnet run --project tools/CodeMetrics -- "src;plugins" $(COVERAGE_DIR)/metrics
 	@echo "HTML report: $(COVERAGE_DIR)/metrics/metrics.html"
 
 clean:
