@@ -4,10 +4,6 @@ using ConduitSharp.Core.Routing;
 using ConduitSharp.Gateway.Configuration;
 using Microsoft.Extensions.Options;
 using ConduitSharp.Gateway.Routing;
-using Microsoft.OpenApi;
-using Microsoft.OpenApi.Extensions;
-using Microsoft.OpenApi.Models;
-using Microsoft.OpenApi.Readers;
 
 namespace ConduitSharp.Gateway.Swagger;
 
@@ -158,28 +154,15 @@ internal static class SwaggerAggregationExtensions
                 "SwaggerOptions requires either 'fetchFrom' or 'specFile' to be set.");
         }
 
-        OpenApiDocument? document = null;
-        var version = OpenApiSpecVersion.OpenApi3_0;
-        try
-        {
-            document = new OpenApiStringReader().Read(json, out var diagnostic);
-            version  = diagnostic.SpecificationVersion;
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            document = null;
-        }
+        if (JsonNode.Parse(json) is not JsonObject doc) return json;
 
         var bearerDescription = ctx.RequestServices
             .GetRequiredService<IOptions<GatewayOptions>>().Value.Swagger.BearerDescription;
 
-        if (document is null)
-            return RewriteServersOnly(json, prefix);
+        doc["servers"] = new JsonArray(new JsonObject { ["url"] = prefix });
+        InjectSecurityFromPlugins(doc, route.Plugins, bearerDescription);
 
-        document.Servers = [new OpenApiServer { Url = prefix }];
-        InjectSecurityFromPlugins(document, route.Plugins, bearerDescription);
-
-        return document.SerializeAsJson(version);
+        return doc.ToJsonString();
     }
 
     /// <summary>
@@ -188,31 +171,11 @@ internal static class SwaggerAggregationExtensions
     /// Existing securitySchemes entries are preserved; only gateway-added ones
     /// are written (so hand-crafted specFile entries still take effect).
     /// </summary>
-    /// <summary>
-    /// Fallback for a spec the OpenAPI reader cannot model: rewrite <c>servers</c> in place on the
-    /// raw JSON and leave everything else untouched. Serving such a spec verbatim would publish the
-    /// upstream's own host and port, so the rewrite is not optional even when the document is not
-    /// understood. Security schemes are skipped, which only costs the "Try it out" affordance.
-    /// </summary>
-    private static string RewriteServersOnly(string json, string prefix)
-    {
-        try
-        {
-            if (JsonNode.Parse(json) is not JsonObject raw)
-                return "{}";
-            raw["servers"] = new JsonArray(new JsonObject { ["url"] = prefix });
-            return raw.ToJsonString();
-        }
-        catch (JsonException)
-        {
-            return "{}";
-        }
-    }
-
     private static void InjectSecurityFromPlugins(
-        OpenApiDocument document, IEnumerable<PluginConfig> plugins, string bearerDescription)
+        JsonObject doc, IEnumerable<PluginConfig> plugins, string bearerDescription)
     {
-        var schemes = new Dictionary<string, OpenApiSecurityScheme>(StringComparer.Ordinal);
+        var schemes  = new JsonObject();
+        var security = new JsonArray();
 
         foreach (var plugin in plugins.Where(p => p.Enabled))
         {
@@ -226,26 +189,28 @@ internal static class SwaggerAggregationExtensions
                         && plugin.Config.TryGetProperty("header", out var h))
                         headerName = h.GetString() ?? headerName;
 
-                    schemes["ApiKey"] = new OpenApiSecurityScheme
+                    schemes["ApiKey"] = new JsonObject
                     {
-                        Type        = SecuritySchemeType.ApiKey,
-                        In          = ParameterLocation.Header,
-                        Name        = headerName,
-                        Description = $"API key passed in the `{headerName}` request header.",
+                        ["type"]        = "apiKey",
+                        ["in"]          = "header",
+                        ["name"]        = headerName,
+                        ["description"] = $"API key passed in the `{headerName}` request header."
                     };
+                    security.Add(new JsonObject { ["ApiKey"] = new JsonArray() });
                     break;
                 }
 
                 case PluginName.JwtAuth:
                 case PluginName.JwksJwtAuth:
                 {
-                    schemes["Bearer"] = new OpenApiSecurityScheme
+                    schemes["Bearer"] = new JsonObject
                     {
-                        Type         = SecuritySchemeType.Http,
-                        Scheme       = "bearer",
-                        BearerFormat = "JWT",
-                        Description  = bearerDescription,
+                        ["type"]        = "http",
+                        ["scheme"]      = "bearer",
+                        ["bearerFormat"]= "JWT",
+                        ["description"] = bearerDescription
                     };
+                    security.Add(new JsonObject { ["Bearer"] = new JsonArray() });
                     break;
                 }
             }
@@ -253,18 +218,9 @@ internal static class SwaggerAggregationExtensions
 
         if (schemes.Count == 0) return;
 
-        document.Components ??= new OpenApiComponents();
-        foreach (var (name, scheme) in schemes)
-            document.Components.SecuritySchemes[name] = scheme;
-
-        var requirement = new OpenApiSecurityRequirement();
-        foreach (var name in schemes.Keys)
-        {
-            requirement[new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = name },
-            }] = [];
-        }
-        document.SecurityRequirements = [requirement];
+        var components = doc["components"]?.DeepClone().AsObject() ?? new JsonObject();
+        components["securitySchemes"] = schemes;
+        doc["components"] = components;
+        doc["security"]   = security;
     }
 }

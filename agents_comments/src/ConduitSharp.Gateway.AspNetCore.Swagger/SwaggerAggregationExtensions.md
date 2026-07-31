@@ -17,17 +17,15 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 - (was line 141) A route may always fetch its own upstream's spec — same host it already forwards to.
 - (was line 162) Containment check: the resolved path must stay under Gateway:BasePath. The trailing separator prevents prefix attacks ("/base-evil" passing a check against "/base"). Blocks "../../etc/hosts"-style traversal (S3).
 - Applies two gateway-layer transforms to every spec before serving: rewrite servers so "Try it out" calls the gateway rather than the upstream, and inject security schemes derived from the route's plugin pipeline.
-- Uses Microsoft.OpenApi's typed model rather than hand-built JsonObject nodes. Verified before switching: a typed round-trip preserves vendor extensions (x-generated-by, x-team, x-rate-limit all survived), so the old worry that a library would silently drop what it cannot model was unfounded. The cost is two packages on a project that previously had one dependency with none of its own.
-- Serialised back in whichever version the reader detected, so a 2.0 spec is not silently upgraded to 3.0.
 
 ## SwaggerAggregationExtensions.InjectSecurityFromPlugins
 
 - (was line 193) Security injection
 - (was line 249) Merge into existing components object (preserve other entries).
 
-## SwaggerAggregationExtensions.RewriteServersOnly
+## SwaggerAggregationExtensions.InjectSecurityFromPlugins
 
-- Exists because the typed reader throws on documents it cannot model, and the first attempt at this rewrite served those verbatim. That leaked the upstream's own host and port into the served spec and broke SwaggerSpec_ServedSpec_DoesNotLeakUpstreamTopology in all three E2E suites.
-- The raw-JSON approach got that guarantee for free: it patched servers without needing to understand the document. The typed path has to fall back explicitly to keep it.
-- Security schemes are skipped on this path. That only costs the "Try it out" affordance, whereas publishing internal topology is a real leak, so the two are not traded evenly.
-- Do not relax this to `return json`. SwaggerSpec_UnparseableUpstreamSpec_IsServedVerbatim pins both halves: unmodellable content passes through, servers does not.
+- Patches raw JSON rather than using an OpenAPI object model, and that is deliberate after trying the alternative. Microsoft.OpenApi 1.6.x cannot read OpenAPI 3.1, ASP.NET Core 10 emits 3.1.1 by default, and every upstream in the examples serves 3.1.1. Swapping to the typed model silently stopped injecting security schemes on every real route while still passing the in-process tests, because those use a hand-written 3.0 specFile.
+- Reading the version to pick a parser does not fix the class of problem. Microsoft.OpenApi has had three incompatible API shapes across 1.6 / 2.x / 3.x, including moving the reader out of a separate package and swapping concrete types for interfaces. A gateway proxies whatever spec an upstream happens to emit, so being version-agnostic is worth more here than typed construction.
+- Patching two keys on raw JSON has the property the object model cannot offer: it works on a document it does not understand, including versions that did not exist when this was written.
+- If this is ever revisited, the bar is a live check against a real 3.1 upstream, not the unit tests. tools/../swagger-live.sh style: boot examples/EmbeddedGateway, GET /swagger/inventory-service.json, assert components.securitySchemes is non-empty.
