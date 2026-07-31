@@ -16,9 +16,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# The docker variant points the local route at host.docker.internal and puts the wire log
-# under /data, so both outputs land in the one mounted volume.
-COPY examples/ConduitSharp.Spend/Configuration/routes.docker.json ./Configuration/routes.json
+# One routes file, written for the container: the local route uses host.docker.internal because
+# 127.0.0.1 inside a container is the container, and the wire log writes under /data so both
+# outputs land in the one mounted volume.
+COPY examples/ConduitSharp.Spend/Configuration/routes.json ./Configuration/routes.json
 
 ENV ASPNETCORE_URLS=http://+:4000
 ENV CONDUIT_SPEND_DATA=/data

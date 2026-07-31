@@ -58,7 +58,7 @@
             "response": {
               "maxSize": 262144
             },
-            "logPath": "/tmp/conduit-wire.jsonl",
+            "logPath": "/data/conduit-wire.jsonl",
             "maxFileBytes": 134217728
           }
         },
@@ -85,7 +85,7 @@
       "cluster": {
         "destinations": {
           "node-0": {
-            "address": "http://127.0.0.1:1234"
+            "address": "http://host.docker.internal:1234"
           }
         }
       },
@@ -121,7 +121,7 @@
             "response": {
               "maxSize": 262144
             },
-            "logPath": "/tmp/conduit-wire.jsonl",
+            "logPath": "/data/conduit-wire.jsonl",
             "maxFileBytes": 134217728
           }
         },
@@ -193,7 +193,7 @@
             "response": {
               "maxSize": 262144
             },
-            "logPath": "/tmp/conduit-wire.jsonl",
+            "logPath": "/data/conduit-wire.jsonl",
             "maxFileBytes": 134217728
           }
         },

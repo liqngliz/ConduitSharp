@@ -36,7 +36,7 @@ Three routes ship in the image. To run different ones, mount a file over the bak
 -v "$PWD/routes.json:/app/Configuration/routes.json:ro"
 ```
 
-Start from `Configuration/routes.docker.json` in this repo. Inside a container `127.0.0.1` is the
+Start from `Configuration/routes.json` in this repo. Inside a container `127.0.0.1` is the
 container, so a service on your machine is `host.docker.internal`.
 
 ## Point each tool at it
@@ -73,7 +73,7 @@ OPENAI_BASE_URL=http://localhost:4000/llm/local/v1
 ```
 
 The `local` route points at `host.docker.internal:1234`, LM Studio's default port on the host.
-Change the destination in `Configuration/routes.docker.json` for Ollama or another local server.
+Change the destination in `Configuration/routes.json` for Ollama or another local server.
 
 ## What you get
 
@@ -95,7 +95,7 @@ when you want to know what a provider really sends rather than what its docs cla
 ## Adding a project
 
 One route per project, so each can carry its own budget, provider, and capture settings. Copy a
-block in `Configuration/routes.docker.json`, change `id`, the `path`, and the
+block in `Configuration/routes.json`, change `id`, the `path`, and the
 `PathRemovePrefix`, then point that project's tool at the new prefix. Per-repo `.envrc` under direnv makes the base URL set itself when
 you `cd` in.
 
