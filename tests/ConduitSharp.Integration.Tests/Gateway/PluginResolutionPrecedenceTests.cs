@@ -38,9 +38,6 @@ public sealed class PluginResolutionPrecedenceTests : IAsyncLifetime
     [Fact]
     public async Task HostDiRegistration_ReplacesBuiltInOfSameName()
     {
-        // Route names the built-in api-key-auth with a valid config; the DI-registered
-        // plugin with the same PluginName must serve instead. The built-in would 401
-        // this key-less request — the stamp proves the override took the route.
         var routes = GatewayTestHelpers.RouteWithPlugin(_upstream.BaseUrl, "api-key-auth",
             new { header = "X-Api-Key", keys = new[] { "any-key" } });
 
@@ -48,7 +45,7 @@ public sealed class PluginResolutionPrecedenceTests : IAsyncLifetime
             plugins: [new StampPlugin(PluginName.ApiKeyAuth, variant: null, stamp: "di-override")]);
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/data"); // no X-Api-Key header on purpose
+        var response = await client.GetAsync("/data");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("di-override", response.Headers.GetValues("X-Stamp").Single());

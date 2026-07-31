@@ -20,10 +20,6 @@ public sealed class StructuredRequestLoggerTests
     private static RequestObservation Obs(int status, string requestId = "req-x") =>
         new(requestId, "GET", "/api/test", "route-1", status, 42);
 
-    // -------------------------------------------------------------------------
-    // 2xx — logged at Information
-    // -------------------------------------------------------------------------
-
     [Theory]
     [InlineData(200)]
     [InlineData(201)]
@@ -38,10 +34,6 @@ public sealed class StructuredRequestLoggerTests
         Assert.Single(logger.Entries);
         Assert.Equal(LogLevel.Information, logger.Entries[0].Level);
     }
-
-    // -------------------------------------------------------------------------
-    // 3xx / 4xx — logged at Information (not errors)
-    // -------------------------------------------------------------------------
 
     [Theory]
     [InlineData(301)]
@@ -58,10 +50,6 @@ public sealed class StructuredRequestLoggerTests
         Assert.Equal(LogLevel.Information, logger.Entries[0].Level);
     }
 
-    // -------------------------------------------------------------------------
-    // 5xx — logged at Error (matches OTel span status, which is also Error-only-on-5xx)
-    // -------------------------------------------------------------------------
-
     [Theory]
     [InlineData(500)]
     [InlineData(502)]
@@ -76,10 +64,6 @@ public sealed class StructuredRequestLoggerTests
         Assert.Single(logger.Entries);
         Assert.Equal(LogLevel.Error, logger.Entries[0].Level);
     }
-
-    // -------------------------------------------------------------------------
-    // Log message contains key fields
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void OnRequestCompleted_LogMessage_ContainsRequestId()

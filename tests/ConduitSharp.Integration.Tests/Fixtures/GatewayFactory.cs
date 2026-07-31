@@ -104,10 +104,6 @@ public sealed class GatewayFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("Gateway__RoutesPath", null);
     }
 
-    // -------------------------------------------------------------------------
-    // Default test routes — no plugins, single catch-all, forwards everything
-    // -------------------------------------------------------------------------
-
     public static string DefaultRoutes(string upstreamBaseUrl) => $$"""
         {
           "routes": [

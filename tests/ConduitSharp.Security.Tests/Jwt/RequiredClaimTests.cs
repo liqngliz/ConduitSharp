@@ -5,9 +5,6 @@ namespace ConduitSharp.Security.Tests.Jwt;
 
 public sealed class RequiredClaimTests
 {
-    // -------------------------------------------------------------------------
-    // Claim name
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Validate_EmptyClaimName_Throws()
@@ -28,10 +25,6 @@ public sealed class RequiredClaimTests
     {
         new RequiredClaim { Claim = "roles" }.Validate();
     }
-
-    // -------------------------------------------------------------------------
-    // At most one matcher
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Validate_EqualsAndAnyOfBothSet_Throws()
@@ -64,10 +57,6 @@ public sealed class RequiredClaimTests
         new RequiredClaim { Claim = "roles", EqualsValue = "Admin" }.Validate();
     }
 
-    // -------------------------------------------------------------------------
-    // Non-empty anyOf/allOf
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void Validate_EmptyAnyOf_Throws()
     {
@@ -81,10 +70,6 @@ public sealed class RequiredClaimTests
         var rule = new RequiredClaim { Claim = "scp", AllOf = [] };
         Assert.Throws<InvalidOperationException>(rule.Validate);
     }
-
-    // -------------------------------------------------------------------------
-    // ValidateAll
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void ValidateAll_Null_DoesNotThrow()

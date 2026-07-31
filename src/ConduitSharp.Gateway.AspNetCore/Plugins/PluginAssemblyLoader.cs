@@ -1,5 +1,5 @@
 using System.Reflection;
-using System.Runtime.Loader;  // AssemblyLoadContext, AssemblyDependencyResolver
+using System.Runtime.Loader;
 using ConduitSharp.Core.Pipeline;
 using ConduitSharp.Core.Routing;
 using Microsoft.Extensions.Logging;
@@ -33,13 +33,6 @@ internal sealed class PluginAssemblyLoader(ILogger<PluginAssemblyLoader> logger)
 {
     private readonly ILogger<PluginAssemblyLoader> _logger = logger;
 
-    // One shared Resolving handler for every DLL this loader scans, rather than one handler
-    // per DLL: each handler runs on every future unresolved reference for the process's
-    // lifetime (plugins may lazily load assemblies at runtime, e.g. PowerShell initialising
-    // a Runspace on first use, so detaching after the scan isn't an option). Registering N
-    // handlers for N plugin DLLs meant N linear assembly scans plus N delegate invocations
-    // per resolution; one handler trying each DLL's resolver in turn does the same work
-    // without the per-DLL event-dispatch overhead.
     private readonly List<AssemblyDependencyResolver> _resolvers = [];
     private bool _resolvingHandlerAttached;
 
@@ -57,7 +50,6 @@ internal sealed class PluginAssemblyLoader(ILogger<PluginAssemblyLoader> logger)
 
         return null;
     }
-
 
     /// <summary>
     /// Scans every route subdirectory under <paramref name="pluginsRoot"/> for
@@ -128,25 +120,11 @@ internal sealed class PluginAssemblyLoader(ILogger<PluginAssemblyLoader> logger)
 
     private IEnumerable<Type> LoadTypes(string dllPath, Type serviceType)
     {
-        // Load plugins into the Default AssemblyLoadContext rather than an isolated context.
-        //
-        // Isolated contexts break plugins that use native P/Invoke libraries (e.g.
-        // Microsoft.PowerShell.SDK / libpsl-native) because the native code can only
-        // interop correctly with the default runtime context. Loading everything into
-        // Default avoids this entirely.
-        //
-        // ResolveFromAnyScannedPlugin (registered once — see the field declarations above)
-        // lets the Default context find this plugin's private deps (e.g.
-        // Microsoft.PowerShell.SDK, Yarp.ReverseProxy) that are published alongside the
-        // plugin DLL but are not in the host's output directory. Assemblies already loaded
-        // by the host are reused — no type-identity mismatch.
         var resolver = new AssemblyDependencyResolver(dllPath);
         _resolvers.Add(resolver);
 
         if (!_resolvingHandlerAttached)
         {
-            // Kept registered for the process's lifetime — plugins may lazily load
-            // assemblies at runtime (e.g. PowerShell initialising a Runspace on first use).
             AssemblyLoadContext.Default.Resolving += ResolveFromAnyScannedPlugin;
             _resolvingHandlerAttached = true;
         }
@@ -161,20 +139,14 @@ internal sealed class PluginAssemblyLoader(ILogger<PluginAssemblyLoader> logger)
             if (loadedByName is not null &&
                 !string.Equals(loadedByName.Location, dllPath, StringComparison.OrdinalIgnoreCase))
             {
-                // A copy of an assembly the host already has (plugin publishes bring the
-                // whole dependency closure, e.g. ConduitSharp.Host.dll). Loading it again
-                // would re-discover the built-in plugins it contains and re-register them
-                // AFTER the external plugin — last-registration-wins would then silently
-                // shadow the plugin with the built-in it was meant to replace.
                 return [];
             }
 
-            // Reuse if already loaded from this exact path (gateway restart in tests).
             assembly = loadedByName ?? AssemblyLoadContext.Default.LoadFromAssemblyPath(dllPath);
         }
         catch (Exception ex)
         {
-            _resolvers.Remove(resolver); // this DLL never loaded — its resolver can't help anyone
+            _resolvers.Remove(resolver);
             _logger.LogWarning(ex, "Failed to load assembly '{Path}' — skipping.", dllPath);
             return [];
         }

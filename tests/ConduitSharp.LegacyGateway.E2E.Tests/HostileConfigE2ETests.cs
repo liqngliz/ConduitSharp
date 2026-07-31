@@ -16,10 +16,6 @@ public sealed class HostileConfigE2ETests
     [CollectionDefinition("Hostile config E2E", DisableParallelization = true)]
     public sealed class HostileConfigCollection;
 
-    // =========================================================================
-    // S2 — SSRF via swagger fetchFrom
-    // =========================================================================
-
     [Fact]
     public async Task S2_FetchFromMetadataEndpoint_Returns403WithoutLeak()
     {
@@ -42,10 +38,6 @@ public sealed class HostileConfigE2ETests
         Assert.DoesNotContain("169.254", body);
     }
 
-    // =========================================================================
-    // S3 — specFile path traversal
-    // =========================================================================
-
     [Fact]
     public async Task S3_SpecFileTraversal_Returns400WithoutFileContents()
     {
@@ -65,19 +57,13 @@ public sealed class HostileConfigE2ETests
         var body     = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.DoesNotContain("localhost", body); // /etc/hosts contents
-        Assert.DoesNotContain("/etc/",     body); // resolved path echo
+        Assert.DoesNotContain("localhost", body);
+        Assert.DoesNotContain("/etc/",     body);
     }
-
-    // =========================================================================
-    // S5 — error bodies must not leak internal topology
-    // =========================================================================
 
     [Fact]
     public async Task S5_FetchFromUnreachableUpstream_502BodyIsGeneric()
     {
-        // Loopback is allowlisted by default, so the fetch is attempted and fails —
-        // the 502 body must not reveal where the gateway tried to go.
         await using var gw = await IsolatedGateway.StartAsync("""
             {
               "routes": [{
@@ -98,10 +84,6 @@ public sealed class HostileConfigE2ETests
         Assert.DoesNotContain("internal/openapi", body);
     }
 
-    // =========================================================================
-    // S6 — hostile route ID must prevent startup, before any directory I/O
-    // =========================================================================
-
     [Fact]
     public async Task S6_TraversalRouteId_GatewayRefusesToStart()
     {
@@ -121,8 +103,6 @@ public sealed class HostileConfigE2ETests
         Assert.NotEqual(0, gw.ExitCode);
         Assert.Contains("Route IDs", gw.Output);
 
-        // The traversal target must never have been created: validation runs before
-        // SyncPluginDirectories touches the filesystem.
         var escaped = Path.GetFullPath(Path.Combine(gw.BaseDir, "plugins", "..", "..", "evil"));
         Assert.False(Directory.Exists(escaped),
             $"Traversal directory was created outside the plugins root: {escaped}");

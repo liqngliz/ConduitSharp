@@ -31,42 +31,24 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
     public string? Variant => "body-capture-file";
     public string Id => "body-capture-file";
 
-    // Static, so it cannot vary by config: the plugin always declares it needs the buffered request
-    // body. Request capture reads that buffer directly. A response-only route therefore still buffers
-    // the request even though it captures nothing from it — the cost of a per-plugin (not per-config)
-    // property. Response capture itself needs no buffering; it tees Response.Body.
     public bool ReadsRequestBody => true;
 
     private readonly Channel<(string time, string path, string traceId, byte[] buffer, int length, bool truncated, string direction)> _channel;
-    // ponytail: single sink path for the plugin instance. The plugin is a shared singleton, so if two
-    // routes set different logPath the last ValidateConfig wins for all. One file per gateway is the
-    // intended layout; per-route files would need the path carried per entry through the channel.
     private string _logPath = "/tmp/conduit-logs.json";
-    // Rolled at this size, keeping one .1 backup, so the sink is bounded at ~2x. Appending forever
-    // fills a real disk (ENOSPC kills the writer) or hits the size cap on a tmpfs mount.
     private long _maxFileBytes = 128L * 1024 * 1024;
     private readonly ILogger<BodyCaptureToFilePlugin>? _logger;
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _writeTask;
 
-    // logger is optional so the plugin still constructs where nothing registers one (the tests do
-    // exactly that); the gateway's DI supplies it in a real host.
     public BodyCaptureToFilePlugin(IConfiguration configuration, ILogger<BodyCaptureToFilePlugin>? logger = null)
     {
         _logger = logger;
         int capacity = configuration.GetValue<int>("OTEL_BLRP_MAX_QUEUE_SIZE", 2048);
-        // DropWrite, not DropOldest: DropOldest silently evicts the queued entry whose byte[] is
-        // rented from ArrayPool, and there is no drop callback to return it — that leaks pooled
-        // buffers under exactly the backpressure this plugin is benchmarked at. DropWrite makes the
-        // full-channel case fall to TryWrite==false below, where the buffer IS returned.
         _channel = Channel.CreateBounded<(string time, string path, string traceId, byte[] buffer, int length, bool truncated, string direction)>(
             new BoundedChannelOptions(capacity) { FullMode = BoundedChannelFullMode.DropWrite }
         );
         _writeTask = Task.Run(ProcessQueueAsync);
 
-        // The queue can hold this much pooled RAM beyond what any in-flight request has reserved
-        // (see CaptureMemoryBytes). Stated once at startup so it is a known number rather than one
-        // discovered from a memory graph.
         _logger?.LogInformation(
             "BodyCaptureToFile queue holds up to {Capacity} entries; retained capture RAM is bounded by capacity x the route's maxSize",
             capacity);
@@ -92,8 +74,6 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
     /// </summary>
     public int CaptureMemoryBytes(JsonElement config) => DirectionMaxSize(config, "request") + DirectionMaxSize(config, "response");
 
-    // The direction's effective maxSize, or 0 when that direction is not captured. Block absent or
-    // maxSize <= 0 means off; block present without maxSize means the default.
     private static int DirectionMaxSize(JsonElement config, string direction)
     {
         if (config.ValueKind != JsonValueKind.Object
@@ -152,7 +132,6 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
         if (requestMax > 0)
             await CaptureRequestAsync(context, requestMax);
 
-        // Response capture: bounded write-through tee, enqueued after the forward writes the body.
         var originalResponseBody = context.Response.Body;
         BoundedTeeStream? responseTee = null;
         if (responseMax > 0)
@@ -169,24 +148,17 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
         {
             if (responseTee is not null)
             {
-                // DetachBuffer hands pool ownership to Enqueue, which returns the array if the
-                // channel is full. CapturedLength and Truncated survive the detach, so evaluating
-                // them after it in argument order is still correct.
                 Enqueue(context, "response", responseTee.DetachBuffer(), responseTee.CapturedLength, responseTee.Truncated);
                 context.Response.Body = originalResponseBody;
             }
         }
     }
 
-    // Reads the request prefix off the gateway's buffered (seekable) body — this plugin declares
-    // ReadsRequestBody, so the body is buffered by the time it runs.
     private async Task CaptureRequestAsync(HttpContext context, int maxSize)
     {
         context.Request.Body.Position = 0;
 
         var buffer = ArrayPool<byte>.Shared.Rent(maxSize);
-        // ReadAtLeastAsync, not ReadAsync: a single read may return short on a stream that still has
-        // data, which would both cut the capture and leave `truncated` false.
         var length = await context.Request.Body.ReadAtLeastAsync(
             buffer.AsMemory(0, maxSize), maxSize, throwOnEndOfStream: false);
 
@@ -203,8 +175,6 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
         Enqueue(context, "request", buffer, length, truncated);
     }
 
-    // Hands a pooled buffer to the writer channel. The writer owns and returns it; on a full channel
-    // (DropWrite) TryWrite fails and we return it here so it never leaks.
     private void Enqueue(HttpContext context, string direction, byte[] buffer, int length, bool truncated)
     {
         var time    = DateTime.UtcNow.ToString("O");
@@ -240,9 +210,6 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
                             writer.WriteString("traceId", entry.traceId);
                             writer.WriteString("direction", entry.direction);
 
-                            // ponytail: a maxSize cut can split a multibyte UTF-8 char at the byte
-                            // boundary; GetChars emits U+FFFD for the partial tail. Fine for a debug
-                            // body dump — upgrade to a Decoder if exact truncation ever matters.
                             var suffix = "... (truncated)".AsSpan();
                             var charBuffer = ArrayPool<char>.Shared.Rent(entry.length + suffix.Length);
                             var charCount = Encoding.UTF8.GetChars(entry.buffer, 0, entry.length, charBuffer, 0);
@@ -264,8 +231,6 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
                     }
                     finally
                     {
-                        // Return the pooled buffer even if the write throws, so an IO error can't
-                        // leak it out of the pool.
                         ArrayPool<byte>.Shared.Return(entry.buffer);
                     }
                 }
@@ -282,16 +247,11 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            // This task is the only writer: once it dies, capture stops for the life of the process
-            // while every request still succeeds and the plugin still looks healthy. Silence here is
-            // the same failure shape as an over-sized OTLP batch — say so loudly instead.
             _logger?.LogError(ex,
                 "BodyCaptureToFile writer stopped; request bodies are NO LONGER being captured to {LogPath}", _logPath);
         }
     }
 
-    // Single backup, overwritten: bounds the sink at ~2x _maxFileBytes with no scheduler and no
-    // dependency. A log shipper (promtail, the collector's filelog receiver) follows the rename.
     private void Roll()
     {
         try
@@ -302,7 +262,6 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
         }
         catch (Exception ex)
         {
-            // A failed roll is not fatal — the next iteration reopens and keeps appending.
             _logger?.LogError(ex, "BodyCaptureToFile could not roll {LogPath}; it will keep growing", _logPath);
         }
     }

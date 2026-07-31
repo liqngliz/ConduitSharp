@@ -71,10 +71,6 @@ public sealed class RedisCacheServiceTests
         await db.Received(1).KeyDeleteAsync(Prefix + "k", Arg.Any<CommandFlags>());
     }
 
-    // ------------------------------------------------------------------
-    // Fail-open — Redis errors degrade to no-cache, never surface
-    // ------------------------------------------------------------------
-
     [Fact]
     public async Task Get_RedisFailure_ReturnsNullNotThrow()
     {
@@ -82,7 +78,7 @@ public sealed class RedisCacheServiceTests
         db.StringGetAsync(Arg.Any<RedisKey>())
           .Returns<Task<RedisValue>>(_ => throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "down"));
 
-        Assert.Null(await svc.GetAsync("k")); // treated as a miss
+        Assert.Null(await svc.GetAsync("k"));
     }
 
     [Fact]
@@ -93,6 +89,6 @@ public sealed class RedisCacheServiceTests
                 Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
           .Returns<Task<bool>>(_ => throw new RedisTimeoutException("slow", CommandStatus.Unknown));
 
-        await svc.SetAsync("k", new CachedResponse(200, null, Encoding.UTF8.GetBytes("x")), TimeSpan.FromSeconds(5)); // must not throw
+        await svc.SetAsync("k", new CachedResponse(200, null, Encoding.UTF8.GetBytes("x")), TimeSpan.FromSeconds(5));
     }
 }

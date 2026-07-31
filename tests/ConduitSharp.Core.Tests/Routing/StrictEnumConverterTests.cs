@@ -20,10 +20,10 @@ public class StrictEnumConverterTests
     }
 
     [Theory]
-    [InlineData("jwt-auth",          PluginName.JwtAuth)]        // kebab-case
+    [InlineData("jwt-auth",          PluginName.JwtAuth)]
     [InlineData("api-key-auth",      PluginName.ApiKeyAuth)]
-    [InlineData("Cache",             PluginName.Cache)]          // PascalCase
-    [InlineData("cache",             PluginName.Cache)]          // case-insensitive
+    [InlineData("Cache",             PluginName.Cache)]
+    [InlineData("cache",             PluginName.Cache)]
     [InlineData("header-transform",  PluginName.HeaderTransform)]
     public void Read_AcceptsKebabAndPascalCase(string raw, PluginName expected)
     {
@@ -41,15 +41,12 @@ public class StrictEnumConverterTests
         var ex = Assert.Throws<JsonException>(
             () => JsonSerializer.Deserialize<PluginName>($"\"{raw}\""));
 
-        // The message must name what *was* valid — a typo in routes.json should be self-correcting.
         Assert.Contains(nameof(PluginName.Cache), ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Read_LeadingDashes_ProduceAStableResult_NotACrash()
     {
-        // "--cache" splits to ["", "", "cache"], so the empty-segment guard inside KebabToPascal
-        // fires. It must yield "Cache" rather than throwing on the empty segments.
         var actual = JsonSerializer.Deserialize<PluginName>("\"--cache\"");
 
         Assert.Equal(PluginName.Cache, actual);

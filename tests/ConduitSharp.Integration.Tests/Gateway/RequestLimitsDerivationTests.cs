@@ -25,11 +25,10 @@ public sealed class RequestLimitsDerivationTests
     [Fact]
     public void RaisingTheDiskBudget_DoesNotRaiseTheRamBudget()
     {
-        // The safety property: 10 GiB of spill capacity must leave RAM at its own default.
         var limits = Bind(("MaxDiskBufferedBodyBytes", (10L * 1024 * 1024 * 1024).ToString()));
 
         Assert.Equal(10L * 1024 * 1024 * 1024, limits.MaxDiskBufferedBodyBytes);
-        Assert.Equal(64 * 1024 * 1024, limits.MaxRamBufferedBodyBytes); // untouched
+        Assert.Equal(64 * 1024 * 1024, limits.MaxRamBufferedBodyBytes);
     }
 
     [Fact]
@@ -38,14 +37,12 @@ public sealed class RequestLimitsDerivationTests
         var limits = Bind(("MaxRamBufferedBodyBytes", (4L * 1024 * 1024 * 1024).ToString()));
 
         Assert.Equal(4L * 1024 * 1024 * 1024, limits.MaxRamBufferedBodyBytes);
-        Assert.Equal(64 * 1024 * 1024, limits.MaxDiskBufferedBodyBytes); // untouched
+        Assert.Equal(64 * 1024 * 1024, limits.MaxDiskBufferedBodyBytes);
     }
 
     [Fact]
     public void EachBudget_AcceptsZero_MeaningNoneOfThatResource()
     {
-        // 0 reads the same way on both: none of that resource is available. RAM 0 => everything
-        // spills; disk 0 => a body must fit RAM or be shed.
         var noRam  = Bind(("MaxRamBufferedBodyBytes", "0"));
         var noDisk = Bind(("MaxDiskBufferedBodyBytes", "0"));
 

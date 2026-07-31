@@ -52,8 +52,6 @@ public class UpstreamProtocolTests
         Assert.Equal(HttpVersion.Version20, request.Version);
         Assert.Equal(HttpVersionPolicy.RequestVersionExact, request.VersionPolicy);
 
-        // Everything that is not the protocol is the cluster's own: the per-attempt timeout
-        // survives, and the HttpMessageInvoker (connection pool) is shared, not rebuilt.
         Assert.Equal(TimeSpan.FromSeconds(7), request.ActivityTimeout);
         Assert.Same(original.HttpClient, feature.Cluster.HttpClient);
         Assert.Equal("c1", feature.Cluster.Config.ClusterId);
@@ -80,8 +78,6 @@ public class UpstreamProtocolTests
         await UpstreamProtocol.NegotiateAsync(ctx1, _ => Task.CompletedTask);
         await UpstreamProtocol.NegotiateAsync(ctx2, _ => Task.CompletedTask);
 
-        // Same source model → same derived model. A config reload produces a NEW ClusterModel,
-        // which naturally gets a fresh derivative — that is the eviction strategy.
         Assert.Same(f1.Cluster, f2.Cluster);
     }
 
@@ -92,7 +88,7 @@ public class UpstreamProtocolTests
         var (ctx, _) = Http("HTTP/2", Cluster());
         await UpstreamProtocol.NegotiateAsync(ctx, _ => { called++; return Task.CompletedTask; });
 
-        var plain = new DefaultHttpContext(); // no proxy feature at all (plugin-only route)
+        var plain = new DefaultHttpContext();
         plain.Request.Protocol = "HTTP/2";
         await UpstreamProtocol.NegotiateAsync(plain, _ => { called++; return Task.CompletedTask; });
 

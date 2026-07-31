@@ -32,9 +32,8 @@ public sealed class JsonlSpendStoreTests : IDisposable
             writer.Add(Row(day1, input: 10));
             writer.Add(Row(day2, input: 20));
             writer.Add(Row(day3, input: 30));
-        }   // Dispose drains the queue
+        }
 
-        // A second instance proves the history is on disk, not in the first store's memory.
         using var reader = new JsonlSpendStore(_dir);
 
         var all = reader.Read(day1, day3);
@@ -87,7 +86,6 @@ public sealed class JsonlSpendStoreTests : IDisposable
             other = store.HashCaller("sk-ant-bob");
         }
 
-        // The salt is persisted, so yesterday's rows still group with today's.
         using (var restarted = new JsonlSpendStore(_dir))
             second = restarted.HashCaller("sk-ant-alice");
 
@@ -132,7 +130,6 @@ public sealed class JsonlSpendStoreTests : IDisposable
         using (var store = new JsonlSpendStore(_dir))
             store.Add(Row(at, input: 42));
 
-        // Simulate a crash mid-write: a partial JSON object appended after a good row.
         File.AppendAllText(Path.Combine(_dir, "spend-2026-07-31.jsonl"), "{\"ts\":\"2026-07-31T09:3" + Environment.NewLine);
 
         using var reader = new JsonlSpendStore(_dir);

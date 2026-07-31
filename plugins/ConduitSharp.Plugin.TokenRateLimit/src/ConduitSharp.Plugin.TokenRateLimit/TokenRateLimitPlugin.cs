@@ -65,13 +65,11 @@ public sealed class TokenRateLimitPlugin : IPipelinePlugin
         var store = context.RequestServices.GetRequiredService<IRateLimitStore>();
         var routeId = context.Items.TryGetValue("ConduitSharp.RouteId", out var r) && r is string id ? id : "";
         var clientKey = ResolveClientKey(context, config);
-        // The store may be shared across routes and replicas, so the counter key carries the route id.
         var key = $"{routeId}\0{clientKey}";
 
         var nowSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var windowId = nowSeconds / config.WindowSeconds;
 
-        // Charge-after: deny once the window is already at or over budget.
         if (store.Peek(key, windowId) >= config.MaxTokensPerWindow)
         {
             context.Response.Headers["Retry-After"] = (config.WindowSeconds - nowSeconds % config.WindowSeconds).ToString();
@@ -81,8 +79,6 @@ public sealed class TokenRateLimitPlugin : IPipelinePlugin
         }
 
         var originalBody = context.Response.Body;
-        // using, not a manual return at the end: an exception out of next() would otherwise drop the
-        // rented buffer on the floor instead of handing it back to the pool.
         using var capture = new BoundedTeeStream(originalBody, config.MaxResponseBytes);
         context.Response.Body = capture;
 
@@ -114,8 +110,6 @@ public sealed class TokenRateLimitPlugin : IPipelinePlugin
         return "global";
     }
 
-    // Reads a claim out of the Authorization Bearer token WITHOUT validating it — an upstream jwt-auth
-    // plugin has already validated the signature; this only needs the value as a per-caller key.
     private static string? ClaimFromBearer(HttpContext context, string claim)
     {
         var header = context.Request.Headers.Authorization.ToString();
@@ -147,8 +141,6 @@ public sealed class TokenRateLimitPlugin : IPipelinePlugin
         return (s.Length % 4) switch { 2 => s + "==", 3 => s + "=", _ => s };
     }
 
-    // Parses the buffered body as JSON and sums the configured dotted-path fields. Returns 0 when the
-    // body is not JSON (e.g. an SSE stream) or holds none of the fields.
     private static long ExtractTokens(ReadOnlySpan<byte> body, IReadOnlyList<string> fields)
     {
         if (body.IsEmpty)

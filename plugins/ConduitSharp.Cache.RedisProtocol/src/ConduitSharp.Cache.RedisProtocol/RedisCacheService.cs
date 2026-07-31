@@ -27,9 +27,6 @@ public sealed class RedisCacheService : ICacheService, IDisposable
     private readonly string _prefix;
     private readonly ILogger<RedisCacheService> _logger;
 
-    // DI constructor: reads its own connection settings straight from configuration —
-    // core's GatewayOptions doesn't declare a Redis-shaped property, so this backend's
-    // config schema is free to evolve independently of the core package's version.
     public RedisCacheService(IConfiguration configuration, ILogger<RedisCacheService> logger)
     {
         var cfg = configuration.GetSection("Gateway:Cache:Redis").Get<RedisCacheOptions>() ?? new();
@@ -38,7 +35,7 @@ public sealed class RedisCacheService : ICacheService, IDisposable
                 "The Redis cache is installed but 'Gateway:Cache:Redis:ConnectionString' is not set.");
 
         var redisConfig = ConfigurationOptions.Parse(cfg.ConnectionString);
-        redisConfig.AbortOnConnectFail = false; // start even if Redis is momentarily down
+        redisConfig.AbortOnConnectFail = false;
 
         _mux    = ConnectionMultiplexer.Connect(redisConfig);
         _db     = cfg.Database >= 0 ? _mux.GetDatabase(cfg.Database) : _mux.GetDatabase();
@@ -46,7 +43,6 @@ public sealed class RedisCacheService : ICacheService, IDisposable
         _logger = logger;
     }
 
-    // Test constructor: inject a database directly.
     internal RedisCacheService(IDatabase db, string keyPrefix, ILogger<RedisCacheService> logger)
     {
         _db     = db;
@@ -98,7 +94,6 @@ public sealed class RedisCacheService : ICacheService, IDisposable
         {
             var pattern = _prefix + keyPrefix + "*";
             var removed = 0;
-            // Scan each server (single node in the common case) for matching keys and delete them.
             foreach (var endpoint in _mux!.GetEndPoints())
             {
                 var server = _mux.GetServer(endpoint);
@@ -116,8 +111,6 @@ public sealed class RedisCacheService : ICacheService, IDisposable
         }
     }
 
-    // Redis/transport failures must not surface — the cache degrades to no-op. Serialization
-    // bugs (JsonException) are not caught here so they surface in development.
     private static bool IsRedisFailure(Exception ex) =>
         ex is RedisException or TimeoutException or ObjectDisposedException;
 

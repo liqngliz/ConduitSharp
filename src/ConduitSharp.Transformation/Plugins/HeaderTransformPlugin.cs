@@ -34,9 +34,6 @@ public sealed class HeaderTransformPlugin : IPipelinePlugin
 
     public void ValidateConfig(JsonElement configElement)
     {
-        // Catch the pre-2.0 flat shape ({ "add", "set", "remove" } at the top level). It parses into
-        // an empty request/response and would silently do nothing on every request — which is exactly
-        // how a live config went dead unnoticed. Fail the load instead.
         if (configElement.ValueKind == JsonValueKind.Object
             && (configElement.TryGetProperty("add", out _)
                 || configElement.TryGetProperty("set", out _)
@@ -48,7 +45,6 @@ public sealed class HeaderTransformPlugin : IPipelinePlugin
                 "{ \"request\": { \"remove\": [\"X-Debug\"] }, \"response\": { \"remove\": [\"Server\"] } }.");
         }
 
-        // Parse now so a malformed block fails at startup rather than on the first request.
         _ = HeaderTransformConfig.From(configElement);
     }
 

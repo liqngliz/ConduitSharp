@@ -7,9 +7,6 @@ namespace ConduitSharp.Plugin.TokenSpend.Tests;
 
 public sealed class TokenSpendPluginTests
 {
-    // Captures rows synchronously so a test can assert on them the moment ExecuteAsync returns, and
-    // echoes the caller key back unhashed so key routing stays visible. Hashing itself is covered
-    // against the real store in JsonlSpendStoreTests.
     private sealed class FakeStore : ISpendStore
     {
         public List<SpendRecord> Rows { get; } = [];
@@ -90,8 +87,6 @@ public sealed class TokenSpendPluginTests
     {
         var (ctx, _, store) = NewContext();
 
-        // Usage really is in this SSE body; the point is that this build does not parse it, and says so
-        // in the row instead of leaving the call out of the history entirely.
         await new TokenSpendPlugin().ExecuteAsync(ctx, Config(Anthropic),
             ForwardStreaming("""
                 event: message_delta
@@ -141,7 +136,6 @@ public sealed class TokenSpendPluginTests
         Assert.Equal("claude-opus-4-6", a.Model);
         Assert.Equal(1, a.TurnIndex);
         Assert.Equal(3, b.TurnIndex);
-        // Every turn resends the opening message, so the session groups without a client header.
         Assert.Equal(a.SessionId, b.SessionId);
         Assert.NotEqual("", a.SessionId);
     }
@@ -167,7 +161,6 @@ public sealed class TokenSpendPluginTests
     [Fact]
     public async Task ToolTraffic_IsCountedInBothWireFormats()
     {
-        // OpenAI: a tool role plus a tool_calls array. Anthropic: typed content blocks.
         const string openAiShape = """
             {"model":"gpt-x","messages":[
               {"role":"assistant","tool_calls":[{"id":"1"},{"id":"2"}]},
@@ -181,11 +174,11 @@ public sealed class TokenSpendPluginTests
 
         var (a, _, storeA) = NewContext(openAiShape);
         await new TokenSpendPlugin().ExecuteAsync(a, Config(OpenAi), Forward("{}"));
-        Assert.Equal(3, Assert.Single(storeA.Rows).ToolUseCount);   // 2 calls + 1 tool role
+        Assert.Equal(3, Assert.Single(storeA.Rows).ToolUseCount);
 
         var (b, _, storeB) = NewContext(anthropicShape);
         await new TokenSpendPlugin().ExecuteAsync(b, Config(OpenAi), Forward("{}"));
-        Assert.Equal(2, Assert.Single(storeB.Rows).ToolUseCount);   // tool_use + tool_result
+        Assert.Equal(2, Assert.Single(storeB.Rows).ToolUseCount);
     }
 
     [Fact]
@@ -199,11 +192,9 @@ public sealed class TokenSpendPluginTests
               "keyHeader": "x-api-key" }
             """), Forward("{}"));
 
-        // FakeStore echoes rather than hashes; the real store's hashing is asserted separately.
         Assert.Equal("sk-secret", Assert.Single(store.Rows).Caller);
     }
 
-    // Padding is stripped, the way a real token carries it, so the plugin has to restore it.
     private static string Jwt(string payloadJson) =>
         "header." + Convert.ToBase64String(Encoding.UTF8.GetBytes(payloadJson))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_') + ".signature";
@@ -221,7 +212,6 @@ public sealed class TokenSpendPluginTests
         await new TokenSpendPlugin().ExecuteAsync(withToken, config, Forward("{}"));
         Assert.Equal("alice@example.com", Assert.Single(store.Rows).Caller);
 
-        // Neither header present, and a token that is not a JWT at all: one shared bucket, no throw.
         var (garbage, _, storeB) = NewContext();
         garbage.Request.Headers.Authorization = "Bearer not-a-jwt";
         await new TokenSpendPlugin().ExecuteAsync(garbage, config, Forward("{}"));
@@ -250,6 +240,6 @@ public sealed class TokenSpendPluginTests
     {
         var plugin = new TokenSpendPlugin();
         Assert.Throws<InvalidOperationException>(() => plugin.ValidateConfig(Config("""{ "keyHeader": "x-api-key" }""")));
-        plugin.ValidateConfig(Config(OpenAi));   // does not throw
+        plugin.ValidateConfig(Config(OpenAi));
     }
 }

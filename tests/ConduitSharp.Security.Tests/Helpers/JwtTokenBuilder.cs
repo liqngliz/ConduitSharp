@@ -65,8 +65,6 @@ internal static class JwtTokenBuilder
             Convert.ToBase64String(Encoding.UTF8.GetBytes("a-completely-different-secret!!")),
             exp: DateTimeOffset.UtcNow.AddHours(1));
 
-    // -------------------------------------------------------------------------
-
     private static Dictionary<string, object?> BuildClaims(
         string? iss, string? aud, string[]? auds, DateTimeOffset? exp, DateTimeOffset? nbf)
     {

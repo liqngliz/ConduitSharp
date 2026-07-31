@@ -14,10 +14,6 @@ public static class GatewayTelemetry
     /// <summary>Source name used for both tracing and metrics — pass to AddSource/AddMeter in the host.</summary>
     public const string SourceName = "ConduitSharp.Gateway";
 
-    // Scope version tracks the package version automatically (Directory.Build.props <Version>
-    // → AssemblyInformationalVersion, read back here). Same value on the ActivitySource and
-    // the Meter so this scope never reports a conflicting version across signals. Split('+')
-    // drops SourceLink's "+<gitcommit>" suffix.
     internal static readonly string Version =
         typeof(GatewayTelemetry).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?

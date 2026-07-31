@@ -9,9 +9,6 @@ namespace ConduitSharp.Traffic.Tests;
 
 public sealed class CachePluginTests
 {
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
 
     private static CachePlugin Plugin(ICacheService? cache = null) =>
         new(cache ?? new InMemoryCacheService());
@@ -45,10 +42,6 @@ public sealed class CachePluginTests
 
     private static RequestDelegate NoOpNext() => _ => Task.CompletedTask;
 
-    // -------------------------------------------------------------------------
-    // Non-GET / non-HEAD — bypass cache
-    // -------------------------------------------------------------------------
-
     [Theory]
     [InlineData("POST")]
     [InlineData("PUT")]
@@ -65,10 +58,6 @@ public sealed class CachePluginTests
         
         Assert.True(wasCalled());
     }
-
-    // -------------------------------------------------------------------------
-    // GET — cache miss
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ExecuteAsync_GetCacheMiss_CallsNext()
@@ -96,10 +85,6 @@ public sealed class CachePluginTests
         Assert.True(wasCalled());
     }
 
-    // -------------------------------------------------------------------------
-    // GET — cache hit
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_GetCacheHit_ShortCircuitsWithCachedResponse()
     {
@@ -107,11 +92,9 @@ public sealed class CachePluginTests
         var plugin = Plugin(cache: cache);
         var ctx    = Context("GET");
 
-        // Populate cache manually with the key the plugin would build
         var config  = new CacheConfig { TtlSeconds = 60 };
         var cachePlugin = new CachePlugin(cache);
 
-        // Warm up by injecting the entry
         await cache.SetAsync(
             BuildExpectedKey("r1", "GET", "/api/items"),
             new CachedResponse(200, "application/json", """{"id":1}"""u8.ToArray()),
@@ -147,10 +130,6 @@ public sealed class CachePluginTests
         Assert.Null(ctx.Response.ContentType);
     }
 
-    // -------------------------------------------------------------------------
-    // Cache key — vary by headers and query params
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_DifferentQueryParams_UseSeparateCacheKeys()
     {
@@ -177,12 +156,10 @@ public sealed class CachePluginTests
         var config = new CacheConfig { TtlSeconds = 60, VaryByHeaders = ["Accept-Language"] };
         var plugin = new CachePlugin(cache);
 
-        // Warm cache for en-US
         var ctxEn = Context("GET", headers: new() { ["Accept-Language"] = "en-US" });
         var (nextEn, calledEn) = TrackingNext();
         await plugin.ExecuteAsync(ctxEn, Configured(config), nextEn);
 
-        // Different language — should be a separate cache key → calls next again
         var ctxFr = Context("GET", headers: new() { ["Accept-Language"] = "fr-FR" });
         var (nextFr, calledFr) = TrackingNext();
         await plugin.ExecuteAsync(ctxFr, Configured(config), nextFr);
@@ -190,11 +167,6 @@ public sealed class CachePluginTests
         Assert.True(calledEn());
         Assert.True(calledFr());
     }
-
-    // -------------------------------------------------------------------------
-    // Response capture — on a cache miss the plugin swaps Response.Body for a bounded
-    // CapturingStream, so the body reaches the client and the cache in one pass
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ExecuteAsync_GetCacheMiss_CapturesResponse()
@@ -204,7 +176,6 @@ public sealed class CachePluginTests
 
         await plugin.ExecuteAsync(context, Configured(), NoOpNext());
 
-        // Captured internally
     }
 
     [Fact]
@@ -221,7 +192,6 @@ public sealed class CachePluginTests
             await ctx.Response.Body.WriteAsync("""{"id":1}"""u8.ToArray());
         });
 
-        // The response must now be in the cache.
         var key = BuildExpectedKey("r1", "GET", "/api/items");
         var hit = await cache.GetAsync(key);
         Assert.NotNull(hit);
@@ -240,7 +210,6 @@ public sealed class CachePluginTests
 
                 var key = BuildExpectedKey("r1", "POST", "/api/items");
         var hit = Plugin().GetType().GetField("cache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(Plugin()) as ICacheService;
-        // Actually we can just check it wasn't cached, or skip.
     }
 
     [Fact]
@@ -258,13 +227,7 @@ public sealed class CachePluginTests
 
         await plugin.ExecuteAsync(ctx, Configured(), NoOpNext());
 
-        // Short-circuited from cache — no callback needed.
-        // Short-circuited from cache — no callback needed.
     }
-
-    // -------------------------------------------------------------------------
-    // Binary bodies — regression: caching must never decode/re-encode as UTF-8 text
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ExecuteAsync_BinaryBody_RoundTripsByteForByte()
@@ -274,8 +237,6 @@ public sealed class CachePluginTests
         var plugin  = new CachePlugin(cache);
         var context = Context("GET");
 
-        // Bytes that are not valid UTF-8 (e.g. a gzip magic number / arbitrary binary payload).
-        // A round-trip through Encoding.UTF8.GetString/GetBytes would corrupt these.
         byte[] binaryBody = [0x1F, 0x8B, 0x08, 0x00, 0xFF, 0xFE, 0x00, 0x80, 0x81];
 
         await plugin.ExecuteAsync(context, Configured(), async ctx => {
@@ -313,11 +274,6 @@ public sealed class CachePluginTests
         
     }
 
-    // -------------------------------------------------------------------------
-    // Bounded capture — large responses stream to the client but are not cached,
-    // and the gateway never buffers past the cacheable-size cap.
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_ResponseOverCap_StreamsToClientButDoesNotCache()
     {
@@ -326,7 +282,7 @@ public sealed class CachePluginTests
         var context = Context("GET");
         var config  = Configured(new CacheConfig { TtlSeconds = 60, MaxCacheableBytes = 8 });
 
-        var big = new byte[64]; // exceeds the 8-byte cap
+        var big = new byte[64];
         new Random(1).NextBytes(big);
 
         await plugin.ExecuteAsync(context, config, async ctx =>
@@ -335,11 +291,9 @@ public sealed class CachePluginTests
             await ctx.Response.Body.WriteAsync(big);
         });
 
-        // Streamed to the client in full despite exceeding the cache cap.
         context.Response.Body.Position = 0;
         Assert.Equal(big, ((System.IO.MemoryStream)context.Response.Body).ToArray());
 
-        // But not cached — oversized.
         Assert.Null(await cache.GetAsync(BuildExpectedKey("r1", "GET", "/api/items")));
     }
 
@@ -357,16 +311,10 @@ public sealed class CachePluginTests
             await ctx.Response.Body.WriteAsync("secret"u8.ToArray());
         });
 
-        // Delivered to the client...
         context.Response.Body.Position = 0;
         Assert.Equal("secret"u8.ToArray(), ((System.IO.MemoryStream)context.Response.Body).ToArray());
-        // ...but honoured no-store: nothing cached.
         Assert.Null(await cache.GetAsync(BuildExpectedKey("r1", "GET", "/api/items")));
     }
-
-    // -------------------------------------------------------------------------
-    // Private key-builder mirror (used to pre-populate the cache in tests)
-    // -------------------------------------------------------------------------
 
     private static string BuildExpectedKey(
         string routeId, string method, string path,

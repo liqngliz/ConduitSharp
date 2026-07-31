@@ -43,8 +43,6 @@ public sealed class DependencyBoundaryTests
     [Fact]
     public void Core_references_no_other_ConduitSharp_assembly()
     {
-        // Core is the only assembly external plugin authors compile against — anything
-        // it drags in becomes part of every plugin's dependency graph.
         Assert.Empty(References(Core, "ConduitSharp"));
     }
 
@@ -65,8 +63,6 @@ public sealed class DependencyBoundaryTests
     [MemberData(nameof(PluginAssemblies))]
     public void Plugin_assembly_references_no_Yarp(string name)
     {
-        // YARP is the gateway's forwarder choice, not part of the plugin contract —
-        // a plugin assembly referencing it couples every plugin author to YARP's types.
         Assert.Empty(References(ByName(name), "Yarp"));
     }
 }

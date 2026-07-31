@@ -19,10 +19,8 @@ namespace ConduitSharp.E2E.Shared;
 /// </summary>
 public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
 {
-    // HS256 signing key from every example's routes.json (base64) — same demo credentials.
     private const string SigningKeyBase64 = "ZGVtby1zaWduaW5nLWtleS1jb25kdWl0c2hhcnAtZXhhbXBsZS0zMmNo";
 
-    // ---- What each concrete stack supplies -----------------------------------
     /// <summary>Directory under examples/ to launch, e.g. "EmbeddedGateway".</summary>
     protected abstract string ExampleDirName { get; }
     protected abstract int GatewayPort { get; }
@@ -30,7 +28,6 @@ public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
     public abstract string PathPrefix { get; }
     public abstract (string A, string B) InventoryUpstreamPorts { get; }
 
-    // ---- Derived / shared ----------------------------------------------------
     private string GatewayUrl => $"http://localhost:{GatewayPort}";
     public string GrpcUrl => $"http://localhost:{GrpcPort}";
 
@@ -39,8 +36,6 @@ public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
 
     public HttpClient Client  { get; private set; } = null!;
     public string     DemoJwt { get; private set; } = "";
-
-    // ---- IAsyncLifetime ------------------------------------------------------
 
     public async Task InitializeAsync()
     {
@@ -62,8 +57,6 @@ public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
         Client?.Dispose();
         await StopAsync();
     }
-
-    // ---- Launcher ------------------------------------------------------------
 
     private async Task CleanAsync()
     {
@@ -100,11 +93,9 @@ public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
             var ps1 = Path.Combine(ExampleRoot, "start.ps1");
             return RunAsync("pwsh", $"-NonInteractive -NoProfile -File \"{ps1}\" -Stop", ExampleRoot);
         }
-        // Ignore errors — nothing may be running on the first clean.
         return RunAsync("make", "stop", ExampleRoot, ignoreFailure: true);
     }
 
-    // Runs an external process and waits for it to exit.
     private static async Task RunAsync(
         string executable,
         string arguments,
@@ -122,11 +113,6 @@ public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException($"Failed to start {executable}");
 
-        // Read both streams concurrently (sequential reads can deadlock when stderr
-        // fills its pipe buffer), and gate on process EXIT rather than stream EOF:
-        // long-lived grandchildren — the services themselves, or MSBuild node-reuse
-        // workers spawned by dotnet publish — inherit the launcher's stdout pipe and
-        // keep it open long after the launcher exits, so waiting for EOF hangs forever.
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
@@ -140,8 +126,6 @@ public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
                 $"`{executable} {arguments}` exited with code {process.ExitCode}.\n" +
                 $"stdout: {Drain(stdoutTask)}\nstderr: {Drain(stderrTask)}");
     }
-
-    // ---- Readiness -----------------------------------------------------------
 
     private async Task WaitForGatewayAsync(int timeoutSeconds)
     {
@@ -157,12 +141,11 @@ public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
                 if (response.IsSuccessStatusCode)
                     return;
             }
-            catch { /* not ready yet */ }
+            catch { }
 
             await Task.Delay(1_000).ConfigureAwait(false);
         }
 
-        // Dump gateway log to help diagnose startup failures.
         var logPath = Path.Combine(ExampleRoot, "logs", "gateway.log");
         var tail    = File.Exists(logPath)
             ? string.Join('\n', File.ReadLines(logPath).TakeLast(30))
@@ -173,9 +156,6 @@ public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
             $"Last 30 lines of gateway.log:\n{tail}");
     }
 
-    // The readiness probe above already forwarded /health upstream, so YARP's forwarder must have
-    // logged it. Guards against the gateway silently falling back to some other engine — forwarding
-    // is YARP's ForwarderMiddleware now, not a swappable "http-proxy" plugin.
     private void AssertYarpForwarderIsServing()
     {
         var logPath = Path.Combine(ExampleRoot, "logs", "gateway.log");
@@ -183,8 +163,6 @@ public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
 
         Assert.Contains("Yarp.ReverseProxy.Forwarder.HttpForwarder", log, StringComparison.Ordinal);
     }
-
-    // ---- JWT minting — same algorithm as generate-token.sh / generate-token.ps1
 
     private static string MintDemoJwt()
     {
@@ -209,8 +187,6 @@ public abstract class GatewayProcessFixture : IAsyncLifetime, IGatewayE2EFixture
 
     private static string Base64UrlEncode(byte[] input) =>
         Convert.ToBase64String(input).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-    // ---- Solution-root discovery ---------------------------------------------
 
     private static string LocateExampleRoot(string exampleDirName)
     {

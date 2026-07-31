@@ -7,9 +7,6 @@ namespace ConduitSharp.Security.Tests.Jwt;
 
 public sealed class JwksJwtAuthHandlerTests
 {
-    // -------------------------------------------------------------------------
-    // Helpers — real RSA/EC keys, canned key provider (no HTTP)
-    // -------------------------------------------------------------------------
 
     private static JwksProviderConfig Config(string? issuer = null, string? audience = null) =>
         new() { JwksUri = "https://stub.example.com/.well-known/jwks.json", Issuer = issuer, Audience = audience };
@@ -30,10 +27,6 @@ public sealed class JwksJwtAuthHandlerTests
         return System.Text.Json.JsonSerializer.Serialize(claims);
     }
 
-    // -------------------------------------------------------------------------
-    // Structure checks
-    // -------------------------------------------------------------------------
-
     [Theory]
     [InlineData("header.payload")]
     [InlineData("a.b.c.d")]
@@ -47,10 +40,6 @@ public sealed class JwksJwtAuthHandlerTests
         Assert.Contains("Malformed", err);
     }
 
-    // -------------------------------------------------------------------------
-    // Algorithm checks — symmetric and unsigned algs are rejected up front
-    // -------------------------------------------------------------------------
-
     [Theory]
     [InlineData("HS256")]
     [InlineData("none")]
@@ -62,10 +51,6 @@ public sealed class JwksJwtAuthHandlerTests
         Assert.False(ok);
         Assert.Contains("Unsupported algorithm", err);
     }
-
-    // -------------------------------------------------------------------------
-    // Key lookup failures
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task KeyProviderReturnsNull_WithKid_ReturnsKidError()
@@ -98,10 +83,6 @@ public sealed class JwksJwtAuthHandlerTests
         Assert.False(ok);
         Assert.Contains("Failed to fetch JWKS", err);
     }
-
-    // -------------------------------------------------------------------------
-    // Signature verification — real crypto, both key types
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ValidRs256Token_ReturnsTrue_AndExposesClaims()
@@ -145,10 +126,6 @@ public sealed class JwksJwtAuthHandlerTests
 
         Assert.False(ok);
     }
-
-    // -------------------------------------------------------------------------
-    // Claims — lifetime, issuer, audience (validated by the library)
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ExpiredToken_ReturnsFalse()
@@ -211,8 +188,6 @@ public sealed class JwksJwtAuthHandlerTests
     [Fact]
     public async Task SignedGarbagePayload_ReturnsFalse_NotThrow()
     {
-        // Correctly signed token whose payload is not JSON — must be a validation
-        // failure, not an unhandled exception (used to bubble up as a 500).
         var (ok, _, _) = await RsaHandler()
             .TryValidateAsync(AsymmetricTokenKit.SignRs256("not json"), Config());
 

@@ -76,8 +76,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
         var facts = await ReadRequestAsync(context, config);
 
         var originalBody = context.Response.Body;
-        // using, not a manual return at the end: an exception out of next() would otherwise drop the
-        // rented buffer on the floor instead of handing it back to the pool.
         using var capture = new BoundedTeeStream(originalBody, config.MaxResponseBytes);
         context.Response.Body = capture;
 
@@ -105,8 +103,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
             PromptPrefix = config.CapturePrompts ? facts.PromptPrefix : null,
         };
 
-        // Parsing an SSE body as one JSON document yields nothing, so skip it and let Streamed carry
-        // the meaning. Anything else gets its four counts read in a single pass.
         if (!record.Streamed)
             record = WithUsage(record, capture.Captured.Span, config);
 
@@ -115,10 +111,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
 
     private static bool IsEventStream(string? contentType) =>
         contentType is not null && contentType.StartsWith("text/event-stream", StringComparison.OrdinalIgnoreCase);
-
-    // ---------------------------------------------------------------------------------------------
-    // Response side
-    // ---------------------------------------------------------------------------------------------
 
     private static SpendRecord WithUsage(SpendRecord row, ReadOnlySpan<byte> body, TokenSpendConfig config)
     {
@@ -138,8 +130,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
         }
         catch (JsonException)
         {
-            // Not a JSON body at all (an error page, a truncated capture). The row still records
-            // that the call happened, with zero counts.
             return row;
         }
     }
@@ -153,10 +143,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
         return sum;
     }
 
-    // Lifted from TokenRateLimitPlugin: the same dotted-path read over the same provider bodies.
-    // ponytail: ten lines, still duplicated. The write-through tee those two plugins also shared is
-    // now BoundedTeeStream in Core; this is small enough that hoisting it would cost the Core
-    // package a public helper for less than it saves. Hoist it if a third plugin needs it.
     private static bool TryGetByPath(JsonElement root, string path, out long value)
     {
         value = 0;
@@ -169,14 +155,8 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
         return current.ValueKind == JsonValueKind.Number && current.TryGetInt64(out value);
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // Request side
-    // ---------------------------------------------------------------------------------------------
-
     private static async Task<RequestFacts> ReadRequestAsync(HttpContext context, TokenSpendConfig config)
     {
-        // The gateway buffers the body because this plugin declares ReadsRequestBody, so it is
-        // seekable by now. A GET or a non-buffered body simply yields no facts.
         if (!context.Request.Body.CanSeek)
             return RequestFacts.None;
 
@@ -184,8 +164,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
         try
         {
             context.Request.Body.Position = 0;
-            // ReadAtLeastAsync, not ReadAsync: a single read can return short while data remains,
-            // which would truncate the parse and silently lose the message array.
             var length = await context.Request.Body.ReadAtLeastAsync(
                 buffer.AsMemory(0, config.MaxRequestBytes), config.MaxRequestBytes, throwOnEndOfStream: false);
             context.Request.Body.Position = 0;
@@ -245,8 +223,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                 Model = model,
                 TurnIndex = messages.GetArrayLength(),
                 ToolUseCount = tools,
-                // Every turn resends the whole conversation, so the opening message is stable for
-                // the life of a session and needs no client-supplied session header.
                 SessionId = firstUserText is null ? "" : ShortHash(firstUserText),
                 PromptPrefix = lastUserText is null
                     ? null
@@ -259,8 +235,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
         }
     }
 
-    // Counts the tool traffic in one message across both wire formats: OpenAI puts it in a "tool"
-    // role or a tool_calls array, Anthropic in content blocks typed tool_use / tool_result.
     private static int ToolBlocks(JsonElement message, string? role)
     {
         var count = 0;
@@ -282,7 +256,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
         return count;
     }
 
-    // "content" is a bare string on OpenAI and an array of typed blocks on Anthropic.
     private static string TextOf(JsonElement message)
     {
         if (!message.TryGetProperty("content", out var content))
@@ -310,10 +283,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
     private static string ShortHash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)).AsSpan(0, 8)).ToLowerInvariant();
 
-    // ---------------------------------------------------------------------------------------------
-    // Caller identity
-    // ---------------------------------------------------------------------------------------------
-
     private static string ResolveClientKey(HttpContext context, TokenSpendConfig config)
     {
         if (!string.IsNullOrWhiteSpace(config.KeyHeader)
@@ -328,8 +297,6 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
         return "global";
     }
 
-    // Reads a claim out of the Authorization Bearer token WITHOUT validating it — an upstream
-    // jwt-auth plugin has already checked the signature; this only needs a per-caller value.
     private static string? ClaimFromBearer(HttpContext context, string claim)
     {
         var header = context.Request.Headers.Authorization.ToString();

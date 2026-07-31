@@ -48,9 +48,6 @@ public sealed class JwksJwtAuthEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task SlowJwks_ReturnsErrorWithinTimeout()
     {
-        // The JWKS endpoint stalls for 5 s; the route allows only 500 ms to fetch it.
-        // A well-formed RS256 token reaches the fetch step, so the timeout — not the
-        // full upstream delay — must decide the outcome: 401, returned promptly.
         const int timeoutMs = 500;
         const int upstreamLag = 5_000;
 
@@ -78,8 +75,6 @@ public sealed class JwksJwtAuthEndToEndTests : IAsyncLifetime
             $"Auth took {sw.ElapsedMilliseconds} ms — the {timeoutMs} ms JWKS timeout did not fire.");
     }
 
-    // Structurally valid RS256 token (real header + payload, dummy signature). Enough to
-    // pass parsing and the algorithm check so the handler proceeds to the JWKS fetch.
     private static string WellFormedRs256Token()
     {
         static string B64Url(string s) =>
@@ -113,7 +108,6 @@ public sealed class JwksJwtAuthEndToEndTests : IAsyncLifetime
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add("Authorization", $"Bearer {WellFormedRs256Token()}");
 
-        // First request: hits the 500ms timeout circuit breaker, returns 401
         var sw1 = Stopwatch.StartNew();
         var response1 = await client.GetAsync("/protected");
         sw1.Stop();
@@ -121,11 +115,8 @@ public sealed class JwksJwtAuthEndToEndTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, response1.StatusCode);
         Assert.True(sw1.ElapsedMilliseconds >= timeoutMs - 50 && sw1.ElapsedMilliseconds < upstreamLag, $"First request took {sw1.ElapsedMilliseconds}ms (expected around {timeoutMs}ms). Error: " + await response1.Content.ReadAsStringAsync());
 
-        // Wait enough time for the background fetch to finish the 1000ms delay and populate the cache
         await Task.Delay(1500);
 
-        // Second request: background fetch is already done, cache is populated.
-        // It will instantly see the empty keys array and return 401 without any network delay!
         var sw2 = Stopwatch.StartNew();
         var response2 = await client.GetAsync("/protected");
         sw2.Stop();

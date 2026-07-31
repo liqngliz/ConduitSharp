@@ -48,7 +48,6 @@ internal static class SwaggerAggregationExtensions
         var prefix = string.IsNullOrWhiteSpace(pathPrefix) ? "" : $"/{pathPrefix.Trim('/')}";
         var swaggerPath = $"{prefix}/swagger";
 
-        // Serve each route's OpenAPI spec at {swaggerPath}/{routeId}.json
         app.Use(async (ctx, next) =>
         {
             if (!ctx.Request.Path.StartsWithSegments(swaggerPath, out var remainder)
@@ -58,7 +57,6 @@ internal static class SwaggerAggregationExtensions
                 return;
             }
 
-            // Extract routeId from {swaggerPath}/{routeId}.json
             var routeId = Path.GetFileNameWithoutExtension(remainder.Value.TrimStart('/'));
             var route = swaggerRoutes.FirstOrDefault(
                 r => string.Equals(r.Id, routeId, StringComparison.OrdinalIgnoreCase));
@@ -89,8 +87,6 @@ internal static class SwaggerAggregationExtensions
             }
             catch (Exception ex)
             {
-                // Keep the body generic: exception messages carry internal detail
-                // (upstream URLs, file paths) that must not reach the client (S5).
                 ctx.RequestServices.GetRequiredService<ILoggerFactory>()
                     .CreateLogger("ConduitSharp.Gateway.Swagger")
                     .LogWarning(ex, "Failed to retrieve OpenAPI spec for route {RouteId}.", routeId);
@@ -101,7 +97,6 @@ internal static class SwaggerAggregationExtensions
             }
         });
 
-        // Swagger UI — dropdown contains one entry per swagger-enabled route
         app.UseSwaggerUI(ui =>
         {
             foreach (var route in swaggerRoutes)
@@ -124,11 +119,6 @@ internal static class SwaggerAggregationExtensions
 
         if (route.Swagger!.FetchFrom is not null)
         {
-            // SSRF guard (S2): refuse before any network I/O unless the target host is
-            // loopback, one of this route's own upstream nodes, or explicitly listed in
-            // Gateway:Swagger:AllowedSpecHosts. Blocks cloud metadata endpoints
-            // (169.254.169.254), internal services, etc. from operator typos or
-            // attacker-supplied route config.
             if (!Uri.TryCreate(route.Swagger.FetchFrom, UriKind.Absolute, out var target))
                 throw new SpecHostNotAllowedException();
 
@@ -138,7 +128,6 @@ internal static class SwaggerAggregationExtensions
             var allowed =
                 target.IsLoopback ||
                 allowedHosts.Contains(target.Host, StringComparer.OrdinalIgnoreCase) ||
-                // A route may always fetch its own upstream's spec — same host it already forwards to.
                 route.Cluster?.Destinations?.Values.Any(destination =>
                     Uri.TryCreate(destination.Address, UriKind.Absolute, out var address) &&
                     string.Equals(address.Host, target.Host, StringComparison.OrdinalIgnoreCase)) == true;
@@ -159,9 +148,6 @@ internal static class SwaggerAggregationExtensions
                 ? Path.GetFullPath(route.Swagger.SpecFile)
                 : Path.GetFullPath(Path.Combine(basePath, route.Swagger.SpecFile));
 
-            // Containment check: the resolved path must stay under Gateway:BasePath.
-            // The trailing separator prevents prefix attacks ("/base-evil" passing a
-            // check against "/base"). Blocks "../../etc/hosts"-style traversal (S3).
             var root = Path.GetFullPath(basePath)
                 .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
             if (!path.StartsWith(root, StringComparison.Ordinal))
@@ -175,9 +161,6 @@ internal static class SwaggerAggregationExtensions
                 "SwaggerOptions requires either 'fetchFrom' or 'specFile' to be set.");
         }
 
-        // Parse and apply gateway-layer transforms to every spec before serving:
-        //   1. Rewrite servers → empty string so "Try it out" calls the gateway, not the upstream.
-        //   2. Inject security schemes derived from the route's plugin pipeline.
         if (JsonNode.Parse(json) is not JsonObject doc) return json;
 
         var bearerDescription = ctx.RequestServices
@@ -188,10 +171,6 @@ internal static class SwaggerAggregationExtensions
 
         return doc.ToJsonString();
     }
-
-    // -----------------------------------------------------------------------
-    // Security injection
-    // -----------------------------------------------------------------------
 
     /// <summary>
     /// Inspects the route's active plugins and injects matching OpenAPI
@@ -246,7 +225,6 @@ internal static class SwaggerAggregationExtensions
 
         if (schemes.Count == 0) return;
 
-        // Merge into existing components object (preserve other entries).
         var components = doc["components"]?.DeepClone().AsObject() ?? new JsonObject();
         components["securitySchemes"] = schemes;
         doc["components"] = components;

@@ -49,9 +49,6 @@ public sealed class PipelineTests : IAsyncLifetime
     [Fact]
     public async Task ThrowingPlugin_Returns500_NotUnobservedException()
     {
-        // A plugin that throws must surface as a clean 500 — not an unhandled
-        // exception that exits the pipeline without a response — and must not
-        // forward to the upstream.
         var plugin = new ThrowingPlugin(PluginName.JwtAuth);
         await using var factory = await GatewayFactory.CreateAsync(
             _upstream, RoutesWithPlugin("jwt-auth"), plugins: [plugin]);
@@ -62,7 +59,7 @@ public sealed class PipelineTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Empty(_upstream.ReceivedRequests);
-        Assert.DoesNotContain("boom from plugin", body); // exception detail not leaked
+        Assert.DoesNotContain("boom from plugin", body);
     }
 
     [Fact]

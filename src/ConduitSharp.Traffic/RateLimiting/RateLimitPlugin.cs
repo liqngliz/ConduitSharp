@@ -23,14 +23,10 @@ namespace ConduitSharp.Traffic.RateLimiting;
 /// </summary>
 public sealed class RateLimitPlugin : IPipelinePlugin
 {
-    // Resolved once: IRateLimiter is a singleton and takes window/quota per call, so one instance
-    // serves every route and there is nothing to cache per config.
     private readonly IRateLimiter _limiter;
 
     public RateLimitPlugin() => _limiter = new FixedWindowRateLimiter();
 
-    // DI constructor: picks up a drop-in IRateLimiter (algorithm) and, through it, a drop-in
-    // IRateLimitStore (counter backend, e.g. Redis).
     public RateLimitPlugin(IServiceProvider serviceProvider) =>
         _limiter = serviceProvider.GetService<IRateLimiter>() ?? new FixedWindowRateLimiter();
 
@@ -50,14 +46,9 @@ public sealed class RateLimitPlugin : IPipelinePlugin
             clientKey = headerVal.ToString();
         }
 
-        // The limiter is shared across all routes (and its store may be shared across replicas),
-        // so the counter key must carry the route id — otherwise two routes with the same
-        // window/max and the same caller would consume each other's quota.
         var decision = _limiter.TryAcquire($"{routeId}\0{clientKey}", config.WindowSeconds, config.MaxRequests);
         if (!decision.Allowed)
         {
-            // The algorithm computes its own retry hint: a fixed window rolls over on a boundary,
-            // a sliding log frees a permit when its oldest request ages out. Only it knows.
             context.Response.Headers["Retry-After"] = decision.RetryAfterSeconds.ToString();
             context.Response.StatusCode = 429;
             await context.Response.WriteAsync("Rate limit exceeded. Try again later.");

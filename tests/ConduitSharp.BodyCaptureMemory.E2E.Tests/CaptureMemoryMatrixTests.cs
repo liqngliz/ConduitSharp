@@ -21,8 +21,8 @@ namespace ConduitSharp.BodyCaptureMemory.E2E.Tests;
 /// RSS is single-process and noisy; the sharp signals are PeakSpill (disk) and CaptureRecords (proof
 /// the capture path actually ran — HttpLogging silently no-ops when its log level is disabled).
 /// </summary>
-[Trait("Category", "E2E")]         // excluded from `make test` (Category!=E2E)
-[Trait("Category", "HeavyMemory")] // and self-documents the 500 MB weight
+[Trait("Category", "E2E")]
+[Trait("Category", "HeavyMemory")]
 public sealed class CaptureMemoryMatrixTests
 {
     private const long MB = 1024 * 1024;
@@ -42,7 +42,6 @@ public sealed class CaptureMemoryMatrixTests
         upstream.FailFirst = failFirst;
 
         var routes = CaptureRoutes.Build(upstream.BaseUrl, style, maxSize: maxSize, retry: retry);
-        // Capturing the FULL body needs the 32 KiB ceiling lifted to the body size.
         int? ceiling = style == CaptureStyle.Capture && maxSize > 32 * 1024 ? maxSize : null;
         await using var gateway = await CaptureGatewayHost.StartAsync(
             routes, style, memoryBufferThresholdBytes: memThreshold, streamingMaxCaptureBytes: ceiling);
@@ -64,7 +63,6 @@ public sealed class CaptureMemoryMatrixTests
     private void Report(string label, RunResult r) =>
         _out.WriteLine($"{label,-30} {r.Reading} | upstream x{r.UpstreamCalls} | captured {r.CaptureRecords} | {(int)r.Status}");
 
-    // 1 — streaming route, bounded prefix: the tee path. Cheap, no disk, captures the text prefix.
     [Fact]
     public async Task StreamingRoute_PrefixCapture_TeesCheap_NoDisk()
     {
@@ -77,8 +75,6 @@ public sealed class CaptureMemoryMatrixTests
         Assert.True(r.Reading.PeakRssMB  < 64,  $"tee prefix should stay small; RSS {r.Reading.PeakRssMB:F1} MB");
     }
 
-    // 2 — retry route, bounded prefix, BINARY body: proves the REUSE path ran. The tee skips binary,
-    // so a positive capture count on octet-stream can only come from the seekable-buffer reuse branch.
     [Fact]
     public async Task RetryRoute_ReusesBuffer_CapturesBinary_AndReplays()
     {
@@ -87,13 +83,11 @@ public sealed class CaptureMemoryMatrixTests
         Report("retry reuse (binary)", r);
 
         Assert.Equal(HttpStatusCode.OK, r.Status);
-        Assert.Equal(2, r.UpstreamCalls); // body replayed
+        Assert.Equal(2, r.UpstreamCalls);
         Assert.True(r.CaptureRecords > 0,
             "reuse branch should capture a binary body the tee would have skipped");
     }
 
-    // 3 — SAFETY: full-body capture on a streaming route holds the entire body in RAM (no disk tier).
-    // RSS itself proves the tee buffered the body — 500 MB resident with zero spill.
     [Fact]
     public async Task FullCapture_StreamingRoute_HoldsWholeBodyInRam()
     {
@@ -107,8 +101,6 @@ public sealed class CaptureMemoryMatrixTests
         Assert.True(r.Reading.PeakRssMB > 300,  $"full capture should be RAM-resident; RSS {r.Reading.PeakRssMB:F1} MB");
     }
 
-    // 5 — gateway buffer clamp is now configurable (no capture plugin needed): a retry route with a
-    // raised MemoryBufferThreshold keeps the whole body in RAM instead of spilling. Proves the lift.
     [Fact]
     public async Task RaisedBufferThreshold_KeepsBodyInRam_SkipsSpill()
     {

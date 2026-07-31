@@ -43,9 +43,6 @@ public sealed class RoutingTests : IAsyncLifetime
     [Fact]
     public async Task HeaderConstraint_FiltersByHeaderPresence()
     {
-        // match.headers is enforced by the native RouteConstraintMatcherPolicy — a request
-        // missing the required header must not match the route (404, no forward), while the
-        // same request carrying it forwards to the upstream.
         var routes = $$"""
             {
               "routes": [{
@@ -107,8 +104,6 @@ public sealed class RoutingTests : IAsyncLifetime
     [Fact]
     public async Task WrongMethodOnMatchingPath_Returns405()
     {
-        // Right path, wrong verb is a 405 — endpoint routing's own answer. Regression: a catch-all
-        // fallback endpoint would match every path and turn this into a 404.
         var routes = $$"""
             {
               "routes": [{

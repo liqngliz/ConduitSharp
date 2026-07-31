@@ -31,7 +31,6 @@ public static class RequiredClaimsValidator
         if (!TryGetClaim(claims, required.Claim, out var value))
             return $"Missing required claim '{required.Claim}'.";
 
-        // No matcher configured — existence alone satisfies the rule.
         if (required.EqualsValue is null && required.AnyOf is null && required.AllOf is null)
             return null;
 
@@ -47,15 +46,11 @@ public static class RequiredClaimsValidator
                 ? null
                 : $"Claim '{required.Claim}' does not include any of the required values.";
 
-        // AllOf
         return required.AllOf!.All(values.Contains)
             ? null
             : $"Claim '{required.Claim}' is missing one or more required values.";
     }
 
-    // Literal top-level name first — handles a namespaced claim name that itself contains
-    // dots (e.g. Auth0's "https://example.com/roles"). Only falls back to dot-path
-    // traversal (e.g. Keycloak's "realm_access.roles") when no literal match exists.
     private static bool TryGetClaim(JsonElement claims, string name, out JsonElement value)
     {
         if (claims.ValueKind == JsonValueKind.Object && claims.TryGetProperty(name, out value))
@@ -75,9 +70,6 @@ public static class RequiredClaimsValidator
         return true;
     }
 
-    // A JSON array becomes the set of its members; a single string is one member, unless
-    // delimiter is set (splits a space-delimited OAuth scope claim); anything else (bool,
-    // number) becomes its invariant string form.
     private static HashSet<string> ToStringSet(JsonElement value, string? delimiter)
     {
         var set = new HashSet<string>(StringComparer.Ordinal);

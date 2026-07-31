@@ -48,9 +48,6 @@ public sealed class RedisRateLimitStoreTests
         Assert.True(store.TryAcquire("client", windowId: 1, windowSeconds: 60, maxRequests: 1));
     }
 
-    // Add and Peek are the token-metering path: token-rate-limit charges through Add and gates on
-    // Peek, so a silent break here would let budgets run unenforced across replicas.
-
     [Fact]
     public void Add_ReturnsTheRunningWindowTotal_AndKeysByWindow()
     {
@@ -107,7 +104,6 @@ public sealed class RedisRateLimitStoreTests
     [Fact]
     public void NonRedisExceptions_Propagate_RatherThanFailingOpenSilently()
     {
-        // Fail-open covers backend outages. A bug in our own code must still surface.
         var (store, db) = Build();
         db.ScriptEvaluate(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>())
             .Returns(_ => throw new InvalidOperationException("boom"));
@@ -119,7 +115,6 @@ public sealed class RedisRateLimitStoreTests
     [Fact]
     public void DisposingATestConstructedStore_DoesNotThrow()
     {
-        // The connection is null on this path; Dispose must tolerate it.
         var (store, _) = Build();
         store.Dispose();
     }

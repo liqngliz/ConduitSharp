@@ -53,7 +53,7 @@ public sealed class JwksJwtAuthPlugin(JwksJwtAuthHandler handler) : IPipelinePlu
             var (success, authError, claims) = await handler.TryValidateAsync(token!, provider);
             if (!success)
             {
-                if (lastStatusCode != 403) // Don't overwrite a 403 with a 401
+                if (lastStatusCode != 403)
                 {
                     lastStatusCode = 401;
                     lastError = authError!;
@@ -69,7 +69,6 @@ public sealed class JwksJwtAuthPlugin(JwksJwtAuthHandler handler) : IPipelinePlu
                 continue;
             }
 
-            // Successfully authenticated and authorized
             await next(context);
             return;
         }
@@ -78,7 +77,5 @@ public sealed class JwksJwtAuthPlugin(JwksJwtAuthHandler handler) : IPipelinePlu
         await context.Response.WriteAsync(lastError);
     }
 
-    // Loading the config validates required fields (jwksUri), so a route with a missing
-    // or malformed jwks-jwt-auth config fails at startup instead of on the first request.
     public void ValidateConfig(JsonElement config) => JwksJwtAuthConfig.From(config);
 }

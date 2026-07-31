@@ -40,28 +40,23 @@ public sealed class SlidingWindowRateLimiterTests
     [Fact]
     public void PermitFreesExactlyWhenTheOldestRequestAgesOut()
     {
-        // The sliding property: the window travels with the request, it does not reset on a
-        // boundary. A permit taken at t=0 is returned at t=60s and not one millisecond sooner.
         var (limiter, advance) = At(1_000_000);
         Assert.True(limiter.TryAcquire("k", 60, 1).Allowed);
 
         advance(59_999);
         Assert.False(limiter.TryAcquire("k", 60, 1).Allowed);
 
-        advance(1); // the original permit is now exactly 60s old
+        advance(1);
         Assert.True(limiter.TryAcquire("k", 60, 1).Allowed);
     }
 
     [Fact]
     public void RetryAfter_CountsToTheOldestRequestAgingOut_NotToAWindowBoundary()
     {
-        // The reason RateLimitDecision carries a retry hint at all: this answer is knowable only
-        // to the algorithm. A fixed window would have said "time until the next aligned boundary",
-        // which for a sliding log is meaningless.
         var (limiter, advance) = At(1_000_000);
         Assert.True(limiter.TryAcquire("k", 60, 1).Allowed);
 
-        advance(20_000); // 20s in: the permit frees 40s from now
+        advance(20_000);
         var denied = limiter.TryAcquire("k", 60, 1);
 
         Assert.False(denied.Allowed);
@@ -71,11 +66,10 @@ public sealed class SlidingWindowRateLimiterTests
     [Fact]
     public void RetryAfter_IsNeverZero_WhenDenied()
     {
-        // A Retry-After of 0 invites an instant retry storm; the contract floors it at 1.
         var (limiter, advance) = At(1_000_000);
         Assert.True(limiter.TryAcquire("k", 60, 1).Allowed);
 
-        advance(59_999); // frees in 1ms — must still round up to a whole second
+        advance(59_999);
         var denied = limiter.TryAcquire("k", 60, 1);
 
         Assert.False(denied.Allowed);
@@ -92,11 +86,8 @@ public sealed class SlidingWindowRateLimiterTests
     [Fact]
     public void BoundarySpanningBurst_IsRefused_WhereAFixedWindowWouldAllowIt()
     {
-        // The entire reason this algorithm exists, asserted against the one it replaces.
-        // Two full quotas either side of an aligned boundary = 2x the nominal rate in one instant.
-        // Both limiters see identical calls; only the fixed window lets the burst through.
         const int window = 60, quota = 5;
-        var now = 59_000L; // 59s into an aligned 60s window
+        var now = 59_000L;
         var sliding = new SlidingWindowRateLimiter(() => now);
         var fixedWindow = new FixedWindowRateLimiter(new InMemoryRateLimitStore(), () => now / 1000);
 
@@ -106,7 +97,7 @@ public sealed class SlidingWindowRateLimiterTests
             Assert.True(fixedWindow.TryAcquire("k", window, quota).Allowed);
         }
 
-        now += 2_000; // 61s — past the boundary, so the fixed window's counter resets
+        now += 2_000;
 
         var fixedAllowsBurst = fixedWindow.TryAcquire("k", window, quota).Allowed;
         var slidingAllowsBurst = sliding.TryAcquire("k", window, quota).Allowed;
@@ -118,8 +109,6 @@ public sealed class SlidingWindowRateLimiterTests
     [Fact]
     public void ExpiredTimestamps_AreDropped_SoMemoryStaysBounded()
     {
-        // Timestamps are swept on use; a key never exceeds maxRequests entries even under
-        // sustained load across many windows.
         var (limiter, advance) = At(1_000_000);
         for (var i = 0; i < 50; i++)
         {

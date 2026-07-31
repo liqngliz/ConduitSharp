@@ -40,7 +40,6 @@ public sealed record JwksProviderConfig
 
 public sealed record JwksJwtAuthConfig
 {
-    // Legacy top-level fields
     [JsonPropertyName("jwksUri")]          public string? JwksUri         { get; init; }
     [JsonPropertyName("issuer")]           public string? Issuer          { get; init; }
     [JsonPropertyName("audience")]         public string? Audience        { get; init; }

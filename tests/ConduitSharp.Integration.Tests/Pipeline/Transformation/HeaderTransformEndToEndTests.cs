@@ -14,8 +14,6 @@ public sealed class HeaderTransformEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task Same_plugin_on_four_routes_keeps_separate_request_configs()
     {
-        // Four distinct request transforms; the upstream must see exactly the transform of the
-        // route that was hit, with no set/add/remove bleeding across routes.
         var routes = GatewayTestHelpers.RoutesWithPlugin(_upstream.BaseUrl, "header-transform",
             new { request = new { set = new Dictionary<string, string> { ["X-From"] = "alpha" } } },
             new { request = new { set = new Dictionary<string, string> { ["X-From"] = "beta" } } },
@@ -68,9 +66,6 @@ public sealed class HeaderTransformEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task Response_block_strips_and_adds_headers_before_the_client_sees_them()
     {
-        // The §3 capability, and the exact case the shipped routes.json config intends: an upstream
-        // response header the gateway removes on the way out, plus a security header it adds. Proves
-        // the response block reaches the client, not just the request block.
         _upstream.RespondWith(async ctx =>
         {
             ctx.Response.Headers["X-Powered-By"] = "leaky-upstream";
@@ -101,8 +96,6 @@ public sealed class HeaderTransformEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task Flat_config_shape_fails_at_startup()
     {
-        // Regression guard for the silent no-op: the pre-2.0 flat shape ({ set, add, remove } at the
-        // top level) parsed to an empty transform and did nothing. It must now fail the load.
         var routes = GatewayTestHelpers.RoutesWithPlugin(_upstream.BaseUrl, "header-transform",
             new { set = new Dictionary<string, string> { ["X-From"] = "alpha" } });
 

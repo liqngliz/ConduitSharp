@@ -110,7 +110,6 @@ public sealed class IsolatedGateway : IAsyncDisposable
                     $"Gateway exited during startup (code {process.ExitCode}).\n{gateway.Output}");
             try
             {
-                // Any HTTP response (404 included) means the pipeline is serving.
                 using var response = await gateway.Client.GetAsync("/__ready-probe");
                 return gateway;
             }
@@ -137,13 +136,11 @@ public sealed class IsolatedGateway : IAsyncDisposable
                 await _process.WaitForExitAsync(new CancellationTokenSource(5_000).Token);
             }
         }
-        catch { /* teardown best-effort */ }
+        catch { }
         _process.Dispose();
 
         try { Directory.Delete(BaseDir, recursive: true); } catch { }
     }
-
-    // -------------------------------------------------------------------------
 
     internal static async Task BuildProjectAsync(string projectDir)
     {
@@ -156,8 +153,6 @@ public sealed class IsolatedGateway : IAsyncDisposable
         };
         using var process = Process.Start(psi)!;
 
-        // Exit-gated drain: MSBuild node-reuse workers inherit the pipes and outlive
-        // the build, so never wait for stream EOF (same lesson as LegacyGatewayFixture).
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();

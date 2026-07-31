@@ -5,10 +5,6 @@ using Yarp.ReverseProxy.Configuration;
 
 namespace ConduitSharp.Gateway.Routing;
 
-// ---------------------------------------------------------------------------
-// Root
-// ---------------------------------------------------------------------------
-
 /// <summary>
 /// Root wrapper that deserializes the top-level "routes" array from routes.json.
 /// Call <see cref="Validate"/> immediately after deserialization to catch configuration errors
@@ -40,11 +36,6 @@ public sealed class GatewayRoutesConfiguration
         PropertyNameCaseInsensitive = true,
         Converters =
         {
-            // Order matters, and subtly: a converter in this collection beats a [JsonConverter]
-            // attribute on the type. Registering JsonStringEnumConverter alone would therefore
-            // shadow PluginName's StrictEnumConverter and break kebab-case ("jwt-auth"), so the
-            // strict converters go first and the general one only catches what is left — which is
-            // what YARP's enums (HeaderMatchMode, QueryParameterMatchMode, …) need.
             new StrictEnumConverter<PluginName>(),
             new JsonStringEnumConverter(),
         },
@@ -100,8 +91,6 @@ public sealed class GatewayRoutesConfiguration
                 $"Duplicate route IDs found in configuration: {string.Join(", ", duplicates)}");
     }
 
-    // A variant disambiguates Custom plugins; it is meaningless (and a likely mistake)
-    // on a built-in plugin name, and required on Custom so a route resolves unambiguously.
     private static void ValidatePluginVariants(GatewayRoute route)
     {
         foreach (var plugin in route.Plugins)
@@ -116,8 +105,6 @@ public sealed class GatewayRoutesConfiguration
         }
     }
 
-    // A route that forwards must name at least one destination targeting http(s). YARP checks the
-    // address parses; it does not care about the scheme, and a gateway does.
     private static void ValidateCluster(GatewayRoute route)
     {
         if (route.Cluster is not { } cluster) return;
@@ -166,10 +153,6 @@ public sealed class GatewayRoutesConfiguration
                 $"Route '{route.Id}': circuitBreaker.cooldownMs must be greater than zero (was {breaker.CooldownMs}).");
     }
 }
-
-// ---------------------------------------------------------------------------
-// Route
-// ---------------------------------------------------------------------------
 
 /// <summary>
 /// One route entry: what to match, where to forward it, and which ordered plugins to apply.
@@ -255,10 +238,6 @@ public sealed class GatewayRoute
     [JsonPropertyName("streamOnly")]
     public bool StreamOnly { get; init; } = false;
 }
-
-// ---------------------------------------------------------------------------
-// Reliability — the things YARP has no concept of
-// ---------------------------------------------------------------------------
 
 /// <summary>
 /// Retry policy for transient upstream failures, applied around the forwarder for idempotent
@@ -373,10 +352,6 @@ public enum LoadBalancingPolicy
     FirstAlphabetical,
 }
 
-// ---------------------------------------------------------------------------
-// Swagger aggregation
-// ---------------------------------------------------------------------------
-
 /// <summary>
 /// Optional OpenAPI spec source for this route.
 /// Exactly one of <see cref="FetchFrom"/> or <see cref="SpecFile"/> should be set.
@@ -397,10 +372,6 @@ public sealed class SwaggerOptions
     [JsonPropertyName("specFile")]
     public string? SpecFile { get; init; }
 }
-
-// ---------------------------------------------------------------------------
-// Plugins
-// ---------------------------------------------------------------------------
 
 /// <summary>
 /// Declares one plugin in a route's pipeline. <see cref="Name"/> is matched against registered

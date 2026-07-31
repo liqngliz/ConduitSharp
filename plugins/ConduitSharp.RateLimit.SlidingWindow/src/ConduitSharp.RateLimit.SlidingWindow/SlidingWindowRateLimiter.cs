@@ -21,8 +21,6 @@ namespace ConduitSharp.RateLimit.SlidingWindow;
 /// </summary>
 public sealed class SlidingWindowRateLimiter : IRateLimiter
 {
-    // Only swept while a key is being used; a key nobody touches holds at most maxRequests
-    // timestamps until its next request, when they are dropped as expired.
     private readonly ConcurrentDictionary<string, Queue<long>> _log = new();
     private readonly Func<long> _nowMillis;
 
@@ -40,8 +38,6 @@ public sealed class SlidingWindowRateLimiter : IRateLimiter
         var cutoff = now - windowMillis;
         var log = _log.GetOrAdd(key, _ => new Queue<long>());
 
-        // One lock per key, not one global lock: contention is per-caller, and the critical
-        // section is a few queue operations bounded by maxRequests.
         lock (log)
         {
             while (log.Count > 0 && log.Peek() <= cutoff)
@@ -53,10 +49,8 @@ public sealed class SlidingWindowRateLimiter : IRateLimiter
                 return RateLimitDecision.Allow;
             }
 
-            // A permit frees when the oldest request in the window ages out — the answer a fixed
-            // window cannot give, and the reason RateLimitDecision carries the retry hint at all.
             var freesAtMillis = log.Peek() + windowMillis;
-            return RateLimitDecision.Deny((freesAtMillis - now + 999) / 1000); // ceil to whole seconds
+            return RateLimitDecision.Deny((freesAtMillis - now + 999) / 1000);
         }
     }
 

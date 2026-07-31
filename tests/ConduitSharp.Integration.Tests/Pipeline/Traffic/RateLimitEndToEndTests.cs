@@ -27,7 +27,6 @@ public sealed class RateLimitEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task OverLimit_Returns429WithRetryAfter()
     {
-        // maxRequests=1: first call passes, second is blocked
         var routes = GatewayTestHelpers.RouteWithPlugin(_upstream.BaseUrl, "rate-limit",
             new { windowSeconds = 60, maxRequests = 1 });
         await using var factory = await GatewayFactory.CreateAsync(_upstream, routes);
@@ -37,8 +36,6 @@ public sealed class RateLimitEndToEndTests : IAsyncLifetime
         var response = await client.GetAsync("/api");
 
         Assert.Equal(HttpStatusCode.TooManyRequests, response.StatusCode);
-        // Retry-After reports the seconds remaining in the current fixed window,
-        // not the full window length.
         var retryAfter = int.Parse(response.Headers.GetValues("Retry-After").Single());
         Assert.InRange(retryAfter, 1, 60);
         Assert.Single(_upstream.ReceivedRequests);
@@ -48,8 +45,6 @@ public sealed class RateLimitEndToEndTests : IAsyncLifetime
     [Trait("Contract", "PluginIsolation")]
     public async Task Same_plugin_on_four_routes_keeps_separate_configs_and_counters()
     {
-        // Distinct quotas per route; counters are keyed by route id, so exhausting one
-        // route must neither consume nor widen another's quota.
         var routes = GatewayTestHelpers.RoutesWithPlugin(_upstream.BaseUrl, "rate-limit",
             new { windowSeconds = 60, maxRequests = 1 },
             new { windowSeconds = 60, maxRequests = 2 },

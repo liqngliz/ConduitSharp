@@ -25,7 +25,6 @@ public sealed class PluginChainOrderTests
     [Fact]
     public async Task Request_down_response_up_and_cache_hit_stops_at_cache_from_real_process_logs()
     {
-        // Request 1: cache miss. Down 1,2,3,(cache),5 then up 5,(cache),3,2,1. Forward reached.
         _fx.ClearProbeEvents();
         var r1 = await _fx.Client.GetAsync("/data");
         var seq1 = await SettleAsync();
@@ -36,8 +35,6 @@ public sealed class PluginChainOrderTests
             seq1);
         Assert.Equal(1, _fx.UpstreamHits);
 
-        // Request 2: same path, cache HIT. Down 1,2,3 then cache answers and unwinds 3,2,1.
-        // probe-e never runs; the forward is never reached.
         _fx.ClearProbeEvents();
         var r2 = await _fx.Client.GetAsync("/data");
         var seq2 = await SettleAsync();
@@ -48,9 +45,8 @@ public sealed class PluginChainOrderTests
             new[] { "a:enter", "b:enter", "c:enter", "c:exit", "b:exit", "a:exit" },
             seq2);
         Assert.DoesNotContain("e:enter", seq2);
-        Assert.Equal(1, _fx.UpstreamHits); // forward NOT reached on the hit
+        Assert.Equal(1, _fx.UpstreamHits);
 
-        // Request 3: different path, cache miss again. Full chain, forward reached a second time.
         _fx.ClearProbeEvents();
         var r3 = await _fx.Client.GetAsync("/other");
         var seq3 = await SettleAsync();
@@ -62,8 +58,6 @@ public sealed class PluginChainOrderTests
         Assert.Equal(2, _fx.UpstreamHits);
     }
 
-    // The probe log records arrive over a redirected stdout pipe, so they trail the HTTP response
-    // slightly. Poll until the sequence stops growing.
     private async Task<string[]> SettleAsync()
     {
         var previous = Array.Empty<string>();

@@ -51,8 +51,6 @@ public sealed class GrafanaStackE2ETests(GrafanaStackFixture fx)
             response.EnsureSuccessStatusCode();
         }
 
-        // http.server.request.duration comes from AddAspNetCoreInstrumentation and is
-        // exported OTLP → collector → Prometheus exporter → scraped by Prometheus.
         var query = Uri.EscapeDataString("sum(http_server_request_duration_seconds_count)");
         var (found, body) = await fx.PollUntilAsync(
             $"{GrafanaStackFixture.PrometheusUrl}/api/v1/query?query={query}",
@@ -77,15 +75,6 @@ public sealed class GrafanaStackE2ETests(GrafanaStackFixture fx)
             response.EnsureSuccessStatusCode();
         }
 
-        // The test above only proves AddAspNetCoreInstrumentation works — it would pass even if
-        // every ConduitSharp metric were dead. And they *were*: the YARP re-platforming deleted
-        // the middleware that notified IRequestObserver, so OtelMetricsObserver stopped recording
-        // and nothing failed. This asserts on the gateway's own instruments
-        // (conduitsharp.gateway.requests / .request.duration, via OtelMetricsObserver).
-        //
-        // Matched by regex rather than an exact name: the OTLP → Prometheus exporter mangles names
-        // (dots to underscores, unit suffixes, _total on counters), and pinning that mangling would
-        // couple the test to the collector's conventions rather than to our instruments.
         var query = Uri.EscapeDataString("""count({__name__=~"conduitsharp_gateway_request.*"})""");
         var (found, body) = await fx.PollUntilAsync(
             $"{GrafanaStackFixture.PrometheusUrl}/api/v1/query?query={query}",
@@ -123,10 +112,6 @@ public sealed class GrafanaStackE2ETests(GrafanaStackFixture fx)
             $"Gateway logs did not reach Loki within 60s. Last response: {body}");
     }
 
-    // Filters on log body text rather than a severity label: Loki's default OTLP→label
-    // mapping doesn't promote severity to an indexed stream label, and the formatted
-    // message text is stable (IncludeFormattedMessage=true) — matching on it here avoids
-    // coupling the test to Loki's internal OTLP ingestion conventions.
     [Fact]
     public async Task Loki_ReceivesErrorDemoFailureMessage()
     {
@@ -164,9 +149,6 @@ public sealed class GrafanaStackE2ETests(GrafanaStackFixture fx)
         using var errorResponse = await fx.Client.GetAsync($"{GrafanaStackFixture.GatewayUrl}/error-demo");
         Assert.Equal(HttpStatusCode.BadGateway, errorResponse.StatusCode);
 
-        // "status=200" is literal text in StructuredRequestLogger's rendered message
-        // ("... status={StatusCode} ..."), unlike the EventId name ("RequestCompleted"),
-        // which never appears in the log body itself.
         var infoQuery = Uri.EscapeDataString(
             """{service_name="ConduitSharp.Gateway"} |= `status=200`""");
         var (infoFound, infoBody) = await fx.PollUntilAsync(
@@ -179,8 +161,6 @@ public sealed class GrafanaStackE2ETests(GrafanaStackFixture fx)
         Assert.True(infoFound,
             $"No Information-level request log reached Loki within 60s. Last response: {infoBody}");
 
-        // /error-demo (seeded in GrafanaStackFixture) hits an unreachable upstream, so the
-        // gateway logs a 502 at Error via StructuredRequestLogger's [{RequestId}] ... [error] line.
         var errorQuery = Uri.EscapeDataString(
             """{service_name="ConduitSharp.Gateway"} |= `[error]`""");
         var (errorFound, errorBody) = await fx.PollUntilAsync(
@@ -199,7 +179,6 @@ public sealed class GrafanaStackE2ETests(GrafanaStackFixture fx)
     {
         if (!fx.DockerAvailable) return;
 
-        // Sanity: telemetry export must not interfere with the data path.
         using var request = new HttpRequestMessage(
             HttpMethod.Get, $"{GrafanaStackFixture.GatewayUrl}/api/inventory");
         request.Headers.Add("X-Api-Key", GrafanaStackFixture.ApiKey);
@@ -241,9 +220,6 @@ public sealed class GrafanaStackE2ETests(GrafanaStackFixture fx)
     {
         if (!fx.DockerAvailable) return;
 
-        // The streamOnly upload route carries body-capture-streaming: the tee logs a bounded
-        // prefix while YARP streams, and the interceptor stamps the route id into the record.
-        // Matching body text AND route id in one record proves capture reached Loki attributed.
         using (var request = new HttpRequestMessage(HttpMethod.Post, $"{GrafanaStackFixture.GatewayUrl}/api/upload/file"))
         {
             request.Content = new StringContent("""{"upload":"loki-proof"}""", System.Text.Encoding.UTF8, "application/json");

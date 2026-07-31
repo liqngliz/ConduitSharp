@@ -37,7 +37,6 @@ public sealed class FakeOtlpCollector : IAsyncDisposable
 
     public static Task<FakeOtlpCollector> StartAsync()
     {
-        // HttpListener cannot bind port 0 — probe random high ports until one sticks.
         for (var attempt = 0; ; attempt++)
         {
             var port     = Random.Shared.Next(20000, 60000);
@@ -61,7 +60,7 @@ public sealed class FakeOtlpCollector : IAsyncDisposable
         {
             HttpListenerContext ctx;
             try { ctx = await _listener.GetContextAsync(); }
-            catch (Exception) { return; } // listener stopped
+            catch (Exception) { return; }
 
             try
             {
@@ -71,7 +70,6 @@ public sealed class FakeOtlpCollector : IAsyncDisposable
                     .GetOrAdd(ctx.Request.Url!.AbsolutePath, _ => new ConcurrentQueue<byte[]>())
                     .Enqueue(ms.ToArray());
 
-                // An empty body is a valid (all-accepted) Export*ServiceResponse message.
                 ctx.Response.StatusCode  = 200;
                 ctx.Response.ContentType = "application/x-protobuf";
                 ctx.Response.Close();

@@ -35,16 +35,13 @@ internal sealed class ConsecutiveFailuresHealthPolicy(
     /// </summary>
     public string Name => YarpConfigTranslator.ConsecutiveFailuresPolicyName;
 
-    // ponytail: never trimmed — bounded by (clusters x destinations), i.e. the size of routes.json.
     private readonly ConcurrentDictionary<(string Cluster, string Destination), int> _consecutiveFailures =
         new();
 
     public void RequestProxied(HttpContext context, ClusterState cluster, DestinationState destination)
     {
-        // Client went away mid-flight — tells us nothing about the node's health.
         if (context.RequestAborted.IsCancellationRequested) return;
 
-        // ClusterId == RouteId, so the gateway half of this route's config is one lookup away.
         if (routes.TryGetRoute(cluster.ClusterId) is not { CircuitBreaker: { } breaker }) return;
         if (breaker.Threshold <= 0) return;
 
@@ -61,9 +58,6 @@ internal sealed class ConsecutiveFailuresHealthPolicy(
 
         if (_consecutiveFailures.AddOrUpdate(key, 1, (_, count) => count + 1) < breaker.Threshold) return;
 
-        // Reactivation resets the destination to Unknown, not Healthy, and leaves the counter at
-        // the threshold: a node that fails its trial request opens again immediately, while one
-        // that succeeds resets above.
         healthUpdater.SetPassive(
             cluster, destination, DestinationHealth.Unhealthy,
             TimeSpan.FromMilliseconds(breaker.CooldownMs));

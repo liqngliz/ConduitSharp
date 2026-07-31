@@ -10,7 +10,7 @@ namespace ConduitSharp.Integration.Tests.Gateway;
 /// </summary>
 public sealed class CaptureMechanismTests
 {
-    private const long Body = 4 * 1024 * 1024; // 4 MB — spans the 1 MiB spill threshold
+    private const long Body = 4 * 1024 * 1024;
 
     private static async Task<(MemoryReading Reading, int Calls, HttpStatusCode Status, int Captured)> RunAsync(
         HttpMethod method, bool retry = false, int failFirst = 0, string mediaType = "text/plain")
@@ -34,9 +34,6 @@ public sealed class CaptureMechanismTests
     [Fact]
     public async Task StreamingRoute_DoesNotForceBuffering_NoSpill()
     {
-        // ReadsRequestBody=false → a plain route stays streaming; the tee never forces a spill.
-        // (That the tee actually captures is asserted deterministically by the full-capture RSS test
-        // in the E2E suite; HttpLogging's async end-of-request emission makes a count race here.)
         var r = await RunAsync(HttpMethod.Post, mediaType: "text/plain");
 
         Assert.Equal(HttpStatusCode.OK, r.Status);
@@ -47,12 +44,10 @@ public sealed class CaptureMechanismTests
     [Fact]
     public async Task RetryRoute_ReusesBuffer_CapturesBinary_AndReplays()
     {
-        // On a retry route the body is buffered (for the rewind), so the plugin reuses that seekable
-        // buffer — reading raw bytes, which captures a binary body the tee path would silently skip.
         var r = await RunAsync(HttpMethod.Put, retry: true, failFirst: 1, mediaType: "application/octet-stream");
 
         Assert.Equal(HttpStatusCode.OK, r.Status);
-        Assert.Equal(2, r.Calls); // replayed
+        Assert.Equal(2, r.Calls);
         Assert.True(r.Captured > 0, "reuse branch should capture a binary body");
     }
 }

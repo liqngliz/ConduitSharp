@@ -33,20 +33,15 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
     [Fact]
     public void CaptureMemoryBytes_DeclaresTheRentedBuffer_SoTheGatewayCanBudgetIt()
     {
-        // The plugin rents a maxSize buffer per request and holds it until the background writer
-        // drains the queue. Undeclared, that multiplies by concurrency with nothing to shed it —
-        // declaring it puts the RAM under MaxRamBufferedBodyBytes and the gateway's 503.
         using var plugin = new BodyCaptureToFilePlugin(_configSub);
         var config = JsonDocument.Parse("""{ "request": { "maxSize": 8192 }, "response": { "maxSize": 4096 } }""").RootElement;
 
-        Assert.Equal(8192 + 4096, plugin.CaptureMemoryBytes(config)); // sum of both directions
+        Assert.Equal(8192 + 4096, plugin.CaptureMemoryBytes(config));
     }
 
     [Fact]
     public void CaptureMemoryBytes_WithoutMaxSize_DeclaresTheDefault_NotZero()
     {
-        // Zero would mean "this plugin holds no memory of its own", which is exactly the silent
-        // gap this closes: a route omitting maxSize still rents the 4 KiB default.
         using var plugin = new BodyCaptureToFilePlugin(_configSub);
 
         Assert.Equal(4 * 1024, plugin.CaptureMemoryBytes(JsonDocument.Parse("""{"request":{}}""").RootElement));
@@ -59,7 +54,7 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         var config = JsonDocument.Parse(json).RootElement;
         
         var plugin = new BodyCaptureToFilePlugin(_configSub);
-        plugin.ValidateConfig(config); // Should not throw
+        plugin.ValidateConfig(config);
     }
 
     [Fact]
@@ -101,7 +96,6 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
 
         Assert.True(nextCalled);
 
-        // Give the background thread a moment to flush
         await Task.Delay(100);
 
         var fileContents = await File.ReadAllLinesAsync(_tempLogFile);
@@ -129,7 +123,6 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
 
         await plugin.ExecuteAsync(context, config, _ => Task.CompletedTask);
 
-        // Give the background thread a moment to flush
         await Task.Delay(100);
 
         var fileContents = await File.ReadAllLinesAsync(_tempLogFile);
@@ -158,7 +151,6 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
 
         await Task.WhenAll(tasks);
 
-        // Give the background thread time to flush all 100 requests
         await Task.Delay(250);
 
         var fileContents = await File.ReadAllLinesAsync(_tempLogFile);
@@ -180,8 +172,6 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_BoundsCapture_WhenNoMaxSizeConfigured()
     {
-        // Omitting maxSize used to copy the whole body twice (MemoryStream + a pooled rent sized to
-        // it), both outside the gateway's buffering budget. The default is what stops that.
         using var plugin = Build();
 
         var context = new DefaultHttpContext();
@@ -202,8 +192,6 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_RollsFile_WhenMaxFileBytesExceeded()
     {
-        // Without a roll the sink grows until the disk (or the tmpfs cap) stops it, and the writer
-        // dies on ENOSPC with every request still succeeding. Tiny cap so a handful of entries trip it.
         var plugin = new BodyCaptureToFilePlugin(_configSub);
         var json = $$"""{ "logPath": "{{_tempLogFile.Replace("\\", "\\\\")}}", "request": { "maxSize": 1024 }, "maxFileBytes": 200 }""";
         plugin.ValidateConfig(JsonDocument.Parse(json).RootElement);
@@ -217,7 +205,7 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
                 context.Request.Path = $"/api/roll-{i}";
                 context.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(new string('x', 100)));
                 await plugin.ExecuteAsync(context, config, _ => Task.CompletedTask);
-                await Task.Delay(15); // let the writer drain between entries so it can roll
+                await Task.Delay(15);
             }
 
             await Task.Delay(250);
@@ -225,8 +213,6 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
 
         var backup = _tempLogFile + ".1";
         Assert.True(File.Exists(backup), "expected a rolled .1 backup once maxFileBytes was exceeded");
-        // The live file is bounded by the roll — and right after one it may not exist at all until
-        // the next entry recreates it (FileMode.Append). Either way it must not hold everything.
         var liveLength = File.Exists(_tempLogFile) ? new FileInfo(_tempLogFile).Length : 0;
         Assert.True(liveLength < 20 * 100, $"live file should be bounded by the roll, was {liveLength}");
 
@@ -240,7 +226,7 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/resp";
-        context.Request.Body = new MemoryStream(); // no request block, so request is not captured
+        context.Request.Body = new MemoryStream();
         var sink = new MemoryStream();
         context.Response.Body = sink;
 
@@ -253,7 +239,7 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         var doc = JsonDocument.Parse(line).RootElement;
         Assert.Equal("response", doc.GetProperty("direction").GetString());
         Assert.Equal("the response payload", doc.GetProperty("body").GetString());
-        Assert.Equal("the response payload", Encoding.UTF8.GetString(sink.ToArray())); // client got every byte
+        Assert.Equal("the response payload", Encoding.UTF8.GetString(sink.ToArray()));
     }
 
     [Fact]

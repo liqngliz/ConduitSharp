@@ -30,8 +30,6 @@ internal sealed class UpstreamRetry
     /// <summary>The route's effective retryOn status set, read by the response transform.</summary>
     internal const string RetryOnKey = "ConduitSharp.RetryOn";
 
-    // Polly outcome for "done — do not retry" regardless of the response status
-    // (last attempt, response already streaming, or client gone).
     private const int DoNotRetry = 0;
 
     private static readonly HashSet<string> IdempotentMethods =
@@ -91,7 +89,6 @@ internal sealed class UpstreamRetry
         using var activity = PipelineTelemetry.ActivitySource.StartActivity("gateway.forward");
         activity?.SetTag("conduitsharp.route_id", routeId);
 
-        // Look the route up first: whether a non-idempotent method may retry lives in its config.
         if (!_routes.TryGetValue(routeId, out var retry)
             || (!IdempotentMethods.Contains(context.Request.Method) && !retry.Config.RetryNonIdempotent))
         {
@@ -105,12 +102,8 @@ internal sealed class UpstreamRetry
 
         var feature = context.GetReverseProxyFeature();
 
-        // Load balancing narrows AvailableDestinations to the single node it picked, so each
-        // attempt must start from the full set to be able to fail over.
         var allDestinations = feature.AvailableDestinations;
 
-        // Response headers a plugin set before forwarding are the client's, not the attempt's —
-        // keep them across a reset.
         var pluginHeaders = context.Response.Headers.ToList();
 
         var attempt = 0;

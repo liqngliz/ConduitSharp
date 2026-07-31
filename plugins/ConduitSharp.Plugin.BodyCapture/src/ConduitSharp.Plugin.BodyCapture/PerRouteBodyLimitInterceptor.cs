@@ -25,6 +25,5 @@ internal sealed class PerRouteBodyLimitInterceptor : IHttpLoggingInterceptor
         return default;
     }
 
-    // Request bodies only — the response is captured by ResponsePrefixStream, not HttpLogging.
     public ValueTask OnResponseAsync(HttpLoggingInterceptorContext logging) => default;
 }

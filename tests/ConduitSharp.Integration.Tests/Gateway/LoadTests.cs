@@ -31,10 +31,6 @@ public sealed class LoadTests : IAsyncLifetime
         await _upstream.DisposeAsync();
     }
 
-    // -------------------------------------------------------------------------
-    // Concurrency
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ConcurrentRequests_100Parallel_AllReturn200()
     {
@@ -87,10 +83,6 @@ public sealed class LoadTests : IAsyncLifetime
         Assert.All(responses, r => Assert.Equal(HttpStatusCode.OK, r.StatusCode));
     }
 
-    // -------------------------------------------------------------------------
-    // Sustained throughput
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task SequentialRequests_300_AllReturn200()
     {
@@ -121,14 +113,9 @@ public sealed class LoadTests : IAsyncLifetime
             $"{count} concurrent requests took {sw.ElapsedMilliseconds}ms (budget: {budgetMs}ms)");
     }
 
-    // -------------------------------------------------------------------------
-    // Memory stability
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task MemoryStableUnderLoad_NoUnboundedGrowth()
     {
-        // Warm up to stabilise the heap before taking a baseline.
         for (var i = 0; i < 20; i++)
             await _client.GetAsync("/warmup");
         _upstream.Reset();
@@ -148,16 +135,12 @@ public sealed class LoadTests : IAsyncLifetime
         GC.WaitForPendingFinalizers();
         var after = GC.GetTotalMemory(forceFullCollection: true);
 
-        const long maxGrowthBytes = 50 * 1024 * 1024; // 50 MB
+        const long maxGrowthBytes = 50 * 1024 * 1024;
         var growthBytes = after - before;
         Assert.True(growthBytes < maxGrowthBytes,
             $"Heap grew by {growthBytes / 1024 / 1024} MB after {count} requests (limit: 50 MB). " +
             "This suggests an unbounded buffer or missing disposal.");
     }
-
-    // -------------------------------------------------------------------------
-    // Concurrency through auth plugin
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ConcurrentRequestsThroughApiKeyAuth_AllAuthenticateCorrectly()

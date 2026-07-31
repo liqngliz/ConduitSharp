@@ -23,9 +23,6 @@ public class PluginNameExtensionsTests
     [Fact]
     public void ToId_MatchesWhatStrictEnumConverterAcceptsFromRoutesJson()
     {
-        // routes.json declares plugins with the same kebab-case spelling ToId() produces —
-        // this keeps the two in lockstep so a plugin's Id always matches the "name" a route
-        // config would use to select it.
         foreach (var name in Enum.GetValues<PluginName>())
         {
             var id = name.ToId();

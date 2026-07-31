@@ -14,10 +14,6 @@ public sealed class ApiKeyAuthEndToEndTests : IAsyncLifetime
         GatewayTestHelpers.RouteWithPlugin(_upstream.BaseUrl, "api-key-auth",
             new { header = "X-Api-Key", keys = new[] { "valid-key" } });
 
-    // -------------------------------------------------------------------------
-    // api-key-auth (plaintext)
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task NoKeyHeader_Returns401()
     {
@@ -60,8 +56,6 @@ public sealed class ApiKeyAuthEndToEndTests : IAsyncLifetime
     [Trait("Contract", "PluginIsolation")]
     public async Task Same_plugin_on_four_routes_keeps_separate_configs()
     {
-        // Overlapping key lists across routes: a merge or overwrite of any route's
-        // config breaks at least one cell of the 4x4 matrix below.
         var routes = GatewayTestHelpers.RoutesWithPlugin(_upstream.BaseUrl, "api-key-auth",
             new { header = "X-Api-Key", keys = new[] { "key-a" } },
             new { header = "X-Api-Key", keys = new[] { "key-b" } },
@@ -97,7 +91,6 @@ public sealed class ApiKeyAuthEndToEndTests : IAsyncLifetime
     [Trait("Contract", "PluginIsolation")]
     public async Task Hashed_same_plugin_on_four_routes_keeps_separate_configs()
     {
-        // Same matrix as the plaintext variant, keys stored as SHA-256 hashes.
         string H(string raw) => PluginTestHelpers.Sha256Hex(raw);
         var routes = GatewayTestHelpers.RoutesWithPlugin(_upstream.BaseUrl, "api-key-auth-hashed",
             new { header = "X-Api-Key", keys = new[] { H("key-a") } },
@@ -129,10 +122,6 @@ public sealed class ApiKeyAuthEndToEndTests : IAsyncLifetime
                 $"route /{route} with {key}: expected {expected}, got {response.StatusCode}");
         }
     }
-
-    // -------------------------------------------------------------------------
-    // api-key-auth-hashed (SHA-256)
-    // -------------------------------------------------------------------------
 
     private string HashedRoutes(string rawKey) =>
         GatewayTestHelpers.RouteWithPlugin(_upstream.BaseUrl, "api-key-auth-hashed",

@@ -56,8 +56,6 @@ public sealed class JwtAuthEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task SignedTokenWithNonIntegerExp_Returns401_Not500()
     {
-        // Regression: exp.GetInt64() on a string exp threw InvalidOperationException,
-        // which surfaced as a 500 from the middleware's catch-all instead of a 401.
         var token = PluginTestHelpers.BuildHs256Token(
             PluginTestHelpers.TestSecretBase64,
             extraClaims: new() { ["exp"] = "1700000000" });
@@ -104,12 +102,9 @@ public sealed class JwtAuthEndToEndTests : IAsyncLifetime
     [Trait("Contract", "PluginIsolation")]
     public async Task Same_plugin_on_four_routes_keeps_separate_configs()
     {
-        // 32-byte secrets (HS256 minimum), one per letter.
         string Secret(char c) =>
             Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"integration-test-secret-key-{c}!!!"));
 
-        // Routes a/b: single signingKey. Routes c/d: providers lists with overlapping
-        // keys — a merge or overwrite of any route's config breaks a matrix cell.
         var routes = GatewayTestHelpers.RoutesWithPlugin(_upstream.BaseUrl, "jwt-auth",
             new { signingKey = Secret('a'), algorithm = "HS256" },
             new { signingKey = Secret('b'), algorithm = "HS256" },
@@ -150,10 +145,6 @@ public sealed class JwtAuthEndToEndTests : IAsyncLifetime
                 $"route /{route} with token signed by key {signer}: expected {expected}, got {response.StatusCode}");
         }
     }
-
-    // -------------------------------------------------------------------------
-    // requiredClaims (RBAC) — a valid token lacking permission is 403, not 401
-    // -------------------------------------------------------------------------
 
     private string RoutesWithRequiredRole() =>
         GatewayTestHelpers.RouteWithPlugin(_upstream.BaseUrl, "jwt-auth", new

@@ -5,7 +5,6 @@ using Xunit;
 
 namespace ConduitSharp.Cache.RedisProtocol.E2E.Tests;
 
-// Two collections so the same distributed tests run against both a Redis and a Valkey server.
 [CollectionDefinition("Redis Cache E2E")]
 public sealed class RedisCollection  : ICollectionFixture<RedisFixture>;
 
@@ -35,14 +34,13 @@ public abstract class CacheServerFixture(string image) : IAsyncLifetime
         if (!await IsDockerAvailableAsync())
             return;
 
-        // Pull first (separate, generous timeout) so a cold image doesn't fail `docker run`.
         await RunAsync("docker", ["pull", image], 300, ignoreFailure: true);
 
         var port = FreePort();
         var (exit, id, _) = await RunAsync("docker",
             ["run", "-d", "-p", $"127.0.0.1:{port}:6379", image], 60, ignoreFailure: true);
         if (exit != 0)
-            return; // image unavailable / run failed → skip
+            return;
 
         _containerId     = id.Trim();
         ConnectionString = $"127.0.0.1:{port}";
@@ -53,7 +51,7 @@ public abstract class CacheServerFixture(string image) : IAsyncLifetime
         }
         catch
         {
-            await DisposeAsync(); // clean up the half-started container
+            await DisposeAsync();
         }
     }
 
@@ -74,7 +72,7 @@ public abstract class CacheServerFixture(string image) : IAsyncLifetime
                     ConnectionString + ",abortConnect=false");
                 if ((await mux.GetDatabase().PingAsync()) >= TimeSpan.Zero) return;
             }
-            catch { /* not ready */ }
+            catch { }
             await Task.Delay(500);
         }
         throw new TimeoutException($"{image} did not become ready within 30s.");
@@ -106,7 +104,7 @@ public abstract class CacheServerFixture(string image) : IAsyncLifetime
 
         Process? started;
         try { started = Process.Start(psi); }
-        catch (Exception ex) { return (-1, "", ex.Message); } // e.g. docker not installed → treated as unavailable
+        catch (Exception ex) { return (-1, "", ex.Message); }
         if (started is null) return (-1, "", "process did not start");
 
         using var p = started;

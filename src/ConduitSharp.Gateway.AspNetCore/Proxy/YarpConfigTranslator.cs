@@ -44,12 +44,9 @@ internal static class YarpConfigTranslator
 
             routes.Add(route.Route with
             {
-                // Routes and clusters are 1:1, so both ids are the route's id — never re-typed.
                 RouteId   = route.Id,
                 ClusterId = route.Id,
 
-                // Declaration order breaks overlaps: endpoint selection prefers the lowest Order,
-                // so the first route declared in routes.json wins. An explicit Order still wins.
                 Order = route.Route.Order ?? i,
             });
 
@@ -63,10 +60,6 @@ internal static class YarpConfigTranslator
         return (routes, clusters);
     }
 
-    // The circuit breaker is a passive health-check policy. Only its *enablement* crosses into
-    // YARP — the threshold and cooldown are read from the route's own CircuitBreakerConfig, so
-    // nothing rides along in ClusterConfig.Metadata as a string. Any active health check the user
-    // configured is preserved.
     private static HealthCheckConfig? WithCircuitBreaker(
         HealthCheckConfig? configured, CircuitBreakerConfig? breaker)
     {

@@ -11,17 +11,6 @@ using Microsoft.Extensions.Logging;
 
 namespace ConduitSharp.E2E.Shared;
 
-// Real-Kestrel harness for measuring the memory cost of request-body capture. There is one capture
-// plugin now — BodyCapturePlugin (variant "body-capture") — which picks its path per request:
-//   - route already buffered (retry / readsBody): reuse the seekable buffer, read the prefix off it
-//   - plain streaming route: tee a <=ceiling prefix via HttpLogging
-// So a route's shape (retry on/off), not a plugin choice, decides the behaviour.
-//
-// Both the gateway and the upstream run as real Kestrel servers on loopback in THIS process. The
-// client streams the body (StreamingContent never materializes it) and the upstream drains+discards
-// it, so neither side accumulates the body — any memory the sampler sees is the gateway's capture.
-// Single-process, so RSS carries GC noise; PeakManagedHeap + PeakSpillBytes are the sharp signals.
-
 public enum CaptureStyle { Capture, None }
 
 /// <summary>Peak resource use observed across one request, sampled on a background loop.</summary>
@@ -60,7 +49,6 @@ public sealed class MemorySampler
 
     public void Start()
     {
-        // Collect so the floor excludes prior-test garbage, then measure the idle baseline to subtract.
         GC.Collect(2, GCCollectionMode.Forced, blocking: true);
         GC.WaitForPendingFinalizers();
         GC.Collect(2, GCCollectionMode.Forced, blocking: true);
@@ -75,9 +63,9 @@ public sealed class MemorySampler
 
     public MemoryReading Stop()
     {
-        Sample(); // one final reading — the peak may be at the very end
+        Sample();
         _cts.Cancel();
-        try { _loop?.Wait(); } catch (AggregateException) { /* cancellation */ }
+        try { _loop?.Wait(); } catch (AggregateException) { }
         var elapsedMs   = (long)Stopwatch.GetElapsedTime(_startTicks).TotalMilliseconds;
         var allocated   = GC.GetTotalAllocatedBytes(precise: false) - _startAllocated;
         return new MemoryReading(_peakRss, _peakHeap, _peakSpill, allocated, elapsedMs);
@@ -103,9 +91,9 @@ public sealed class MemorySampler
         {
             if (Directory.Exists(_spillDir))
                 foreach (var f in Directory.EnumerateFiles(_spillDir))
-                    try { spill += new FileInfo(f).Length; } catch { /* file rolled/deleted mid-scan */ }
+                    try { spill += new FileInfo(f).Length; } catch { }
         }
-        catch { /* dir churned */ }
+        catch { }
         _peakSpill = Math.Max(_peakSpill, spill);
     }
 }
@@ -120,9 +108,6 @@ public sealed class StreamingContent : System.Net.Http.HttpContent
     {
         TotalBytes = totalBytes;
         _fill = fill;
-        // Media type matters: HttpLogging (the tee) only captures bodies of text-ish media types
-        // (text/*, application/json, ...). A binary type makes the tee a no-op — so a fair tee-vs-buffer
-        // capture comparison must use a type HttpLogging will actually tee.
         Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mediaType);
     }
 
@@ -167,7 +152,7 @@ public sealed class DiscardUpstream : IAsyncDisposable
         {
             var n = Interlocked.Increment(ref self!._calls);
             var buf = System.Buffers.ArrayPool<byte>.Shared.Rent(64 * 1024);
-            try { while (await ctx.Request.Body.ReadAsync(buf) > 0) { /* discard */ } }
+            try { while (await ctx.Request.Body.ReadAsync(buf) > 0) { } }
             finally { System.Buffers.ArrayPool<byte>.Shared.Return(buf); }
 
             if (n <= self._failFirst) { ctx.Response.StatusCode = 503; return; }
@@ -219,10 +204,6 @@ public sealed class CaptureGatewayHost : IAsyncDisposable
         builder.Environment.EnvironmentName = "Test";
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = null);
-        // MUST be Information-enabled: HttpLogging (the tee) skips buffering the body when its log
-        // level is disabled, which would make the tee a no-op and every measurement a lie. This
-        // provider is enabled but discards the formatted message (counting records) so the tee runs
-        // for real without printing a 500 MB body.
         var captureLog = new CaptureCountingLoggerProvider();
         builder.Logging.ClearProviders();
         builder.Logging.SetMinimumLevel(LogLevel.Information);
@@ -257,11 +238,6 @@ public sealed class CaptureGatewayHost : IAsyncDisposable
         try { Directory.Delete(SpillDir, recursive: true); } catch { }
     }
 
-    // Enabled at Information (so HttpLogging actually buffers + emits), but the sink drops the message
-    // after counting it — the tee's real memory cost is the buffered body, which happens before Log().
-    // Counts ONLY records under the capture category: the tee's HttpLogging records are re-homed there
-    // (BodyCaptureLoggerFactory) and the reuse branch logs there directly, so this excludes unrelated
-    // gateway/YARP Information logs that would otherwise inflate the count.
     private sealed class CaptureCountingLoggerProvider : ILoggerProvider
     {
         private static readonly string CaptureCategory =
@@ -272,7 +248,6 @@ public sealed class CaptureGatewayHost : IAsyncDisposable
             categoryName == CaptureCategory ? new CountingLogger(this) : EnabledNullLogger.Instance;
         public void Dispose() { }
 
-        // Enabled (so HttpLogging still buffers), but discards.
         private sealed class EnabledNullLogger : ILogger
         {
             public static readonly EnabledNullLogger Instance = new();

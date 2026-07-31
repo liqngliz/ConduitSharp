@@ -14,8 +14,6 @@ public sealed class HeaderTransformPluginTests
     private static HttpContext MakeContext(Dictionary<string, string>? requestHeaders = null)
     {
         var context = new DefaultHttpContext();
-        // Default response feature stores OnStarting callbacks but never fires them; swap in one that
-        // does, so response-block assertions exercise the real deferred path.
         context.Features.Set<IHttpResponseFeature>(new FiringResponseFeature());
         context.Request.Method = "GET";
         context.Request.Path = "/test";
@@ -27,12 +25,9 @@ public sealed class HeaderTransformPluginTests
 
     private static JsonElement Config(string json) => JsonDocument.Parse(json).RootElement;
 
-    // Fires the registered Response.OnStarting callbacks the way the server would just before flush.
     private static Task StartResponse(HttpContext context) =>
         ((FiringResponseFeature)context.Features.Get<IHttpResponseFeature>()!).FireOnStartingAsync();
 
-    // Minimal IHttpResponseFeature that actually invokes OnStarting callbacks (in reverse
-    // registration order, as the server does) when the response starts.
     private sealed class FiringResponseFeature : IHttpResponseFeature
     {
         private readonly List<(Func<object, Task> cb, object state)> _onStarting = [];
@@ -51,10 +46,6 @@ public sealed class HeaderTransformPluginTests
                 await _onStarting[i].cb(_onStarting[i].state);
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Request block
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Name_IsHeaderTransform() =>
@@ -100,10 +91,6 @@ public sealed class HeaderTransformPluginTests
         Assert.Equal("new", context.Request.Headers["X-Foo"].ToString());
     }
 
-    // -------------------------------------------------------------------------
-    // Response block — the new capability; applied via OnStarting
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task Response_Remove_StripsUpstreamHeaderBeforeSend()
     {
@@ -130,16 +117,11 @@ public sealed class HeaderTransformPluginTests
     [Fact]
     public async Task Response_NotAppliedUntilResponseStarts()
     {
-        // The mutation is deferred to OnStarting, so it must not touch the response before then.
         var context = MakeContext();
         context.Response.Headers["Server"] = "kestrel";
         await new HeaderTransformPlugin().ExecuteAsync(context, Config("""{"response":{"remove":["Server"]}}"""), NoOp);
-        Assert.True(context.Response.Headers.ContainsKey("Server")); // still there — response hasn't started
+        Assert.True(context.Response.Headers.ContainsKey("Server"));
     }
-
-    // -------------------------------------------------------------------------
-    // Both directions in one config
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task RequestAndResponse_BothApplied()
@@ -157,10 +139,6 @@ public sealed class HeaderTransformPluginTests
         Assert.False(context.Response.Headers.ContainsKey("Server"));
     }
 
-    // -------------------------------------------------------------------------
-    // Empty / missing blocks — no-op, next still called
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task EmptyConfig_PassesThrough_AndCallsNext()
     {
@@ -173,10 +151,6 @@ public sealed class HeaderTransformPluginTests
         Assert.Equal("application/json", context.Request.Headers["Accept"].ToString());
         Assert.True(called);
     }
-
-    // -------------------------------------------------------------------------
-    // ValidateConfig — the flat shape that silently no-op'd is now a startup error
-    // -------------------------------------------------------------------------
 
     [Theory]
     [InlineData("""{"add":{"X-A":"1"}}""")]

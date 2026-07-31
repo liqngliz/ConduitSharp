@@ -37,8 +37,6 @@ public sealed class OtlpExportTests
             var response = await client.GetAsync("/api/traced");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-            // Spans go through the batch export processor (the SDK default, ~5 s scheduled
-            // delay) and the HTTP POST to the collector is async, hence the polling window.
             Assert.True(
                 await collector.WaitForPayloadContainingAsync(
                     "/v1/traces", "gateway.request", TimeSpan.FromSeconds(15)),

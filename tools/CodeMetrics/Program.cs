@@ -4,23 +4,11 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-// Cross-platform code metrics — the Visual Studio "Calculate Code Metrics" equivalent
-// (cyclomatic complexity, source lines, maintainability index) computed with Roslyn.
-//
-//   dotnet run --project tools/CodeMetrics -- <sourceRoot> <outputDir>
-//
-// Defaults: sourceRoot=src, outputDir=TestResults/metrics. Emits metrics.csv and
-// metrics.html and prints a summary + the worst offenders.
-
-// Several roots, separated by ';', so plugins are measured alongside src rather than
-// silently left out of every report.
 var sourceRoots = (args.Length > 0 ? args[0] : "src")
     .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 var outputDir  = args.Length > 1 ? args[1] : Path.Combine("TestResults", "metrics");
 Directory.CreateDirectory(outputDir);
 
-// Each file keeps the root it came from, so the project column stays the first segment
-// under that root (ConduitSharp.Core under src, ConduitSharp.Plugin.X under plugins).
 var files = sourceRoots
     .Where(Directory.Exists)
     .SelectMany(root => Directory
@@ -74,8 +62,6 @@ WriteHtml(Path.Combine(outputDir, "metrics.html"), rows);
 PrintSummary(rows, outputDir);
 return 0;
 
-// ---------------------------------------------------------------------------
-
 static int CountBranches(SyntaxNode body) =>
     body.DescendantNodes().Sum(n => n switch
     {
@@ -94,7 +80,6 @@ static int CountBranches(SyntaxNode body) =>
         _ => 0,
     });
 
-// Non-blank, non-comment-only source lines within the member.
 static int SourceLines(SyntaxNode member)
 {
     var span  = member.GetLocation().GetLineSpan();
@@ -110,8 +95,6 @@ static int SourceLines(SyntaxNode member)
     });
 }
 
-// Halstead volume V = N * log2(n): operators = punctuation + keyword tokens,
-// operands = identifiers + literals.
 static double HalsteadVolume(SyntaxNode body)
 {
     var distinctOps = new HashSet<string>();
@@ -142,7 +125,6 @@ static bool IsLiteral(SyntaxToken t) =>
     || t.IsKind(SyntaxKind.CharacterLiteralToken) || t.IsKind(SyntaxKind.TrueKeyword)
     || t.IsKind(SyntaxKind.FalseKeyword);
 
-// Microsoft's maintainability index, clamped to 0..100.
 static int MaintainabilityIndex(int cc, int loc, double halsteadVolume)
 {
     var hv  = Math.Max(halsteadVolume, 1);

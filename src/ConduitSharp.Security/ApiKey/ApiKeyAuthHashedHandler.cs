@@ -32,7 +32,7 @@ public static class ApiKeyAuthHashedHandler
         {
             byte[] expected;
             try { expected = Convert.FromHexString(hexHash); }
-            catch (FormatException) { continue; } // skip malformed entries rather than throw
+            catch (FormatException) { continue; }
 
             if (expected.Length == suppliedHash.Length &&
                 CryptographicOperations.FixedTimeEquals(suppliedHash, expected))

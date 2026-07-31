@@ -53,7 +53,7 @@ internal sealed class RequestBodyBudget(long maxRamBytes, long maxDiskBytes)
     public bool TryReserveRam(long bytes)
     {
         if (bytes <= 0) return true;
-        if (MaxRamBytes <= 0) return false; // no RAM budget — nothing may be held in memory
+        if (MaxRamBytes <= 0) return false;
         return TryAdd(ref _ramUsed, MaxRamBytes, bytes);
     }
 
@@ -71,7 +71,7 @@ internal sealed class RequestBodyBudget(long maxRamBytes, long maxDiskBytes)
     public bool TryReserveDisk(long bytes)
     {
         if (bytes <= 0) return true;
-        if (MaxDiskBytes <= 0) return false; // no disk budget — spilling is not permitted
+        if (MaxDiskBytes <= 0) return false;
         return TryAdd(ref _diskUsed, MaxDiskBytes, bytes);
     }
 

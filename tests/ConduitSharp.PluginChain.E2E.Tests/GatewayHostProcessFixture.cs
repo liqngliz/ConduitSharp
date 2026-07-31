@@ -40,10 +40,8 @@ public sealed class GatewayHostProcessFixture : IAsyncLifetime
         _work = Directory.CreateTempSubdirectory("csharp-pluginchain-e2e-").FullName;
         var pluginsDir = Path.Combine(_work, "plugins", "order-probe");
 
-        // 1. Publish the probe project into the plugins folder as a dropped-in DLL.
         Run("dotnet", $"publish \"{Path.Combine(_root, "tests/ConduitSharp.Plugin.OrderProbe/src/ConduitSharp.Plugin.OrderProbe/ConduitSharp.Plugin.OrderProbe.csproj")}\" -c Debug -o \"{pluginsDir}\" -v q");
 
-        // 2. Real upstream: 200 with a small cacheable body; counts hits so a cache hit is provable.
         var ub = WebApplication.CreateBuilder();
         ub.WebHost.UseUrls("http://127.0.0.1:0");
         ub.Logging.ClearProviders();
@@ -56,7 +54,6 @@ public sealed class GatewayHostProcessFixture : IAsyncLifetime
         await _upstream.StartAsync();
         var upstreamUrl = _upstream.Urls.First();
 
-        // 3. routes.json: probe-a(1), probe-b(2), probe-c(3), cache(4), probe-e(5), then the forward.
         var routesPath = Path.Combine(_work, "routes.json");
         await File.WriteAllTextAsync(routesPath, $$"""
         {
@@ -79,7 +76,6 @@ public sealed class GatewayHostProcessFixture : IAsyncLifetime
         }
         """);
 
-        // 4. Spawn the host, pointed at the temp routes + plugins, logging JSON to stdout.
         var port = FreePort();
         var psi = new ProcessStartInfo("dotnet",
             $"run --project \"{Path.Combine(_root, "src/ConduitSharp.Host/ConduitSharp.Host.csproj")}\" -c Debug --no-launch-profile")
@@ -113,7 +109,6 @@ public sealed class GatewayHostProcessFixture : IAsyncLifetime
         if (string.IsNullOrEmpty(line)) return;
         lock (_stdoutLock) _rawStdout.Add(line);
 
-        // The Json console formatter emits one JSON object per record. Pull probe records out.
         try
         {
             using var doc = JsonDocument.Parse(line);
@@ -125,7 +120,7 @@ public sealed class GatewayHostProcessFixture : IAsyncLifetime
                 _probeEvents.Enqueue((category["Probe.".Length..], msg.GetString() ?? ""));
             }
         }
-        catch (JsonException) { /* build noise / non-JSON lines */ }
+        catch (JsonException) { }
     }
 
     private async Task WaitForHealthAsync(TimeSpan timeout)
@@ -140,7 +135,7 @@ public sealed class GatewayHostProcessFixture : IAsyncLifetime
                 var r = await Client.GetAsync("/healthz");
                 if (r.IsSuccessStatusCode) return;
             }
-            catch { /* not up yet */ }
+            catch { }
             await Task.Delay(500);
         }
         throw new TimeoutException($"host did not become healthy within {timeout.TotalSeconds}s.\n{StdoutTail()}");
@@ -157,7 +152,7 @@ public sealed class GatewayHostProcessFixture : IAsyncLifetime
         if (_host is { HasExited: false }) { _host.Kill(entireProcessTree: true); _host.WaitForExit(5000); }
         _host?.Dispose();
         if (_upstream is not null) await _upstream.DisposeAsync();
-        try { Directory.Delete(_work, recursive: true); } catch { /* best effort */ }
+        try { Directory.Delete(_work, recursive: true); } catch { }
     }
 
     private static int FreePort()

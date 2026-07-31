@@ -9,11 +9,6 @@ namespace ConduitSharp.Integration.Tests.Gateway;
 
 public sealed class TracingTests
 {
-    // -------------------------------------------------------------------------
-    // Register an ActivityListener so GatewayTelemetry.ActivitySource.StartActivity()
-    // returns a non-null Activity. This covers the non-null branches of every
-    // activity?.SetTag(...) call in GatewayMiddleware.InvokeAsync.
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Request_WithActivityListener_SpanIsCreatedAndTagged()
@@ -93,7 +88,6 @@ public sealed class TracingTests
         };
         ActivitySource.AddActivityListener(listener);
 
-        // Route only matches /specific — /other will return 404
         await using var upstream = await FakeUpstream.StartAsync();
         var routes = $$"""
             {
@@ -124,8 +118,6 @@ public sealed class TracingTests
     [Fact]
     public async Task Forwarding_ProducesForwardSpan()
     {
-        // The forward to the upstream is traced whether or not "http-proxy" is named in the
-        // plugin list — implicit and explicit forwarding produce the same trace shape.
         var spans = new List<Activity>();
 
         using var listener = new ActivityListener
@@ -139,7 +131,7 @@ public sealed class TracingTests
         ActivitySource.AddActivityListener(listener);
 
         await using var upstream = await FakeUpstream.StartAsync();
-        await using var factory  = await GatewayFactory.CreateAsync(upstream); // default route, no plugins
+        await using var factory  = await GatewayFactory.CreateAsync(upstream);
         var client = factory.CreateClient();
 
         var response = await client.GetAsync("/api/anything");

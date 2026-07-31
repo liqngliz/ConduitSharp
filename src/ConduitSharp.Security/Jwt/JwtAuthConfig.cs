@@ -38,7 +38,6 @@ public sealed record JwtProviderConfig
 
 public sealed record JwtAuthConfig
 {
-    // Legacy top-level fields
     [JsonPropertyName("signingKey")] public string? SigningKey { get; init; }
     [JsonPropertyName("algorithm")]  public string  Algorithm  { get; init; } = "HS256";
     [JsonPropertyName("issuer")]     public string? Issuer     { get; init; }
@@ -86,9 +85,6 @@ public sealed record JwtAuthConfig
         return config;
     }
 
-    // Startup guard for the classic interop landmine: a raw passphrase pasted into
-    // signingKey either isn't valid base64 or decodes under the HS256 minimum, and
-    // without this check every token is rejected at runtime with zero hint why.
     private static void ValidateSigningKey(string? signingKey)
     {
         if (string.IsNullOrWhiteSpace(signingKey))

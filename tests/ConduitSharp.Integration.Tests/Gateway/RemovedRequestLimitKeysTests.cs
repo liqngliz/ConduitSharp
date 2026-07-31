@@ -54,7 +54,6 @@ public sealed class RemovedRequestLimitKeysTests
     [Fact]
     public async Task NegativeBudget_IsRejected_RatherThanSilentlyCoerced()
     {
-        // 0 already means "none of this resource", so a negative has no meaning to fall back on.
         var ex = await StartWithAsync("MaxRamBufferedBodyBytes", "-1");
 
         Assert.Contains("cannot be negative", ex.ToString(), StringComparison.Ordinal);

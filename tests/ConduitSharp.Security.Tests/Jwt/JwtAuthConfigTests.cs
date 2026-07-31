@@ -8,13 +8,7 @@ public sealed class JwtAuthConfigTests
 {
     private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement;
 
-    // base64("demo-signing-key-conduitsharp-example-32ch") — 43 raw bytes, over the
-    // 32-byte HS256 minimum enforced at load time.
     private const string ValidKey = "ZGVtby1zaWduaW5nLWtleS1jb25kdWl0c2hhcnAtZXhhbXBsZS0zMmNo";
-
-    // -------------------------------------------------------------------------
-    // Deserialisation
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void From_FullConfig_BindsAllFields()
@@ -51,14 +45,10 @@ public sealed class JwtAuthConfigTests
         var config = JwtAuthConfig.From(Json($$"""{ "signingKey": "{{ValidKey}}" }"""));
 
         Assert.Equal(ValidKey, config.SigningKey);
-        Assert.Equal("HS256",  config.Algorithm);  // default
-        Assert.Null(config.Issuer);                // optional, absent → null
-        Assert.Null(config.Audience);              // optional, absent → null
+        Assert.Equal("HS256",  config.Algorithm);
+        Assert.Null(config.Issuer);
+        Assert.Null(config.Audience);
     }
-
-    // -------------------------------------------------------------------------
-    // signingKey validation — fails at load time, not on the first request
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void From_MissingSigningKey_Throws()
@@ -70,8 +60,6 @@ public sealed class JwtAuthConfigTests
     [Fact]
     public void From_RawPassphraseSigningKey_ThrowsWithBase64Hint()
     {
-        // The classic interop landmine: a raw secret ("your-256-bit-secret") pasted in
-        // instead of its base64 encoding used to reject every token at runtime with no hint.
         var ex = Assert.Throws<InvalidOperationException>(() =>
             JwtAuthConfig.From(Json("""{ "signingKey": "your-256-bit-secret" }""")));
         Assert.Contains("base64", ex.Message);
@@ -80,15 +68,10 @@ public sealed class JwtAuthConfigTests
     [Fact]
     public void From_SigningKeyUnder32Bytes_Throws()
     {
-        // "dGVzdC1rZXk=" = base64("test-key") — valid base64 but only 8 bytes.
         var ex = Assert.Throws<InvalidOperationException>(() =>
             JwtAuthConfig.From(Json("""{ "signingKey": "dGVzdC1rZXk=" }""")));
         Assert.Contains("32 bytes", ex.Message);
     }
-
-    // -------------------------------------------------------------------------
-    // requiredClaims (RBAC)
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void From_NoRequiredClaims_IsNull()
@@ -132,10 +115,6 @@ public sealed class JwtAuthConfigTests
             { "signingKey": "{{ValidKey}}", "requiredClaims": [ { "claim": "roles", "equals": "a", "anyOf": ["a"] } ] }
             """)));
     }
-
-    // -------------------------------------------------------------------------
-    // Null / invalid input
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void From_NullJson_Throws()

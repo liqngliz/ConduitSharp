@@ -21,8 +21,6 @@ public sealed class PowerShellPluginTests
     [Fact]
     public void EmbeddedRuntime_CanExecuteScript()
     {
-        // Verifies the embedded Microsoft.PowerShell.SDK runtime works in-process
-        // without any system pwsh installation.
         using var ps = PS.Create();
         ps.AddScript("@{ ok = $true } | ConvertTo-Json -Compress");
         var results = ps.Invoke();
@@ -36,8 +34,6 @@ public sealed class PowerShellPluginTests
     [Fact]
     public async Task EmbeddedRuntime_CanRunErpReportScript()
     {
-        // Runs the actual Get-ErpReport.ps1 content through the embedded runtime
-        // and confirms it returns valid JSON with the expected fields.
         var script = """
             $values = @(
                 [PSCustomObject]@{ product = "Widget A"; value = 0.42 }
@@ -63,10 +59,6 @@ public sealed class PowerShellPluginTests
     [Fact]
     public async Task ExecuteAsync_100ConcurrentInvocations_AllComplete_NoThreadPoolStarvation()
     {
-        // ps.Invoke() runs synchronously inside Task.Run, parking a pool thread per request.
-        // Under a burst that far exceeds the core count, the pool's slow thread injection is
-        // the risk: requests queue behind blocked threads and the gateway appears hung. This
-        // holds 100 concurrent invocations to a deadline and demands every one succeeds.
         var script = Path.Combine(Path.GetTempPath(), $"ps-load-{Guid.NewGuid():N}.ps1");
         await File.WriteAllTextAsync(script, "@{ ok = $true } | ConvertTo-Json -Compress");
         try
@@ -97,10 +89,6 @@ public sealed class PowerShellPluginTests
     [Fact]
     public async Task ExecuteAsync_ClientAborts_ReturnsPromptly_DoesNotLeakThread()
     {
-        // A hung script (Start-Sleep 60) with the client already gone: context.RequestAborted
-        // is signalled but ExecuteAsync never observes it, so the call blocks on ps.Invoke()
-        // for the full script duration, parking a thread-pool thread the whole time. A correct
-        // implementation registers RequestAborted -> ps.Stop() and returns once the token fires.
         var script = Path.Combine(Path.GetTempPath(), $"ps-hang-{Guid.NewGuid():N}.ps1");
         await File.WriteAllTextAsync(script, "Start-Sleep -Seconds 60; 'done'");
         try
@@ -112,7 +100,7 @@ public sealed class PowerShellPluginTests
             context.Response.Body = new MemoryStream();
             using var cts = new CancellationTokenSource();
             context.RequestAborted = cts.Token;
-            cts.Cancel(); // client already gone before the script finishes
+            cts.Cancel();
 
             var exec = plugin.ExecuteAsync(context, config, _ => Task.CompletedTask);
             var finished = await Task.WhenAny(exec, Task.Delay(TimeSpan.FromSeconds(5)));
@@ -130,7 +118,6 @@ public sealed class PowerShellPluginTests
     [Fact]
     public async Task ExecuteAsync_ScriptExceedsTimeout_Returns504()
     {
-        // No client abort — the configured timeoutMs must stop a slow script on its own.
         var script = Path.Combine(Path.GetTempPath(), $"ps-slow-{Guid.NewGuid():N}.ps1");
         await File.WriteAllTextAsync(script, "Start-Sleep -Seconds 60; 'done'");
         try

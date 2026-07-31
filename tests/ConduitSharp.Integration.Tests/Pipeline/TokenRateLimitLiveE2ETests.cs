@@ -44,12 +44,6 @@ public sealed class TokenRateLimitLiveE2ETests
     }
     """;
 
-    // REQUIRES a running OpenAI-compatible server with a model loaded to do anything. Locally that
-    // means LM Studio started with a model loaded (Developer tab > Start Server, default
-    // http://127.0.0.1:1234), or Ollama / llama.cpp server via LLM_E2E_URL. With no server reachable
-    // this SOFT-SKIPS: it returns without asserting, so it passes in CI (where no model runs) instead
-    // of failing. So a green run here does not prove the path unless a server was up — check the test
-    // output for "Using model ..." versus "No OpenAI-compatible server ... skipping".
     [Fact]
     public async Task Meters_real_model_tokens_and_429s_over_budget()
     {
@@ -57,14 +51,11 @@ public sealed class TokenRateLimitLiveE2ETests
         string? model = await FirstChatModelOrNull(probe);
         if (model is null)
         {
-            // Soft skip: no LM Studio / OpenAI-compatible server up. Pass without exercising anything.
             _out.WriteLine($"No OpenAI-compatible server at {BaseUrl}; skipping live token E2E. Start LM Studio (with a model loaded) or set LLM_E2E_URL to run it.");
             return;
         }
         _out.WriteLine($"Using model {model} at {BaseUrl}");
 
-        // GatewayFactory needs a FakeUpstream instance; the route points at the real server instead,
-        // so this one just satisfies the signature and is never hit.
         await using var unused = await FakeUpstream.StartAsync();
         await using var factory = await GatewayFactory.CreateAsync(
             unused, Routes(BaseUrl),
@@ -85,13 +76,11 @@ public sealed class TokenRateLimitLiveE2ETests
             return ((int)resp.StatusCode, await resp.Content.ReadAsStringAsync(), resp.Headers.Contains("Retry-After"));
         }
 
-        // First call: forwarded to the model, 200 with a usage block, and its tokens get charged.
         var first = await Ask("alice");
         Assert.Equal(200, first.Status);
         Assert.Contains("usage", first.Body);
         _out.WriteLine("alice #1: 200, usage present");
 
-        // Charge-after overshoots, so a couple succeed before the window is seen over budget.
         var got429 = false;
         for (var i = 2; i <= 8 && !got429; i++)
         {
@@ -105,7 +94,6 @@ public sealed class TokenRateLimitLiveE2ETests
         }
         Assert.True(got429, "expected a 429 once alice's token budget was exhausted");
 
-        // A different caller has its own budget and is unaffected.
         var bob = await Ask("bob");
         _out.WriteLine($"bob #1: {bob.Status}");
         Assert.Equal(200, bob.Status);
@@ -122,13 +110,13 @@ public sealed class TokenRateLimitLiveE2ETests
             {
                 var id = m.GetProperty("id").GetString();
                 if (id is not null && !id.Contains("embed", StringComparison.OrdinalIgnoreCase))
-                    return id; // first non-embedding model
+                    return id;
             }
             return null;
         }
         catch
         {
-            return null; // server not reachable
+            return null;
         }
     }
 }

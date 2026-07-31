@@ -66,7 +66,6 @@ public sealed class PluginChainOrderE2ETests : IAsyncLifetime
             }));
         using var client = factory.CreateClient();
 
-        // Request 1: cache miss. Down 1,2,3,(cache),5 then up 5,(cache),3,2,1. Forward is reached.
         log.Events.Clear();
         var r1 = await client.GetAsync("/data");
         var seq1 = log.Events.ToArray();
@@ -75,10 +74,8 @@ public sealed class PluginChainOrderE2ETests : IAsyncLifetime
         Assert.Equal(
             new[] { "a:enter", "b:enter", "c:enter", "e:enter", "e:exit", "c:exit", "b:exit", "a:exit" },
             seq1);
-        Assert.Single(_upstream.ReceivedRequests); // forward ran once
+        Assert.Single(_upstream.ReceivedRequests);
 
-        // Request 2: same path, cache HIT. Down 1,2,3 then the cache answers and unwinds 3,2,1.
-        // probe-e never runs and the forward is never reached.
         log.Events.Clear();
         var r2 = await client.GetAsync("/data");
         var seq2 = log.Events.ToArray();
@@ -89,9 +86,8 @@ public sealed class PluginChainOrderE2ETests : IAsyncLifetime
             new[] { "a:enter", "b:enter", "c:enter", "c:exit", "b:exit", "a:exit" },
             seq2);
         Assert.DoesNotContain("e:enter", seq2);
-        Assert.Single(_upstream.ReceivedRequests); // still 1 — forward NOT reached on the hit
+        Assert.Single(_upstream.ReceivedRequests);
 
-        // Request 3: different path, cache miss again. Full chain, forward reached a second time.
         log.Events.Clear();
         var r3 = await client.GetAsync("/other");
         var seq3 = log.Events.ToArray();
@@ -103,8 +99,6 @@ public sealed class PluginChainOrderE2ETests : IAsyncLifetime
         Assert.Equal(2, _upstream.ReceivedRequests.Count);
     }
 
-    // A plugin that logs "enter" before next and "exit" after, through the host's real ILoggerFactory
-    // under category "Probe.{id}". Nothing is recorded in-plugin; the order comes from the log sink.
     private sealed class OrderProbe(string id) : IPipelinePlugin
     {
         public PluginName Name => PluginName.Custom;
@@ -120,7 +114,6 @@ public sealed class PluginChainOrderE2ETests : IAsyncLifetime
         }
     }
 
-    // Records probe log messages in emission order as "{id}:{message}", e.g. "a:enter".
     private sealed class SequenceLog : ILoggerProvider
     {
         public ConcurrentQueue<string> Events { get; } = new();

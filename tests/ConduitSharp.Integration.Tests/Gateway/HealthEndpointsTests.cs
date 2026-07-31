@@ -18,7 +18,6 @@ public sealed class HealthEndpointsTests : IAsyncLifetime
     [Fact]
     public async Task Healthz_Returns200_EvenWhenUpstreamIsDown()
     {
-        // Route forwards to a dead upstream — gateway liveness must not depend on it.
         var routes = GatewayTestHelpers.CatchAllRoutes(
             _upstream.BaseUrl, upstreamOverride: "http://127.0.0.1:1");
         await using var factory = await GatewayFactory.CreateAsync(_upstream, routes);

@@ -6,7 +6,6 @@ namespace ConduitSharp.Integration.Tests.Helpers;
 
 internal static class PluginTestHelpers
 {
-    // 32 bytes — HS256 validation requires a key of at least 256 bits.
     internal static readonly string TestSecretBase64 =
         Convert.ToBase64String(Encoding.UTF8.GetBytes("integration-test-secret-key!!!!!"));
 

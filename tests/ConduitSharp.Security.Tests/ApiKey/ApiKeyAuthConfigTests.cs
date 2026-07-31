@@ -8,10 +8,6 @@ public sealed class ApiKeyAuthConfigTests
 {
     private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement;
 
-    // -------------------------------------------------------------------------
-    // ApiKeyAuthConfig
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void ApiKeyAuthConfig_From_FullConfig_BindsAllFields()
     {
@@ -47,10 +43,6 @@ public sealed class ApiKeyAuthConfigTests
         Assert.Throws<InvalidOperationException>(
             () => ApiKeyAuthConfig.From(Json("null")));
     }
-
-    // -------------------------------------------------------------------------
-    // ApiKeyAuthHashedConfig
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void ApiKeyAuthHashedConfig_From_FullConfig_BindsAllFields()

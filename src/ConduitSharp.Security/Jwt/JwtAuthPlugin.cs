@@ -61,7 +61,6 @@ public sealed class JwtAuthPlugin(JwtAuthHandler handler) : IPipelinePlugin
                 continue;
             }
 
-            // Successfully authenticated and authorized
             await next(context);
             return;
         }
@@ -70,7 +69,5 @@ public sealed class JwtAuthPlugin(JwtAuthHandler handler) : IPipelinePlugin
         await context.Response.WriteAsync(lastError);
     }
 
-    // Loading the config validates requiredClaims shape, so a route with a malformed
-    // requiredClaims block fails at startup instead of on the first request.
     public void ValidateConfig(JsonElement config) => JwtAuthConfig.From(config);
 }

@@ -20,8 +20,6 @@ public sealed class PowerShellPlugin : IPipelinePlugin
         _basePath = config["Gateway:BasePath"] ?? AppContext.BaseDirectory;
     }
 
-    // External plugins register under Custom with a variant — routes declare
-    // { "name": "custom", "variant": "power-shell" }.
     public PluginName Name    => PluginName.Custom;
     public string?    Variant => "power-shell";
     public string     Id      => "power-shell";
@@ -51,10 +49,6 @@ public sealed class PowerShellPlugin : IPipelinePlugin
             return;
         }
 
-        // Run the synchronous PS Invoke on a thread-pool thread so we don't
-        // block the ASP.NET request thread while the runspace initialises.
-        // ps.Stop() (fired from RequestAborted or the timeout) unblocks Invoke()
-        // so a hung script can't park the pool thread until it finishes on its own.
         var timeout = cfg.TimeoutMs > 0
             ? TimeSpan.FromMilliseconds(cfg.TimeoutMs)
             : Timeout.InfiniteTimeSpan;
@@ -72,7 +66,7 @@ public sealed class PowerShellPlugin : IPipelinePlugin
             using var ps = System.Management.Automation.PowerShell.Create();
             ps.AddScript(scriptContent);
             using var reg = linked.Token.Register(ps.Stop);
-            if (linked.Token.IsCancellationRequested) return; // aborted before Invoke started
+            if (linked.Token.IsCancellationRequested) return;
 
             System.Collections.ObjectModel.Collection<PSObject> results;
             try { results = ps.Invoke(); }
@@ -89,7 +83,7 @@ public sealed class PowerShellPlugin : IPipelinePlugin
         });
 
         if (context.RequestAborted.IsCancellationRequested)
-            return; // client gone — nothing to write
+            return;
 
         if (timeoutCts.IsCancellationRequested)
         {

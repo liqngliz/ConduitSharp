@@ -18,9 +18,6 @@ namespace ConduitSharp.EmbeddedGateway.E2E.Tests;
 [Trait("Category", "E2E")]
 public sealed class EmbeddedGatewayE2ETests(EmbeddedGatewayFixture fx) : GatewayE2ETestsBase(fx)
 {
-    // =========================================================================
-    // Uploads — streamOnly, no body capture
-    // =========================================================================
 
     [Fact]
     public async Task PostUpload_WithStreamOnly_Succeeds_AndNoBodyCapture()
@@ -34,7 +31,6 @@ public sealed class EmbeddedGatewayE2ETests(EmbeddedGatewayFixture fx) : Gateway
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        // Verify that BodyCapture did NOT log this route (it's not configured on the upload route)
         var logPath = Path.Combine(Fx.ExampleRoot, "logs", "gateway.log");
         if (File.Exists(logPath))
         {

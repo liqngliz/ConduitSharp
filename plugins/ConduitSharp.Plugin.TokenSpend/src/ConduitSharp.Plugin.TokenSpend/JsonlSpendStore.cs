@@ -43,8 +43,6 @@ public sealed class JsonlSpendStore : ISpendStore, IDisposable
         Directory.CreateDirectory(_directory);
         _salt = LoadOrCreateSalt(_directory);
 
-        // DropWrite: losing a spend row under a disk stall is the right trade against making a
-        // caller wait on one. The queue holds ~1000 calls, far more than any real burst.
         _queue = Channel.CreateBounded<SpendRecord>(new BoundedChannelOptions(capacity)
         {
             FullMode = BoundedChannelFullMode.DropWrite,
@@ -75,7 +73,6 @@ public sealed class JsonlSpendStore : ISpendStore, IDisposable
                 }
                 catch (JsonException)
                 {
-                    // A row torn by a crash mid-write. Skip it rather than lose the whole day.
                     continue;
                 }
                 if (row is not null && row.Timestamp >= from && row.Timestamp <= to)
@@ -89,8 +86,6 @@ public sealed class JsonlSpendStore : ISpendStore, IDisposable
     {
         ArgumentNullException.ThrowIfNull(rawKey);
         var mac = HMACSHA256.HashData(_salt, Encoding.UTF8.GetBytes(rawKey));
-        // 12 bytes is 96 bits of collision resistance, plenty to keep callers distinct, and short
-        // enough to read in a file. Truncation is what makes it non-reversible in practice.
         return Convert.ToHexString(mac.AsSpan(0, 12)).ToLowerInvariant();
     }
 
@@ -100,17 +95,12 @@ public sealed class JsonlSpendStore : ISpendStore, IDisposable
         {
             try
             {
-                // ponytail: opens the file per row. LLM calls arrive seconds apart, so a handle per
-                // row is free and buys crash-durability without any flush bookkeeping. Batch by
-                // draining the channel into one append if this ever sees writes-per-second.
                 await File.AppendAllTextAsync(
                     PathForDay(record.Timestamp.UtcDateTime.Date),
                     JsonSerializer.Serialize(record, Json) + Environment.NewLine);
             }
             catch (IOException)
             {
-                // Disk full, permissions, a locked file: a spend row is not worth taking the
-                // gateway down for. The next row tries again.
             }
             catch (UnauthorizedAccessException)
             {
@@ -123,9 +113,6 @@ public sealed class JsonlSpendStore : ISpendStore, IDisposable
 
     private static byte[] LoadOrCreateSalt(string directory)
     {
-        // The salt must outlive the process or the same caller hashes differently tomorrow and the
-        // history stops grouping. ponytail: two processes creating it at once means one keeps a
-        // salt the other overwrote; on a single-user local store that self-heals on restart.
         var path = Path.Combine(directory, "salt");
         if (!File.Exists(path))
             File.WriteAllBytes(path, RandomNumberGenerator.GetBytes(32));

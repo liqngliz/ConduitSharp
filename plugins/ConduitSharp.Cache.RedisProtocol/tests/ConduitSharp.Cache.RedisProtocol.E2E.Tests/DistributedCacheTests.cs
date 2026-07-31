@@ -28,7 +28,6 @@ public abstract class DistributedCacheTests(CacheServerFixture fx)
     {
         if (!fx.Available) return;
 
-        // Two independent services (= two gateway instances) sharing one Redis.
         using var instanceA = Service(fx.ConnectionString);
         using var instanceB = Service(fx.ConnectionString);
 
@@ -79,7 +78,6 @@ public abstract class DistributedCacheTests(CacheServerFixture fx)
     }
 }
 
-// The same distributed tests, executed against each backend.
 [Trait("Category", "E2E")]
 [Collection("Redis Cache E2E")]
 public sealed class RedisDistributedCacheTests(RedisFixture fx) : DistributedCacheTests(fx);
@@ -106,8 +104,8 @@ public sealed class RedisCacheFailOpenTests
             NullLogger<RedisCacheService>.Instance);
 
         var key = $"route\0/dead-{Guid.NewGuid():N}";
-        await svc.SetAsync(key, new CachedResponse(200, null, Encoding.UTF8.GetBytes("x")), TimeSpan.FromMinutes(1)); // swallowed
-        Assert.Null(await svc.GetAsync(key));                       // treated as a miss
-        Assert.Equal(0, await svc.RemoveByPrefixAsync("route\0"));  // no-op
+        await svc.SetAsync(key, new CachedResponse(200, null, Encoding.UTF8.GetBytes("x")), TimeSpan.FromMinutes(1));
+        Assert.Null(await svc.GetAsync(key));
+        Assert.Equal(0, await svc.RemoveByPrefixAsync("route\0"));
     }
 }

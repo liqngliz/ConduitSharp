@@ -256,13 +256,11 @@ public sealed class ClientCertificateOptions
     /// <summary>The route ID this certificate applies to. Must match a route <c>id</c> in routes.json.</summary>
     public string RouteId { get; init; } = "";
 
-    // PFX file
     /// <summary>Path to the PFX/PKCS#12 file. Use <c>Password</c> if the file is password-protected.</summary>
     public string? Path { get; init; }
     /// <summary>Password for the PFX file. Use an environment variable override to avoid storing it in plaintext.</summary>
     public string? Password { get; init; }
 
-    // Windows cert store
     /// <summary>SHA-1 thumbprint of a certificate already installed in the Windows certificate store.</summary>
     public string? StoreThumbprint { get; init; }
     /// <summary>Windows store name. Default: <c>My</c> (Personal).</summary>

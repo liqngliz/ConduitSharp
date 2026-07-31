@@ -28,7 +28,6 @@ public sealed class MtlsE2ETests(ITestOutputHelper output)
 
         try
         {
-            // Build the gateway image and start upstream + both gateways.
             await DockerAsync(e2eDir, ["compose", "-f", compose, "up", "-d", "--build"], timeoutSeconds: 600);
 
             await WaitForHealthAsync("http://127.0.0.1:8080/healthz");
@@ -36,13 +35,11 @@ public sealed class MtlsE2ETests(ITestOutputHelper output)
 
             using var http = new HttpClient();
 
-            // With the client cert → the upstream verifies it and returns 200.
             var ok = await http.GetAsync("http://127.0.0.1:8080/");
             var okBody = await ok.Content.ReadAsStringAsync();
             Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
             Assert.Contains("verify=SUCCESS", okBody);
 
-            // Without the client cert → the upstream rejects the handshake (nginx 400).
             var denied = await http.GetAsync("http://127.0.0.1:8081/");
             Assert.Equal(HttpStatusCode.BadRequest, denied.StatusCode);
         }
@@ -52,8 +49,6 @@ public sealed class MtlsE2ETests(ITestOutputHelper output)
                 timeoutSeconds: 120, ignoreFailure: true);
         }
     }
-
-    // -------------------------------------------------------------------------
 
     private static async Task WaitForHealthAsync(string url)
     {
@@ -65,7 +60,7 @@ public sealed class MtlsE2ETests(ITestOutputHelper output)
             {
                 if ((await http.GetAsync(url)).IsSuccessStatusCode) return;
             }
-            catch { /* not up yet */ }
+            catch { }
             await Task.Delay(1000);
         }
         throw new TimeoutException($"Gateway health endpoint {url} did not become ready.");

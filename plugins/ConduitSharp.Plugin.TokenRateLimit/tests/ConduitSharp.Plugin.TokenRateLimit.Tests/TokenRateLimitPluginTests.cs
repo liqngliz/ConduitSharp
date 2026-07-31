@@ -36,15 +36,15 @@ public sealed class TokenRateLimitPluginTests
         await new TokenRateLimitPlugin().ExecuteAsync(ctx, config,
             Forward("""{"choices":[],"usage":{"prompt_tokens":40,"completion_tokens":110}}"""));
 
-        Assert.Equal(150, store.Peek("route-a\0global", WindowId()));       // 40 + 110
-        Assert.Contains("completion_tokens", Read(sink));                    // response passed through
+        Assert.Equal(150, store.Peek("route-a\0global", WindowId()));
+        Assert.Contains("completion_tokens", Read(sink));
     }
 
     [Fact]
     public async Task SecondRequest_OverBudget_Returns429_WithRetryAfter()
     {
         var (ctx, _, store) = NewContext();
-        store.Add("route-a\0global", WindowId(), 60, 10000); // window already at budget
+        store.Add("route-a\0global", WindowId(), 60, 10000);
 
         var config = Config($$"""{ "maxTokensPerWindow": 10000, "usageFields": {{OpenAiFields}} }""");
         await new TokenRateLimitPlugin().ExecuteAsync(ctx, config, Forward("{}"));
@@ -82,8 +82,8 @@ public sealed class TokenRateLimitPluginTests
     }
 
     [Theory]
-    [InlineData("""["usageMetadata.totalTokenCount"]""", """{"usageMetadata":{"totalTokenCount":33}}""", 33)]  // Gemini
-    [InlineData("""["prompt_eval_count","eval_count"]""", """{"prompt_eval_count":5,"eval_count":8}""", 13)]     // Ollama native
+    [InlineData("""["usageMetadata.totalTokenCount"]""", """{"usageMetadata":{"totalTokenCount":33}}""", 33)]
+    [InlineData("""["prompt_eval_count","eval_count"]""", """{"prompt_eval_count":5,"eval_count":8}""", 13)]
     public async Task WorksAcrossProviders_ByConfiguredFields(string fields, string body, long expected)
     {
         var (ctx, _, store) = NewContext();
@@ -100,11 +100,10 @@ public sealed class TokenRateLimitPluginTests
         var (ctx, sink, store) = NewContext();
         var config = Config($$"""{ "maxTokensPerWindow": 10000, "usageFields": {{OpenAiFields}} }""");
 
-        // An SSE stream is not a single JSON document.
         await new TokenRateLimitPlugin().ExecuteAsync(ctx, config, Forward("data: {\"x\":1}\n\ndata: [DONE]\n\n"));
 
         Assert.Equal(0, store.Peek("route-a\0global", WindowId()));
-        Assert.Contains("[DONE]", Read(sink)); // still streamed to the client
+        Assert.Contains("[DONE]", Read(sink));
     }
 
     [Fact]
@@ -124,13 +123,13 @@ public sealed class TokenRateLimitPluginTests
     {
         var plugin = new TokenRateLimitPlugin();
         Assert.Equal(2048, plugin.CaptureMemoryBytes(Config("""{ "maxResponseBytes": 2048, "usageFields": ["x"] }""")));
-        Assert.Equal(1024 * 1024, plugin.CaptureMemoryBytes(Config("""{ "usageFields": ["x"] }"""))); // default
+        Assert.Equal(1024 * 1024, plugin.CaptureMemoryBytes(Config("""{ "usageFields": ["x"] }""")));
     }
 
     [Theory]
-    [InlineData("""{ "windowSeconds": 60, "usageFields": ["x"] }""")]                       // no maxTokens
-    [InlineData("""{ "maxTokensPerWindow": 100, "usageFields": [] }""")]                    // empty fields
-    [InlineData("""{ "maxTokensPerWindow": 100, "windowSeconds": 0, "usageFields": ["x"] }""")] // bad window
+    [InlineData("""{ "windowSeconds": 60, "usageFields": ["x"] }""")]
+    [InlineData("""{ "maxTokensPerWindow": 100, "usageFields": [] }""")]
+    [InlineData("""{ "maxTokensPerWindow": 100, "windowSeconds": 0, "usageFields": ["x"] }""")]
     public void ValidateConfig_Rejects_BadConfig(string json)
     {
         Assert.Throws<InvalidOperationException>(() => new TokenRateLimitPlugin().ValidateConfig(Config(json)));
@@ -140,7 +139,6 @@ public sealed class TokenRateLimitPluginTests
     public void ValidateConfig_Valid_DoesNotThrow() =>
         new TokenRateLimitPlugin().ValidateConfig(Config($$"""{ "maxTokensPerWindow": 100, "windowSeconds": 60, "usageFields": {{OpenAiFields}} }"""));
 
-    // Builds a structurally valid (unsigned) JWT: base64url(header).base64url(payload).sig
     private static string FakeJwt(string payloadJson)
     {
         static string B64Url(string s) =>

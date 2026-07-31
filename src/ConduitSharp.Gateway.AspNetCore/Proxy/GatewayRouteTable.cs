@@ -74,7 +74,6 @@ internal sealed class GatewayRouteTable(UpstreamRetry retry, IProxyConfigProvide
 
             var match = route.Route.Match;
 
-            // Declaration order breaks overlaps, mirroring RouteConfig.Order on the YARP side.
             var builder = new RouteEndpointBuilder(
                 _chains[route.Id],
                 RoutePatternFactory.Parse(match.Path ?? "/{**catch-all}"),

@@ -31,7 +31,6 @@ public sealed class RedisRateLimitStore : IRateLimitStore, IDisposable
         return current
         """;
 
-    // Weighted add for token metering: INCRBY the cost, set the TTL on the first write of the window.
     private const string AddScript = """
         local key = KEYS[1]
         local amount = tonumber(ARGV[1])
@@ -48,9 +47,6 @@ public sealed class RedisRateLimitStore : IRateLimitStore, IDisposable
     private readonly string _keyPrefix;
     private readonly ILogger<RedisRateLimitStore> _logger;
 
-    // DI constructor: reads its own connection settings straight from configuration —
-    // core's GatewayOptions doesn't declare a Redis-shaped property, so this backend's
-    // config schema is free to evolve independently of the core package's version.
     public RedisRateLimitStore(IConfiguration configuration, ILogger<RedisRateLimitStore> logger)
     {
         var cfg = configuration.GetSection("Gateway:RateLimiting:Redis").Get<RedisRateLimitOptions>() ?? new();
@@ -59,7 +55,7 @@ public sealed class RedisRateLimitStore : IRateLimitStore, IDisposable
                 "The Redis rate-limit store is installed but 'Gateway:RateLimiting:Redis:ConnectionString' is not set.");
 
         var redisConfig = ConfigurationOptions.Parse(cfg.ConnectionString);
-        redisConfig.AbortOnConnectFail = false; // start even if Redis is momentarily down
+        redisConfig.AbortOnConnectFail = false;
 
         _connection = ConnectionMultiplexer.Connect(redisConfig);
         _database   = cfg.Database >= 0 ? _connection.GetDatabase(cfg.Database) : _connection.GetDatabase();
@@ -67,7 +63,6 @@ public sealed class RedisRateLimitStore : IRateLimitStore, IDisposable
         _logger     = logger;
     }
 
-    // Test constructor: inject a database directly.
     internal RedisRateLimitStore(IDatabase database, string keyPrefix, ILogger<RedisRateLimitStore> logger)
     {
         _database  = database;
@@ -122,7 +117,6 @@ public sealed class RedisRateLimitStore : IRateLimitStore, IDisposable
         }
         catch (Exception ex) when (IsRedisFailure(ex))
         {
-            // Fail-open: a failed peek reads as 0, so the request is allowed through.
             _logger.LogWarning(ex, "Redis token peek failed; allowing the request through.");
             return 0;
         }

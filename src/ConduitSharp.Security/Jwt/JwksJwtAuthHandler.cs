@@ -26,8 +26,6 @@ public sealed class JwksJwtAuthHandler
     public async Task<(bool Success, string? Error, JsonElement Claims)> TryValidateAsync(
         string token, JwksProviderConfig config, CancellationToken ct = default)
     {
-        // Parse just enough to know which key to fetch (alg + kid); full validation
-        // happens below once the key is in hand.
         JsonWebToken jwt;
         try { jwt = new JsonWebToken(token); }
         catch { return Fail("Malformed token."); }
@@ -41,13 +39,11 @@ public sealed class JwksJwtAuthHandler
         try
         {
             var ttl = TimeSpan.FromSeconds(config.CacheTtlSeconds);
-            // We set timeout on the HTTP client during factory construction or via the CancellationToken
             var timeout = TimeSpan.FromMilliseconds(config.JwksTimeoutMs);
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(timeout);
             
             var manager = _factory.GetManager(config.JwksUri, ttl);
-            // Force timeout enforcement even if ConfigurationManager swallows the CancellationToken internally
             var configuration = await manager.GetConfigurationAsync(CancellationToken.None).WaitAsync(cts.Token);
             keys = configuration.GetSigningKeys();
         }
@@ -56,7 +52,6 @@ public sealed class JwksJwtAuthHandler
         if (keys is null || keys.Count == 0)
             return Fail("No signing keys found in JWKS.");
 
-        // If kid is provided, verify it exists in the downloaded keys
         if (kid is not null && !keys.Any(k => string.Equals(k.KeyId, kid, StringComparison.Ordinal)))
             return Fail($"No key with kid '{kid}' found in JWKS.");
 
@@ -65,8 +60,6 @@ public sealed class JwksJwtAuthHandler
         parameters.ValidAlgorithms  = SupportedAlgorithms;
         return await JwtValidation.ValidateAsync(token, parameters);
     }
-
-
 
     private static (bool, string?, JsonElement) Fail(string error) => (false, error, default);
 }

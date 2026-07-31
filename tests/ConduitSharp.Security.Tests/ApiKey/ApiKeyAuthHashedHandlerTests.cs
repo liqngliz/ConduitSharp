@@ -10,10 +10,6 @@ public sealed class ApiKeyAuthHashedHandlerTests
     private static string Sha256Hex(string key) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant();
 
-    // -------------------------------------------------------------------------
-    // Match
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void IsValid_CorrectKey_ReturnsTrue()
     {
@@ -41,10 +37,6 @@ public sealed class ApiKeyAuthHashedHandlerTests
         Assert.True(result);
     }
 
-    // -------------------------------------------------------------------------
-    // No match
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void IsValid_WrongKey_ReturnsFalse()
     {
@@ -61,10 +53,6 @@ public sealed class ApiKeyAuthHashedHandlerTests
 
         Assert.False(result);
     }
-
-    // -------------------------------------------------------------------------
-    // Malformed hash entries are skipped rather than throwing
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void IsValid_MalformedHexEntry_SkipsAndReturnsFalse()
@@ -83,14 +71,10 @@ public sealed class ApiKeyAuthHashedHandlerTests
         Assert.True(result);
     }
 
-    // -------------------------------------------------------------------------
-    // Wrong-length hash never matches (32 bytes required for SHA-256)
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void IsValid_TruncatedHash_ReturnsFalse()
     {
-        var truncated = Sha256Hex("my-key")[..32]; // 16 bytes instead of 32
+        var truncated = Sha256Hex("my-key")[..32];
         var result    = ApiKeyAuthHashedHandler.IsValid("my-key", [truncated]);
 
         Assert.False(result);

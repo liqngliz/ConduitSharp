@@ -8,10 +8,6 @@ public sealed class JwksJwtAuthConfigTests
 {
     private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement;
 
-    // -------------------------------------------------------------------------
-    // Deserialisation
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void From_FullConfig_BindsAllFields()
     {
@@ -47,15 +43,11 @@ public sealed class JwksJwtAuthConfigTests
             { "jwksUri": "https://auth.example.com/.well-known/jwks.json" }
             """));
 
-        Assert.Equal(3600, config.CacheTtlSeconds);  // default
-        Assert.Equal(5000, config.JwksTimeoutMs);     // default
-        Assert.Null(config.Issuer);                   // optional
-        Assert.Null(config.Audience);                 // optional
+        Assert.Equal(3600, config.CacheTtlSeconds);
+        Assert.Equal(5000, config.JwksTimeoutMs);
+        Assert.Null(config.Issuer);
+        Assert.Null(config.Audience);
     }
-
-    // -------------------------------------------------------------------------
-    // jwksUri validation — required field
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void From_MissingJwksUri_Throws()
@@ -84,10 +76,6 @@ public sealed class JwksJwtAuthConfigTests
         Assert.Contains("jwksUri", ex.Message);
     }
 
-    // -------------------------------------------------------------------------
-    // requiredClaims (RBAC)
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void From_RequiredClaims_BindsRules()
     {
@@ -114,10 +102,6 @@ public sealed class JwksJwtAuthConfigTests
             }
             """)));
     }
-
-    // -------------------------------------------------------------------------
-    // Null / invalid input
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void From_NullJson_Throws()

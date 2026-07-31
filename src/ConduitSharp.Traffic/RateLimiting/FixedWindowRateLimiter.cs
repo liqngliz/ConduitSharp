@@ -42,8 +42,6 @@ public sealed class FixedWindowRateLimiter : IRateLimiter
         if (_store.TryAcquire(key, windowId, windowSeconds, maxRequests))
             return RateLimitDecision.Allow;
 
-        // Seconds until this window rolls over — not the full window length. Boundaries are
-        // epoch-aligned, so the answer comes from the clock alone.
         return RateLimitDecision.Deny(windowSeconds - now % windowSeconds);
     }
 
