@@ -11,22 +11,21 @@ One command, no clone:
 
 ```bash
 docker run -d --restart unless-stopped --name conduit-spend \
-  -p 4000:4000 \
-  -v "$PWD/logs:/data" \
-  --add-host host.docker.internal:host-gateway \
+  -p 4000:4000 -v "$PWD/logs:/data" \
   ghcr.io/liqngliz/conduit-spend
 ```
 
 Serves on `http://localhost:4000`. Spend rows and the wire log land in `./logs`. `GET /` prints
 the setup lines below.
 
+A local model server on the host works out of the box: the container maps
+`host.docker.internal` itself at startup, so no `--add-host` and no Linux-specific flag.
+
 ```bash
 docker logs -f conduit-spend
 docker rm -f conduit-spend
 ```
 
-`--add-host` is only needed on Linux, where Docker does not provide `host.docker.internal`, and
-only matters for the `local` route reaching a model server on the host.
 
 ### Your own routes
 
