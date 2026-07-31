@@ -1,5 +1,8 @@
 # Build context is the repo root: this project references src/ and plugins/ directly.
 #   docker build -f examples/ConduitSharp.Spend/Dockerfile -t conduit-spend .
+#
+# Published by the docker-spend job in .github/workflows/release.yml as
+# ghcr.io/<owner>/conduit-spend, multi-arch, so users run it without cloning.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .
@@ -19,6 +22,10 @@ COPY examples/ConduitSharp.Spend/Configuration/routes.docker.json ./Configuratio
 
 ENV ASPNETCORE_URLS=http://+:4000
 ENV CONDUIT_SPEND_DATA=/data
+
+# Routes are baked in so the image runs with no arguments. Override either by mounting a file
+# over ./Configuration/routes.json, or by pointing Gateway__RoutesPath at one you mount elsewhere.
+ENV Gateway__RoutesPath=Configuration/routes.json
 VOLUME /data
 EXPOSE 4000
 

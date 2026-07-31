@@ -1,16 +1,19 @@
 services:
   spend:
-    build:
-      context: ../..
-      dockerfile: examples/ConduitSharp.Spend/Dockerfile
-    image: conduit-spend:local
+    # Published image: no repo clone needed. Swap for the build block below to run local changes.
+    image: ghcr.io/liqngliz/conduit-spend:latest
+    # build:
+    #   context: ../..
+    #   dockerfile: examples/ConduitSharp.Spend/Dockerfile
     restart: unless-stopped
     ports:
       - "4000:4000"
     volumes:
       # Spend rows and the wire log both land here.
       - ./logs:/data
+      # Uncomment to run your own routes instead of the three baked in.
+      # - ./routes.json:/app/Configuration/routes.json:ro
     extra_hosts:
-      # Linux does not provide host.docker.internal by default; the local route needs it
-      # to reach a model server running on the host.
+      # Linux does not provide host.docker.internal; the local route needs it to reach a
+      # model server running on the host.
       - "host.docker.internal:host-gateway"

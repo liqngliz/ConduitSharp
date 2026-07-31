@@ -7,19 +7,37 @@ and response bodies, for checking what a provider actually sends).
 Point a tool's base URL at a route and its traffic is metered without the tool knowing.
 ## Run
 
-```bash
-cd examples/ConduitSharp.Spend
-docker compose up -d
-```
-
-Serves on `http://localhost:4000`. Spend rows and the wire log both land in
-`examples/ConduitSharp.Spend/logs/` on the host. `GET /` prints the setup lines below with the
-live paths.
+One command, no clone:
 
 ```bash
-docker compose logs -f      # follow
-docker compose down         # stop
+docker run -d --restart unless-stopped --name conduit-spend \
+  -p 4000:4000 \
+  -v "$PWD/logs:/data" \
+  --add-host host.docker.internal:host-gateway \
+  ghcr.io/liqngliz/conduit-spend
 ```
+
+Serves on `http://localhost:4000`. Spend rows and the wire log land in `./logs`. `GET /` prints
+the setup lines below.
+
+```bash
+docker logs -f conduit-spend
+docker rm -f conduit-spend
+```
+
+`--add-host` is only needed on Linux, where Docker does not provide `host.docker.internal`, and
+only matters for the `local` route reaching a model server on the host.
+
+### Your own routes
+
+Three routes ship in the image. To run different ones, mount a file over the baked-in config:
+
+```bash
+-v "$PWD/routes.json:/app/Configuration/routes.json:ro"
+```
+
+Start from `Configuration/routes.docker.json` in this repo. Inside a container `127.0.0.1` is the
+container, so a service on your machine is `host.docker.internal`.
 
 ## Point each tool at it
 
