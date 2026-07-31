@@ -148,7 +148,11 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
             if (File.Exists(logPath))
             {
                 var content = await ReadSharedAsync(logPath);
-                if (content.Contains("""Captured request body for path /api/orders: {"customerId":"c-123","sku":"widget","qty":5,"unitPrice":10}"""))
+                // These routes take the plugin's HttpLogging tee branch, which emits a multi-line
+                // structured block ("RequestBody: ..."), not the single "Captured request body for
+                // path ..." line the buffer-reuse branch writes. The body literal is unique to this
+                // request, so matching it alone proves both that capture ran and what it captured.
+                if (content.Contains("""RequestBody: {"customerId":"c-123","sku":"widget","qty":5,"unitPrice":10}""", StringComparison.Ordinal))
                 {
                     found = true;
                     break;
@@ -350,6 +354,9 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
         // Rejection bodies must not echo limits, paths, or internal detail.
         var request = ApiKeyRequest(HttpMethod.Post, "/api/inventory");
         request.Content = new ByteArrayContent(new byte[2 * 1024 * 1024]);
+        // Without a content type the upstream answers the 100-continue with 415, so the body is
+        // never sent and the size limit never fires. Same header the orders sibling sets.
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         request.Headers.ExpectContinue = true;
 
         var response = await fx.Client.SendAsync(request);
