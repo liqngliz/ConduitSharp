@@ -18,8 +18,18 @@ docker run -d --restart unless-stopped --name conduit-spend \
 Serves on `http://localhost:4000`. Spend rows and the wire log land in `./logs`. `GET /` prints
 the setup lines below.
 
-A local model server on the host works out of the box: the container maps
-`host.docker.internal` itself at startup, so no `--add-host` and no Linux-specific flag.
+On macOS and Windows a local model server on the host is reachable out of the box, on its default
+loopback binding, with no extra flags.
+
+**On Linux, two things are on you.** Add the host mapping, which Docker Desktop provides
+automatically and Linux does not:
+
+```bash
+--add-host=host.docker.internal:host-gateway
+```
+
+and bind your model server to `0.0.0.0` rather than `127.0.0.1`, because a loopback-only service
+refuses connections from a container. Docker 20.10+ is required for `host-gateway`.
 
 ```bash
 docker logs -f conduit-spend

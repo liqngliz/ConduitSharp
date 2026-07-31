@@ -30,8 +30,4 @@ ENV Gateway__RoutesPath=Configuration/routes.json
 VOLUME /data
 EXPOSE 4000
 
-# Resolves host.docker.internal on plain Linux Docker before starting, so the local-model route
-# works without --add-host. No-op on Docker Desktop, which already provides the name.
-COPY examples/ConduitSharp.Spend/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["dotnet", "ConduitSharp.Spend.dll"]
