@@ -152,8 +152,8 @@ Both paths log at `Information` through the host's `ILoggerFactory`, so records 
 
 | Path | Category | Message |
 | :--- | :--- | :--- |
-| Streaming (tee) | `ConduitSharp.Plugin.BodyCapture.StreamingBodyCapturePlugin` | `Request and Response: RequestBody: …` / `RequestBodyStatus: …` |
-| Reuse (already buffered) | `ConduitSharp.Plugin.BodyCapture.StreamingBodyCapturePlugin` | `Captured request body for path {Path} route {RouteId}: {Body}` |
+| Streaming (tee) | `ConduitSharp.Plugin.BodyCapture.BodyCapturePlugin` | `Request and Response: RequestBody: …` / `RequestBodyStatus: …` |
+| Reuse (already buffered) | `ConduitSharp.Plugin.BodyCapture.BodyCapturePlugin` | `Captured request body for path {Path} route {RouteId}: {Body}` |
 
 Both land under one category. The tee path deliberately re-homes HttpLogging's loggers under its own category. HttpLogging natively logs under `Microsoft.AspNetCore.HttpLogging.*`, and every stock ASP.NET Core log config filters `Microsoft.AspNetCore` to `Warning` — which would drop every captured body silently while the plugin still looked healthy. Renaming means capture obeys the plugin's own log level, and the records land in Loki tagged as body-capture rather than buried in framework noise.
 

@@ -154,10 +154,10 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
 
         // Response capture: bounded write-through tee, enqueued after the forward writes the body.
         var originalResponseBody = context.Response.Body;
-        ResponsePrefixStream? responseTee = null;
+        BoundedTeeStream? responseTee = null;
         if (responseMax > 0)
         {
-            responseTee = new ResponsePrefixStream(originalResponseBody, responseMax);
+            responseTee = new BoundedTeeStream(originalResponseBody, responseMax);
             context.Response.Body = responseTee;
         }
 
@@ -169,7 +169,10 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
         {
             if (responseTee is not null)
             {
-                Enqueue(context, "response", responseTee.Buffer, responseTee.Captured, responseTee.Truncated);
+                // DetachBuffer hands pool ownership to Enqueue, which returns the array if the
+                // channel is full. CapturedLength and Truncated survive the detach, so evaluating
+                // them after it in argument order is still correct.
+                Enqueue(context, "response", responseTee.DetachBuffer(), responseTee.CapturedLength, responseTee.Truncated);
                 context.Response.Body = originalResponseBody;
             }
         }
@@ -315,65 +318,5 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
         }
 
         _cts.Dispose();
-    }
-
-    /// <summary>
-    /// Bounded write-through tee over the response body: copies the first <c>maxSize</c> bytes into a
-    /// pooled buffer as the response is written, passes everything through untouched, and flags
-    /// truncation. Its <see cref="Buffer"/> is handed to the writer channel, which owns and returns it.
-    /// </summary>
-    private sealed class ResponsePrefixStream : Stream
-    {
-        private readonly Stream _inner;
-        private readonly int _max;
-
-        public byte[] Buffer { get; }
-        public int Captured { get; private set; }
-        public bool Truncated { get; private set; }
-
-        public ResponsePrefixStream(Stream inner, int maxSize)
-        {
-            _inner  = inner;
-            _max    = maxSize;
-            Buffer  = ArrayPool<byte>.Shared.Rent(maxSize);
-        }
-
-        private void Capture(ReadOnlySpan<byte> data)
-        {
-            var take = Math.Min(_max - Captured, data.Length);
-            if (take > 0)
-            {
-                data[..take].CopyTo(Buffer.AsSpan(Captured));
-                Captured += take;
-            }
-            if (data.Length > take) Truncated = true;
-        }
-
-        public override void Write(byte[] buffer, int offset, int count)
-        {
-            Capture(buffer.AsSpan(offset, count));
-            _inner.Write(buffer, offset, count);
-        }
-
-        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            Capture(buffer.Span);
-            await _inner.WriteAsync(buffer, cancellationToken);
-        }
-
-        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-
-        public override void Flush() => _inner.Flush();
-        public override Task FlushAsync(CancellationToken cancellationToken) => _inner.FlushAsync(cancellationToken);
-
-        public override bool CanWrite => true;
-        public override bool CanRead => false;
-        public override bool CanSeek => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

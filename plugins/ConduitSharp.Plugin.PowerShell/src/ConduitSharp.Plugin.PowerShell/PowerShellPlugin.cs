@@ -114,9 +114,3 @@ public sealed class PowerShellPlugin : IPipelinePlugin
     private static readonly JsonSerializerOptions JsonOptions =
         new() { PropertyNameCaseInsensitive = true };
 }
-
-internal sealed record PsConfig
-{
-    [JsonPropertyName("scriptPath")] public string ScriptPath { get; init; } = "";
-    [JsonPropertyName("timeoutMs")]  public int    TimeoutMs  { get; init; } = 30_000;
-}

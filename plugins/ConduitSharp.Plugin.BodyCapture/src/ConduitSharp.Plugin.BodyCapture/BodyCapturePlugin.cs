@@ -41,7 +41,7 @@ namespace ConduitSharp.Plugin.BodyCapture;
 /// growing unchecked. Captured bodies are emitted through the host's <see cref="ILoggerFactory"/> under
 /// this plugin's category.
 /// </summary>
-public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
+public sealed class BodyCapturePlugin : IPipelinePlugin
 {
     private const int DefaultMaxSize = 4 * 1024;
 
@@ -60,7 +60,6 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
     /// </summary>
     private readonly int _maxAllowedSize;
 
-    internal const string LimitKey = "conduitsharp.body-capture.limit";
     private  const string NextKey  = "conduitsharp.body-capture.next";
 
     private readonly RequestDelegate _pipeline;
@@ -68,11 +67,11 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
     // records to the same category (see BodyCaptureLoggerFactory), so every path surfaces under one name.
     private readonly ILogger _logger;
 
-    public StreamingBodyCapturePlugin(ILoggerFactory loggerFactory, IConfiguration? configuration = null)
+    public BodyCapturePlugin(ILoggerFactory loggerFactory, IConfiguration? configuration = null)
     {
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
-        _logger = loggerFactory.CreateLogger(typeof(StreamingBodyCapturePlugin).FullName!);
+        _logger = loggerFactory.CreateLogger(typeof(BodyCapturePlugin).FullName!);
 
         // Read as long so an oversized value reports what it is rather than failing as an opaque
         // int conversion error. HttpLogging's RequestBodyLogLimit is an int, so that is the hard cap.
@@ -94,7 +93,7 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
         // Request body only: the response is captured by our own write-through tee, which also covers
         // the retry/reuse routes HttpLogging never sees.
         var services = new ServiceCollection();
-        services.AddSingleton<ILoggerFactory>(new BodyCaptureLoggerFactory(loggerFactory));
+        services.AddSingleton<ILoggerFactory>(new BodyCaptureLoggerFactory(loggerFactory, typeof(BodyCapturePlugin).FullName!));
         services.AddLogging(); // TryAdds ILoggerFactory, so the line above wins
         services.AddHttpLogging(options =>
         {
@@ -174,10 +173,10 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
         // (the forward is inside next()), then log the captured prefix once it returns. Works on both
         // request branches, so retry/reuse routes capture the response too.
         var originalResponseBody = context.Response.Body;
-        ResponsePrefixStream? responseTee = null;
+        BoundedTeeStream? responseTee = null;
         if (responseMax > 0)
         {
-            responseTee = new ResponsePrefixStream(originalResponseBody, responseMax);
+            responseTee = new BoundedTeeStream(originalResponseBody, responseMax);
             context.Response.Body = responseTee;
         }
 
@@ -190,7 +189,7 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
             else if (requestMax > 0)
             {
                 context.Items[NextKey]  = next;
-                context.Items[LimitKey] = requestMax;
+                context.Items[PerRouteBodyLimitInterceptor.LimitKey] = requestMax;
                 await _pipeline(context);
             }
             else
@@ -246,11 +245,11 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
         await next(context);
     }
 
-    private void LogResponse(HttpContext context, ResponsePrefixStream tee)
+    private void LogResponse(HttpContext context, BoundedTeeStream tee)
     {
         if (!_logger.IsEnabled(LogLevel.Information)) return;
 
-        var body = Encoding.UTF8.GetString(tee.Prefix);
+        var body = Encoding.UTF8.GetString(tee.Captured.Span);
         if (tee.Truncated) body += "... (truncated)";
         _logger.LogInformation(
             "Captured response body for path {Path} route {RouteId}: {Body}",
@@ -277,108 +276,5 @@ public sealed class StreamingBodyCapturePlugin : IPipelinePlugin
             return parsed <= 0 ? 0 : Math.Min(parsed, _maxAllowedSize);
 
         return DefaultMaxSize;
-    }
-
-    /// <summary>
-    /// Applies the route's request <c>maxSize</c> to what HttpLogging captures, and stamps the matched
-    /// route id + path into the same combined record so it is attributable in Loki.
-    /// </summary>
-    private sealed class PerRouteBodyLimitInterceptor : IHttpLoggingInterceptor
-    {
-        public ValueTask OnRequestAsync(HttpLoggingInterceptorContext logging)
-        {
-            if (logging.HttpContext.Items.TryGetValue(LimitKey, out var value) && value is int limit)
-                logging.RequestBodyLogLimit = limit;
-
-            if (logging.HttpContext.Items.TryGetValue("ConduitSharp.RouteId", out var routeId) && routeId is string id)
-                logging.AddParameter("conduitsharp.route_id", id);
-            logging.AddParameter("conduitsharp.path", logging.HttpContext.Request.Path.Value ?? "");
-
-            return default;
-        }
-
-        // Request bodies only — the response is captured by ResponsePrefixStream, not HttpLogging.
-        public ValueTask OnResponseAsync(HttpLoggingInterceptorContext logging) => default;
-    }
-
-    /// <summary>
-    /// Bounded write-through tee over the response body: copies the first <c>maxSize</c> bytes into a
-    /// pooled buffer as they are written, passes everything through untouched, and flags truncation.
-    /// Swapping <see cref="HttpResponse.Body"/> also reroutes <c>BodyWriter</c> through it, so YARP's
-    /// forward (which writes the response) is captured.
-    /// </summary>
-    private sealed class ResponsePrefixStream : Stream
-    {
-        private readonly Stream _inner;
-        private readonly int _max;
-        private readonly byte[] _buffer;
-        private int _captured;
-
-        public ResponsePrefixStream(Stream inner, int maxSize)
-        {
-            _inner  = inner;
-            _max    = maxSize;
-            _buffer = ArrayPool<byte>.Shared.Rent(maxSize);
-        }
-
-        public bool Truncated { get; private set; }
-        public ReadOnlySpan<byte> Prefix => _buffer.AsSpan(0, _captured);
-        public void ReturnBuffer() => ArrayPool<byte>.Shared.Return(_buffer);
-
-        private void Capture(ReadOnlySpan<byte> data)
-        {
-            var take = Math.Min(_max - _captured, data.Length);
-            if (take > 0)
-            {
-                data[..take].CopyTo(_buffer.AsSpan(_captured));
-                _captured += take;
-            }
-            if (data.Length > take) Truncated = true;
-        }
-
-        public override void Write(byte[] buffer, int offset, int count)
-        {
-            Capture(buffer.AsSpan(offset, count));
-            _inner.Write(buffer, offset, count);
-        }
-
-        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            Capture(buffer.Span);
-            await _inner.WriteAsync(buffer, cancellationToken);
-        }
-
-        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-
-        public override void Flush() => _inner.Flush();
-        public override Task FlushAsync(CancellationToken cancellationToken) => _inner.FlushAsync(cancellationToken);
-
-        public override bool CanWrite => true;
-        public override bool CanRead => false;
-        public override bool CanSeek => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    }
-
-    /// <summary>
-    /// Re-homes HttpLogging's loggers under this plugin's category so request capture obeys this
-    /// plugin's log level rather than the framework's Warning-filtered <c>Microsoft.AspNetCore.*</c>,
-    /// and lands in Loki tagged as body-capture.
-    /// </summary>
-    private sealed class BodyCaptureLoggerFactory(ILoggerFactory inner) : ILoggerFactory
-    {
-        private static readonly string Category = typeof(StreamingBodyCapturePlugin).FullName!;
-
-        public ILogger CreateLogger(string categoryName) =>
-            inner.CreateLogger(categoryName.StartsWith("Microsoft.AspNetCore.HttpLogging", StringComparison.Ordinal)
-                ? Category
-                : categoryName);
-
-        public void AddProvider(ILoggerProvider provider) => inner.AddProvider(provider);
-        public void Dispose() { }
     }
 }

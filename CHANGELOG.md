@@ -61,11 +61,17 @@ Behaviour changes that follow:
 
 ### Breaking — body-capture plugins consolidated
 
-`BodyCapturePlugin` is removed. `StreamingBodyCapturePlugin` (variant `body-capture`, formerly
-`body-capture-streaming`) now covers both cases by choosing its path per request: it reuses the
-gateway's existing seekable buffer when there is one (a retry route, or a body-reading plugin on the
-same route), and otherwise tees a bounded prefix through `HttpLogging`. It keeps
-`ReadsRequestBody => false`, so unlike the removed plugin it never forces whole-body buffering.
+The two v1 plugins are now one. `StreamingBodyCapturePlugin` absorbed the buffering
+`BodyCapturePlugin` and then took its name, so v2 ships a single `BodyCapturePlugin` (variant
+`body-capture`) that chooses its path per request: it reuses the gateway's existing seekable buffer
+when there is one (a retry route, or a body-reading plugin on the same route), and otherwise tees a
+bounded prefix through `HttpLogging`.
+
+**The v2 `BodyCapturePlugin` is not the v1 one.** It keeps `ReadsRequestBody => false`, so unlike
+the v1 class of that name it never forces whole-body buffering. An embedder registering the type
+directly (`AddSingleton<IPipelinePlugin, BodyCapturePlugin>()`) will therefore still compile against
+v2 and silently get the streaming behaviour instead of a compile error. Check that a route relying
+on the old forced buffering declares a body-reading plugin or retry.
 
 Existing routes using `"variant": "body-capture"` keep working unchanged. Routes using
 `"variant": "body-capture-streaming"` must switch to `"body-capture"`.

@@ -1,6 +1,4 @@
-using System.Buffers;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using ConduitSharp.Core.Pipeline;
 using ConduitSharp.Core.Routing;
 using ConduitSharp.Traffic.RateLimiting;
@@ -83,7 +81,9 @@ public sealed class TokenRateLimitPlugin : IPipelinePlugin
         }
 
         var originalBody = context.Response.Body;
-        var capture = new CaptureStream(originalBody, config.MaxResponseBytes);
+        // using, not a manual return at the end: an exception out of next() would otherwise drop the
+        // rented buffer on the floor instead of handing it back to the pool.
+        using var capture = new BoundedTeeStream(originalBody, config.MaxResponseBytes);
         context.Response.Body = capture;
 
         try
@@ -98,7 +98,6 @@ public sealed class TokenRateLimitPlugin : IPipelinePlugin
         var tokens = ExtractTokens(capture.Captured.Span, config.UsageFields);
         if (tokens > 0)
             store.Add(key, windowId, config.WindowSeconds, tokens);
-        capture.ReturnBuffer();
     }
 
     private static string ResolveClientKey(HttpContext context, TokenRateLimitConfig config)
@@ -180,88 +179,4 @@ public sealed class TokenRateLimitPlugin : IPipelinePlugin
         }
         return current.ValueKind == JsonValueKind.Number && current.TryGetInt64(out value);
     }
-
-    /// <summary>Write-through capture: forwards every byte to the client while keeping a copy of the
-    /// first <c>cap</c> bytes so the plugin can parse the response afterward.</summary>
-    private sealed class CaptureStream : Stream
-    {
-        private readonly Stream _inner;
-        private readonly int _cap;
-        private byte[]? _buffer;
-        private int _length;
-
-        public CaptureStream(Stream inner, int cap)
-        {
-            _inner = inner;
-            _cap = cap;
-            _buffer = ArrayPool<byte>.Shared.Rent(cap);
-        }
-
-        public ReadOnlyMemory<byte> Captured => _buffer.AsMemory(0, _length);
-        public void ReturnBuffer() { if (_buffer is not null) { ArrayPool<byte>.Shared.Return(_buffer); _buffer = null; } }
-
-        private void Capture(ReadOnlySpan<byte> data)
-        {
-            var take = Math.Min(_cap - _length, data.Length);
-            if (take > 0) { data[..take].CopyTo(_buffer.AsSpan(_length)); _length += take; }
-        }
-
-        public override void Write(byte[] buffer, int offset, int count)
-        {
-            Capture(buffer.AsSpan(offset, count));
-            _inner.Write(buffer, offset, count);
-        }
-
-        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            Capture(buffer.Span);
-            await _inner.WriteAsync(buffer, cancellationToken);
-        }
-
-        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-
-        public override void Flush() => _inner.Flush();
-        public override Task FlushAsync(CancellationToken cancellationToken) => _inner.FlushAsync(cancellationToken);
-        public override bool CanWrite => true;
-        public override bool CanRead => false;
-        public override bool CanSeek => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    }
-}
-
-/// <summary>Configuration for the <c>token-rate-limit</c> plugin.</summary>
-public sealed record TokenRateLimitConfig
-{
-    /// <summary>Token budget per window, per caller. Required.</summary>
-    [JsonPropertyName("maxTokensPerWindow")] public long MaxTokensPerWindow { get; init; }
-
-    /// <summary>Fixed window length in seconds. Default 60.</summary>
-    [JsonPropertyName("windowSeconds")] public int WindowSeconds { get; init; } = 60;
-
-    /// <summary>Header whose value keys the budget per caller (e.g. <c>X-Api-Key</c>).</summary>
-    [JsonPropertyName("keyHeader")] public string? KeyHeader { get; init; }
-
-    /// <summary>JWT claim (from the Authorization Bearer token) that keys the budget per caller
-    /// (e.g. <c>sub</c>). Used when <see cref="KeyHeader"/> is absent. The token is not re-validated;
-    /// an upstream jwt-auth plugin already did.</summary>
-    [JsonPropertyName("keyClaim")] public string? KeyClaim { get; init; }
-
-    /// <summary>Dotted JSON paths in the response body whose numeric values are summed as the token
-    /// cost, e.g. <c>["usage.prompt_tokens", "usage.completion_tokens"]</c>. Required.</summary>
-    [JsonPropertyName("usageFields")] public IReadOnlyList<string> UsageFields { get; init; } = [];
-
-    /// <summary>Cap on the response bytes buffered to find the usage fields. Default 1 MiB.</summary>
-    [JsonPropertyName("maxResponseBytes")] public int MaxResponseBytes { get; init; } = 1024 * 1024;
-
-    internal static TokenRateLimitConfig From(JsonElement raw) =>
-        raw.ValueKind == JsonValueKind.Object
-            ? raw.Deserialize<TokenRateLimitConfig>(JsonOptions) ?? new TokenRateLimitConfig()
-            : new TokenRateLimitConfig();
-
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 }

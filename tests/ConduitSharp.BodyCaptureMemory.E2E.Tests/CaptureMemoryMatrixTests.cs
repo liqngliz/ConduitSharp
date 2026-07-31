@@ -5,7 +5,7 @@ using Xunit.Abstractions;
 namespace ConduitSharp.BodyCaptureMemory.E2E.Tests;
 
 /// <summary>
-/// Memory / disk / time behaviour of the unified body-capture plugin (StreamingBodyCapturePlugin,
+/// Memory / disk / time behaviour of the unified body-capture plugin (BodyCapturePlugin,
 /// variant "body-capture") under a 500 MB body. There is one plugin; the route's shape decides its
 /// path:
 ///

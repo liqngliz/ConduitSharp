@@ -7,12 +7,12 @@ using Xunit;
 
 namespace ConduitSharp.Plugin.BodyCapture.Tests;
 
-public sealed class StreamingBodyCapturePluginTests
+public sealed class BodyCapturePluginTests
 {
     // The plugin delegates capture to the framework's HttpLogging middleware, which logs under its
     // own category rather than through an injected ILogger<T>. So these tests assert on what the
     // host's ILoggerFactory actually receives — the same records that reach OTLP → Loki in prod.
-    private static (StreamingBodyCapturePlugin Plugin, CapturedLogs Logs) Build()
+    private static (BodyCapturePlugin Plugin, CapturedLogs Logs) Build()
     {
         var logs = new CapturedLogs();
         var factory = LoggerFactory.Create(b =>
@@ -20,7 +20,7 @@ public sealed class StreamingBodyCapturePluginTests
             b.SetMinimumLevel(LogLevel.Trace); // HttpLogging's category is Warning-filtered by default
             b.AddProvider(logs);
         });
-        return (new StreamingBodyCapturePlugin(factory), logs);
+        return (new BodyCapturePlugin(factory), logs);
     }
 
     // Models YARP's forward: the real request pipeline reads Request.Body to stream it upstream.
@@ -155,13 +155,13 @@ public sealed class StreamingBodyCapturePluginTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["BodyCapture:MaxCaptureBytes"] = "65536" })
             .Build();
 
-        var raised = new StreamingBodyCapturePlugin(factory, configuration);
+        var raised = new BodyCapturePlugin(factory, configuration);
         raised.ValidateConfig(config); // 48 KiB is under the raised 64 KiB ceiling — no throw
 
         Assert.Throws<InvalidOperationException>(() => Build().Plugin.ValidateConfig(config)); // default still rejects
     }
 
-    private static StreamingBodyCapturePlugin BuildWith(params (string Key, string Value)[] settings) =>
+    private static BodyCapturePlugin BuildWith(params (string Key, string Value)[] settings) =>
         new(LoggerFactory.Create(_ => { }),
             new ConfigurationBuilder()
                 .AddInMemoryCollection(settings.ToDictionary(s => s.Key, s => (string?)s.Value))
@@ -278,7 +278,7 @@ public sealed class StreamingBodyCapturePluginTests
 
         await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardByDrainingBody);
 
-        Assert.Contains(typeof(StreamingBodyCapturePlugin).FullName!, logs.Categories);
+        Assert.Contains(typeof(BodyCapturePlugin).FullName!, logs.Categories);
         Assert.DoesNotContain(logs.Categories, c => c.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal));
     }
 
@@ -294,7 +294,7 @@ public sealed class StreamingBodyCapturePluginTests
             b.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
             b.AddProvider(logs);
         });
-        var plugin = new StreamingBodyCapturePlugin(factory);
+        var plugin = new BodyCapturePlugin(factory);
 
         await plugin.ExecuteAsync(Request("hello full body"), JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardByDrainingBody);
 

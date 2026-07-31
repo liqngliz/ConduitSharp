@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 namespace ConduitSharp.E2E.Shared;
 
 // Real-Kestrel harness for measuring the memory cost of request-body capture. There is one capture
-// plugin now — StreamingBodyCapturePlugin (variant "body-capture") — which picks its path per request:
+// plugin now — BodyCapturePlugin (variant "body-capture") — which picks its path per request:
 //   - route already buffered (retry / readsBody): reuse the seekable buffer, read the prefix off it
 //   - plain streaming route: tee a <=ceiling prefix via HttpLogging
 // So a route's shape (retry on/off), not a plugin choice, decides the behaviour.
@@ -240,7 +240,7 @@ public sealed class CaptureGatewayHost : IAsyncDisposable
         });
 
         if (style == CaptureStyle.Capture)
-            builder.Services.AddSingleton<IPipelinePlugin, ConduitSharp.Plugin.BodyCapture.StreamingBodyCapturePlugin>();
+            builder.Services.AddSingleton<IPipelinePlugin, ConduitSharp.Plugin.BodyCapture.BodyCapturePlugin>();
 
         builder.AddConduitSharpGateway();
         var app = builder.Build();
@@ -265,7 +265,7 @@ public sealed class CaptureGatewayHost : IAsyncDisposable
     private sealed class CaptureCountingLoggerProvider : ILoggerProvider
     {
         private static readonly string CaptureCategory =
-            typeof(ConduitSharp.Plugin.BodyCapture.StreamingBodyCapturePlugin).FullName!;
+            typeof(ConduitSharp.Plugin.BodyCapture.BodyCapturePlugin).FullName!;
         private int _count;
         public int Count => _count;
         public ILogger CreateLogger(string categoryName) =>
