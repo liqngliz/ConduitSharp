@@ -5,21 +5,9 @@ using Xunit.Abstractions;
 namespace ConduitSharp.BodyCaptureMemory.E2E.Tests;
 
 /// <summary>
-/// Memory / disk / time behaviour of the unified body-capture plugin (BodyCapturePlugin,
-/// variant "body-capture") under a 500 MB body. There is one plugin; the route's shape decides its
-/// path:
-///
-///   streaming route (no retry) → tees a bounded prefix via HttpLogging (RAM = prefix, no disk;
-///                                text media types only)
-///   retry route (body already buffered) → reuses that seekable buffer, reads the prefix off it
-///                                (no second copy; captures binary too)
-///
-/// Safety headline: at a bounded prefix the plugin is cheap either way. Told to capture the FULL body
-/// on a streaming route it holds all of it in RAM (no disk tier) — the OOM path the 32 KiB default
-/// ceiling exists to prevent, which is why the raised ceiling is a deliberate, budget-shed-guarded knob.
-///
-/// RSS is single-process and noisy; the sharp signals are PeakSpill (disk) and CaptureRecords (proof
-/// the capture path actually ran — HttpLogging silently no-ops when its log level is disabled).
+/// Memory, disk and time behaviour of <c>BodyCapturePlugin</c> (variant <c>body-capture</c>) under
+/// a 500 MB body, across both paths the route's shape selects: a streaming route tees a bounded
+/// prefix via HttpLogging, a retry route reuses the seekable buffer that already exists.
 /// </summary>
 [Trait("Category", "E2E")]
 [Trait("Category", "HeavyMemory")]

@@ -7,20 +7,12 @@ using Yarp.ReverseProxy.Model;
 namespace ConduitSharp.Gateway.Proxy;
 
 /// <summary>
-/// Passive health policy implementing routes.json's <c>circuitBreaker</c> block:
-/// <c>threshold</c> consecutive failures against one node take it out of the load balancer's
-/// rotation for <c>cooldownMs</c>, after which YARP lets one trial request through.
+/// Passive health policy implementing routes.json's <c>circuitBreaker</c> block: <c>threshold</c>
+/// consecutive failures against one node take it out of rotation for <c>cooldownMs</c>, after
+/// which YARP lets one trial request through.
 ///
-/// YARP's stock passive policy (<c>TransportFailureRate</c>) is rate-over-a-window, not
-/// consecutive-count, so it cannot express the documented threshold. This one can, and is ~40
-/// lines — the whole <c>NodeHealthTracker</c> / <c>ILoadBalancer</c> tree it replaces is gone.
-///
-/// Thresholds come from the route's own <see cref="CircuitBreakerConfig"/>, resolved by route id
-/// (clusters are 1:1 with routes). Nothing rides on <c>ClusterConfig.Metadata</c>: gateway config
-/// stays typed, on the gateway's side of the split, and a hot reload updates it with the rest.
-///
-/// A failure is an upstream 502/503/504 or a transport-level forwarder error. A client disconnect
-/// is not the node's fault and is not counted.
+/// <para>A failure is an upstream 502/503/504 or a transport-level forwarder error. A client
+/// disconnect is not the node's fault and is not counted.</para>
 /// </summary>
 internal sealed class ConsecutiveFailuresHealthPolicy(
     IDestinationHealthUpdater healthUpdater,

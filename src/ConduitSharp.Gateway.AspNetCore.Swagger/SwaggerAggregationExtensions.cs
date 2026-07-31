@@ -22,20 +22,13 @@ internal sealed class SpecHostNotAllowedException : Exception;
 internal static class SwaggerAggregationExtensions
 {
     /// <summary>
-    /// Registers the aggregated Swagger UI and per-route spec endpoints.
-    /// Must be called BEFORE UseMiddleware&lt;GatewayMiddleware&gt;() since the
-    /// gateway middleware is terminal and never calls next.
+    /// Registers the aggregated Swagger UI and per-route spec endpoints. Must be called BEFORE
+    /// <c>UseMiddleware&lt;GatewayMiddleware&gt;()</c>, which is terminal and never calls next.
     ///
-    /// Routes with "swagger": { "fetchFrom": "..." } have their spec fetched
-    /// live from the upstream on each request.
-    /// Routes with "swagger": { "specFile": "..." } serve a local JSON file.
-    ///
-    /// Security schemes are injected automatically based on the route's plugin list:
-    ///   api-key-auth / api-key-auth-hashed → OpenAPI apiKey scheme
-    ///   jwt-auth / jwks-jwt-auth           → OpenAPI http bearer scheme
-    ///
-    /// UI is available at /swagger — disabled automatically when no routes
-    /// have a swagger block configured.
+    /// <para>A route's <c>"swagger"</c> block either fetches its spec live from the upstream
+    /// (<c>fetchFrom</c>) or serves a local file (<c>specFile</c>). Security schemes are injected
+    /// from the route's plugin list: api-key-auth to OpenAPI apiKey, jwt-auth to http bearer. The
+    /// UI is disabled automatically when no route configures swagger.</para>
     /// </summary>
     internal static void UseSwaggerAggregation(
         this IApplicationBuilder app,

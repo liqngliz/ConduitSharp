@@ -11,24 +11,11 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ConduitSharp.Plugin.TokenSpend;
 
 /// <summary>
-/// Records what every LLM call cost, as durable history. It reads the same provider <c>usage</c>
-/// block <c>token-rate-limit</c> reads, but instead of charging a window it writes one
-/// <see cref="SpendRecord"/> per request to an <see cref="ISpendStore"/>, so the data is still there
-/// weeks later to answer which habits burn tokens.
+/// Records what every LLM call cost, writing one <see cref="SpendRecord"/> per request to an
+/// <see cref="ISpendStore"/>. Input, output, cache-write and cache-read are separate fields.
 ///
-/// <para>Input, output, cache-write, and cache-read counts are kept as four separate fields rather
-/// than summed, because they price differently and the split is what makes caching legible.</para>
-///
-/// <para>The response is buffered write-through, so the client receives bytes as they arrive while
-/// the gateway keeps a bounded copy to parse. The request body is read too (hence
-/// <see cref="ReadsRequestBody"/>), which is what supplies the model, the turn index, and the
-/// session grouping: an Anthropic or OpenAI request carries the whole message array every turn, so
-/// one intercepted request yields all three without the client cooperating.</para>
-///
-/// <para><b>Streaming is not parsed in this build.</b> An SSE response is not one JSON document, so
-/// a <c>text/event-stream</c> reply is recorded with <see cref="SpendRecord.Streamed"/> set and zero
-/// tokens. That is deliberate: the call is visible in the history as uncounted rather than missing
-/// from it. Claude Code streams by default, so front a non-streaming endpoint to measure it.</para>
+/// <para>An SSE response is recorded with <see cref="SpendRecord.Streamed"/> set and zero tokens:
+/// this build does not parse event streams.</para>
 ///
 /// <para>routes.json config, variant <c>token-spend</c>:</para>
 /// <code>

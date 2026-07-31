@@ -9,26 +9,14 @@ namespace ConduitSharp.Plugin.TokenRateLimit;
 
 /// <summary>
 /// Meters LLM token usage per caller against a fixed-window budget, reusing the gateway's shared
-/// <see cref="IRateLimitStore"/> (in-memory, or the Redis drop-in for a budget shared across
-/// replicas). Unlike request-count limiting, the cost of a call is unknown until the model answers,
-/// so this is <b>charge-after</b>: it reads the token counts from the response body and adds them to
-/// the window's counter; the next request that finds the window already over budget gets a 429. A
-/// request therefore overshoots the budget by at most its own cost.
+/// <see cref="IRateLimitStore"/>. <b>Charge-after</b>: it adds the response's token counts to the
+/// window, and the next request that finds the window over budget gets a 429, so a request
+/// overshoots its budget by at most its own cost.
 ///
-/// <para>Because the usage fields live in the body, the whole response is buffered so it can be
-/// parsed. The buffer is write-through, so the client still receives the response as it streams (the
-/// gateway keeps a copy to parse afterward), and it is bounded by <c>maxResponseBytes</c> and reserved
-/// against the RAM budget through <see cref="CaptureMemoryBytes"/>.</para>
+/// <para>Which fields hold the counts is config, so one plugin covers every provider. Streaming
+/// (SSE) bodies parse as 0 and the call goes uncounted.</para>
 ///
-/// <para>Which fields hold the token counts is config, so one plugin covers every provider: OpenAI
-/// <c>usage.prompt_tokens</c> + <c>usage.completion_tokens</c>, Anthropic <c>usage.input_tokens</c> +
-/// <c>usage.output_tokens</c>, Gemini <c>usageMetadata.totalTokenCount</c>, Ollama
-/// <c>prompt_eval_count</c> + <c>eval_count</c>. The listed fields are summed.</para>
-///
-/// <para>Streaming (SSE) bodies are not a single JSON document, so usage parses as 0 and the call goes
-/// uncounted; front the model's non-streaming endpoint, or add a per-provider SSE reader.</para>
-///
-/// routes.json config, variant <c>token-rate-limit</c>:
+/// <para>routes.json config, variant <c>token-rate-limit</c>:</para>
 /// <code>
 /// { "maxTokensPerWindow": 100000, "windowSeconds": 60, "keyClaim": "sub",
 ///   "usageFields": ["usage.prompt_tokens", "usage.completion_tokens"] }

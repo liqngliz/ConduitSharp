@@ -1,30 +1,14 @@
 namespace ConduitSharp.Gateway.Middleware;
 
 /// <summary>
-/// Tracks what buffered request bodies are consuming, as <b>two independent budgets — one per
-/// physical resource</b>:
+/// Tracks what buffered request bodies consume, as two independent budgets, one per physical
+/// resource: <c>Gateway:RequestLimits:MaxRamBufferedBodyBytes</c> for heap held by buffered bodies
+/// and capture prefixes, and <c>Gateway:RequestLimits:MaxDiskBufferedBodyBytes</c> for bytes in
+/// spill files.
 ///
-///   • <b>RAM</b> (<c>Gateway:RequestLimits:MaxRamBufferedBodyBytes</c>) — heap held by buffered
-///     bodies and by body-capture prefixes. Bounded by the memory available to the process.
-///   • <b>disk</b> (<c>Gateway:RequestLimits:MaxDiskBufferedBodyBytes</c>) — bytes in spill files.
-///     Bounded by free space on <c>SpillDirectory</c>.
-///
-/// They are deliberately not one combined number. A single "RAM + disk" total cannot be sized
-/// correctly: raising it to suit a large spill volume would silently license the same growth in RAM,
-/// which is how the process gets OOM-killed instead of shedding.
-///
-/// <b>How a body moves between them.</b> The RAM reservation covers the buffer's *capacity*, not its
-/// fill, because <c>FileBufferingReadStream</c> rents the whole threshold from <c>ArrayPool</c> at
-/// construction and returns it the instant it spills. So a caller reserves the threshold up front;
-/// if the body outgrows it, the caller releases the RAM reservation and starts charging the bytes to
-/// the disk budget instead. Disk reservations are made chunk-by-chunk as the body is read and
-/// released when the request completes.
-///
-/// <b>What refusal means.</b> Failing the RAM reservation is routine — that body spills. Failing the
-/// disk reservation is the 503 load-shed: neither resource has room.
-///
-/// <c>0</c> on either budget means "none of that resource is available" — no RAM means every body
-/// spills; no disk means a body must fit RAM or be shed. Negative values are rejected at startup.
+/// <para>Failing the RAM reservation is routine and means the body spills. Failing the disk
+/// reservation is the 503 load-shed. <c>0</c> on either means none of that resource is available;
+/// negative values are rejected at startup.</para>
 /// </summary>
 internal sealed class RequestBodyBudget(long maxRamBytes, long maxDiskBytes)
 {

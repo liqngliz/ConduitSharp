@@ -21,3 +21,7 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 - (was line 164) A copy of an assembly the host already has (plugin publishes bring the whole dependency closure, e.g. ConduitSharp.Host.dll). Loading it again would re-discover the built-in plugins it contains and re-register them AFTER the external plugin — last-registration-wins would then silently shadow the plugin with the built-in it was meant to replace.
 - (was line 172) Reuse if already loaded from this exact path (gateway restart in tests).
 - (was line 177) this DLL never loaded — its resolver can't help anyone
+
+## PluginAssemblyLoader
+
+- The shared Default load context is required for P/Invoke and COM interop, which is why plugins are not isolated into their own context.

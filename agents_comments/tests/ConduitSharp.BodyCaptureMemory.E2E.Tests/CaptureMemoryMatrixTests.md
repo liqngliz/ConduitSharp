@@ -28,3 +28,9 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 ## CaptureMemoryMatrixTests.RaisedBufferThreshold_KeepsBodyInRam_SkipsSpill
 
 - (was line 110) 5 — gateway buffer clamp is now configurable (no capture plugin needed): a retry route with a raised MemoryBufferThreshold keeps the whole body in RAM instead of spilling. Proves the lift.
+
+## CaptureMemoryMatrixTests
+
+- At a bounded prefix the plugin is cheap on either path. Told to capture the FULL body on a streaming route it holds all of it in RAM with no disk tier, which is the OOM path the 32 KiB default ceiling exists to prevent, and why the raised ceiling is a deliberate budget-shed-guarded knob.
+- RSS is single-process and noisy. The sharp signals are PeakSpill for disk and CaptureRecords as proof the capture path actually ran, because HttpLogging silently no-ops when its log level is disabled.
+- Streaming path captures text media types only; the retry path reads raw bytes off the buffer and so captures binary too.

@@ -4,19 +4,10 @@ using System.Text;
 namespace ConduitSharp.Integration.Tests.Fixtures;
 
 /// <summary>
-/// A minimal in-process OTLP/HTTP receiver. Accepts protobuf POSTs on the standard
-/// signal paths (/v1/traces, /v1/metrics, /v1/logs) and captures the raw payloads
-/// so tests can assert the gateway actually exported telemetry.
-///
-/// Deliberately built on <see cref="System.Net.HttpListener"/> rather than ASP.NET Core:
-/// a Kestrel-based receiver in the same process emits Microsoft.AspNetCore activities
-/// for every export POST it receives, which the gateway's process-wide instrumentation
-/// picks up and re-exports — a feedback loop that floods and stalls the exporter.
-/// HttpListener creates no activities, so receiving an export is telemetry-silent.
-///
-/// Point the gateway at it via the standard SDK environment variables:
-///   OTEL_EXPORTER_OTLP_ENDPOINT = collector.BaseUrl
-///   OTEL_EXPORTER_OTLP_PROTOCOL = http/protobuf
+/// A minimal in-process OTLP/HTTP receiver. Accepts protobuf POSTs on the standard signal paths
+/// (/v1/traces, /v1/metrics, /v1/logs) and captures the raw payloads so tests can assert the
+/// gateway actually exported telemetry. Point the gateway at it with
+/// <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> and <c>OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf</c>.
 /// </summary>
 public sealed class FakeOtlpCollector : IAsyncDisposable
 {

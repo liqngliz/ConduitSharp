@@ -96,28 +96,16 @@ public sealed class SwaggerHostOptions
 }
 
 /// <summary>
-/// Caps on request body buffering. There are <b>two independent resource budgets</b>, one per
-/// resource, because they are bounded by different physical things and confusing them is how a
-/// gateway gets OOM-killed instead of shedding:
+/// Caps on request body buffering, as two independent budgets:
+/// <see cref="MaxRamBufferedBodyBytes"/> sized against available memory, and
+/// <see cref="MaxDiskBufferedBodyBytes"/> sized against free disk.
 ///
-/// <list type="bullet">
-/// <item><see cref="MaxRamBufferedBodyBytes"/> — total RAM. Size against available memory.</item>
-/// <item><see cref="MaxDiskBufferedBodyBytes"/> — total spill-file bytes. Size against free disk.</item>
-/// </list>
+/// <para>A body is held in RAM up to <see cref="RamBufferThresholdBytes"/> and charged to the RAM
+/// budget, then spills to a temp file and is charged to disk instead. 503 comes only when neither
+/// has room. Capture prefixes never spill and are charged to RAM.</para>
 ///
-/// A buffered body is held in RAM up to <see cref="RamBufferThresholdBytes"/> and charged to the RAM
-/// budget; beyond that it spills to a temp file and is charged to the disk budget instead. So the
-/// gateway degrades in tiers rather than falling off a cliff: fast while RAM has room, slower on disk
-/// once it doesn't, and <b>503 only when neither has room</b>.
-///
-/// Body-capture prefixes are RAM-only (they never spill) and are charged to
-/// <see cref="MaxRamBufferedBodyBytes"/>.
-///
-/// Kestrel's transport-level limit (~28.6 MB by default) still applies first; these limits act at
-/// the gateway layer and are enforced for chunked bodies too.
-///
-/// Defaults are sized for a small container (256–512 MiB), not for the host you develop on:
-/// 64 MiB of RAM and 64 MiB of spill. Raise each deliberately, against the resource it meters.
+/// <para>Defaults suit a 256-512 MiB container: 64 MiB each. Kestrel's transport limit
+/// (~28.6 MB by default) still applies first.</para>
 /// </summary>
 public sealed class RequestLimitsOptions
 {
@@ -144,21 +132,12 @@ public sealed class RequestLimitsOptions
 
     /// <summary>
     /// Total spill-file bytes, across all in-flight requests, that buffered bodies may occupy on
-    /// <see cref="SpillDirectory"/>. Default: 64 MiB.
+    /// <see cref="SpillDirectory"/>. Default: 64 MiB. Size against free space on the spill path.
     ///
-    /// Size this against free space on the spill path. A body that can get neither RAM nor disk is
-    /// shed with <b>503 Service Unavailable</b> (retryable) — this budget is the load-shed trigger for
-    /// bodies too large for the RAM budget. <c>0</c> means "no spilling" — a body must fit the RAM
-    /// budget or be shed. Negative is rejected at startup.
-    ///
-    /// <b>There is no "unlimited" value.</b> Before v2.0.0 a <c>0</c> on the combined total disabled
-    /// the check and meant "buffer without bound"; here it means the opposite. For effectively
-    /// unbounded spilling, set a value large enough never to bind rather than <c>0</c>.
-    ///
-    /// <b>The tmpfs trap.</b> If <see cref="SpillDirectory"/> resolves to a <c>tmpfs</c> mount — which
-    /// <c>/tmp</c> often is in containers — then this "disk" budget is really a second memory budget,
-    /// charged to the same cgroup. Either point the spill at real storage, or size this as if it were
-    /// memory and count it against the same limit as <see cref="MaxRamBufferedBodyBytes"/>.
+    /// <para>A body that can get neither RAM nor disk is shed with <b>503 Service Unavailable</b>.
+    /// <c>0</c> means no spilling: a body must fit the RAM budget or be shed. Negative is rejected
+    /// at startup. There is no unlimited value; for effectively unbounded spilling set a number
+    /// large enough never to bind.</para>
     /// </summary>
     public long MaxDiskBufferedBodyBytes { get; init; } = 64 * 1024 * 1024;
 
@@ -178,19 +157,8 @@ public sealed class RequestLimitsOptions
     public long RamBufferThresholdBytes { get; init; } = 1024 * 1024;
 
     /// <summary>
-    /// Directory for temp-file spill. Null or empty uses the system temp path.
-    ///
-    /// Worth setting explicitly, and worth measuring: the disk tier is only as fast as this path.
-    /// A RAM-backed <c>tmpfs</c> measures ~5x container overlayfs or a mounted volume (which are
-    /// about equal to each other), which is a larger factor than anything in the buffering code.
-    ///
-    /// <c>/tmp</c> is <c>tmpfs</c> on many container images, and that cuts both ways. It makes the
-    /// disk tier fast, and <see cref="MaxDiskBufferedBodyBytes"/> still bounds it — so spilling to
-    /// tmpfs with a total budget that fits in the pod is a deliberate, legitimate configuration. But
-    /// it does not relieve memory pressure, because the "disk" tier is RAM: a budget sized on the
-    /// assumption that spill lands on real storage will OOM the process where it would otherwise
-    /// have degraded and shed. Pick tmpfs for speed with a memory-sized budget, or real storage for
-    /// capacity — but pick, rather than inheriting whatever <c>/tmp</c> happens to be.
+    /// Directory for temp-file spill. Null or empty uses the system temp path. Worth setting
+    /// explicitly: the disk tier is only as fast as this path.
     /// </summary>
     public string? SpillDirectory { get; init; }
 }

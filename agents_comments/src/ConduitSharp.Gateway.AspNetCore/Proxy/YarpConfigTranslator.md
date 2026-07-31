@@ -12,3 +12,7 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 ## YarpConfigTranslator.WithCircuitBreaker
 
 - (was line 66) The circuit breaker is a passive health-check policy. Only its *enablement* crosses into YARP — the threshold and cooldown are read from the route's own CircuitBreakerConfig, so nothing rides along in ClusterConfig.Metadata as a string. Any active health check the user configured is preserved.
+
+## YarpConfigTranslator
+
+- That shape is the point. A field-by-field translator is a layer that can disagree with YARP, and once did: it silently downgraded HTTP/2 and broke gRPC. It also has to grow every time YARP grows a feature. Neither is true of a `with` expression.

@@ -4,12 +4,8 @@ using System.Text.Json.Serialization;
 namespace ConduitSharp.Security.Jwt;
 
 /// <summary>
-/// Configuration for the <c>jwt-auth</c> plugin.
-/// Validates HS256 Bearer JWTs. Place inside the route's <c>"config"</c> block.
-///
-/// Lives apart from <see cref="JwtAuthPlugin"/> because both the plugin and
-/// <see cref="JwtAuthHandler"/> read it: with the records declared in the plugin's file, the
-/// handler's dependency on them pointed back at the plugin that depends on the handler.
+/// Configuration for the <c>jwt-auth</c> plugin, which validates HS256 Bearer JWTs. Place inside
+/// the route's <c>"config"</c> block.
 /// </summary>
 /// <example>
 /// <code>

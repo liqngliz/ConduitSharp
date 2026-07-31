@@ -43,3 +43,11 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 ## TokenSpendPlugin.ClaimFromBearer
 
 - (was line 331) Reads a claim out of the Authorization Bearer token WITHOUT validating it — an upstream jwt-auth plugin has already checked the signature; this only needs a per-caller value.
+
+## TokenSpendPlugin
+
+- Reads the same provider usage block token-rate-limit reads, but persists a row instead of charging a window, so the data is still there weeks later to answer which habits burn tokens.
+- The four token counts stay separate because they price differently: a cache write runs about 1.25x input and a cache read about a tenth. One total would hide the biggest lever a caller has.
+- The response is buffered write-through, so the client receives bytes as they arrive while the gateway keeps a bounded copy to parse.
+- ReadsRequestBody is true because the request body is what supplies the model, the turn index and the session grouping: an Anthropic or OpenAI request carries the whole message array every turn, so one intercepted request yields all three without the client cooperating.
+- Recording SSE as streamed with zero tokens is deliberate: the call stays visible in the history as uncounted rather than missing from it. Claude Code streams by default, so front a non-streaming endpoint to measure it.

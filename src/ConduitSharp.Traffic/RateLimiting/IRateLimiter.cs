@@ -2,20 +2,11 @@ namespace ConduitSharp.Traffic.RateLimiting;
 
 /// <summary>
 /// The rate-limit algorithm: decides whether a request identified by <c>key</c> may proceed and,
-/// when it may not, how long the caller should wait.
+/// when it may not, how long the caller should wait. Swap it by dropping an assembly that
+/// implements this into the plugins directory; <see cref="FixedWindowRateLimiter"/> is the default.
 ///
-/// Swap the algorithm by dropping an assembly that implements this into the plugins directory —
-/// the same discovery <see cref="IRateLimitStore"/> uses. The built-in
-/// <see cref="FixedWindowRateLimiter"/> is used otherwise. See the SlidingWindow example.
-///
-/// This is the *algorithm*; <see cref="IRateLimitStore"/> is the *counter backend* a fixed-window
-/// algorithm keeps its counts in. They are separate because the reason to change them differs: a
-/// store changes to share counters across replicas (Redis), an algorithm changes what "over the
-/// limit" means. An algorithm need not use a store at all — a sliding log keeps timestamps, which
-/// no store models.
-///
-/// Implementations are singletons and must be thread-safe: the window and quota arrive per call
-/// rather than per instance, so one limiter serves every route.
+/// <para>Implementations are singletons and must be thread-safe: the window and quota arrive per
+/// call rather than per instance, so one limiter serves every route.</para>
 /// </summary>
 public interface IRateLimiter
 {

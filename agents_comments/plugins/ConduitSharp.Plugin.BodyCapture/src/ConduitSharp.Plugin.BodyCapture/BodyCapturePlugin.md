@@ -35,3 +35,9 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 ## BodyCapturePlugin.DirectionMaxSize
 
 - (was line 265) The direction's effective maxSize, or 0 when it is not captured. Clamped to the ceiling as well as validated, so the bound holds even if a host ever skips ValidateConfig. Block absent or maxSize <= 0 means "do not capture this direction"; block present without maxSize means the default.
+
+## BodyCapturePlugin
+
+- Request capture picks the cheaper path per request. When the gateway already buffered the body (a retry route, or a body-reading plugin on the same route) HttpRequest.Body is seekable and the prefix is read straight off it, raw, so binary is captured too. Otherwise the route is streaming and HttpLogging tees the first maxSize bytes as YARP streams them upstream, text-ish media types only.
+- Response capture wraps HttpResponse.Body in a bounded write-through tee, so it runs on both request paths: a retry route captures the response too, and raw bytes mean binary responses are captured.
+- Captured bodies are emitted through the host's ILoggerFactory under this plugin's category, which is what BodyCaptureLoggerFactory re-homes them for.

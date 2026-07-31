@@ -13,33 +13,17 @@ using Microsoft.Extensions.Logging;
 namespace ConduitSharp.Plugin.BodyCapture;
 
 /// <summary>
-/// Logs a bounded prefix of the request body, the response body, or both, chosen per direction by
-/// config:
+/// Logs a bounded prefix of the request body, the response body, or both, chosen per direction:
 ///
 /// <code>
 /// { "request": { "maxSize": 4096 }, "response": { "maxSize": 8192 } }
 /// </code>
 ///
-/// A direction is captured only if its block is present with a positive <c>maxSize</c>. Omit the
-/// block (or set <c>maxSize: 0</c>) to skip that direction.
-///
-/// <b>Request</b> capture picks the cheaper path per request. If the gateway already buffered the body
-/// (a retry route, or a body-reading plugin), <see cref="HttpRequest.Body"/> is seekable and the prefix
-/// is read straight off it (raw bytes, so binary is captured too). Otherwise the route is streaming and
-/// the framework's HttpLogging middleware tees the first <c>maxSize</c> bytes as YARP streams them
-/// upstream (text-ish media types only). Either way <see cref="IPipelinePlugin.ReadsRequestBody"/>
-/// stays <c>false</c> — capture never forces the gateway to buffer.
-///
-/// <b>Response</b> capture wraps <see cref="HttpResponse.Body"/> in a bounded write-through tee that
-/// copies the first <c>maxSize</c> bytes as the response streams to the client. It runs on both request
-/// paths, so a retry route captures the response too, and it reads raw bytes so binary responses are
-/// captured.
-///
-/// Both prefixes are RAM-only (never spill) and are declared through <see cref="CaptureMemoryBytes"/>,
-/// so the gateway reserves <c>requestMaxSize + responseMaxSize</c> against
-/// <c>Gateway:RequestLimits:MaxRamBufferedBodyBytes</c> and sheds with a 503 under a flood rather than
-/// growing unchecked. Captured bodies are emitted through the host's <see cref="ILoggerFactory"/> under
-/// this plugin's category.
+/// A direction is captured only when its block is present with a positive <c>maxSize</c>.
+/// <see cref="IPipelinePlugin.ReadsRequestBody"/> stays <c>false</c>, so capture never forces the
+/// gateway to buffer. Both prefixes are RAM-only and declared through
+/// <see cref="CaptureMemoryBytes"/>, so the gateway reserves them against
+/// <c>Gateway:RequestLimits:MaxRamBufferedBodyBytes</c> and sheds with a 503 under a flood.
 /// </summary>
 public sealed class BodyCapturePlugin : IPipelinePlugin
 {

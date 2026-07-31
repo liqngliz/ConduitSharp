@@ -4,20 +4,11 @@ using ConduitSharp.Traffic.RateLimiting;
 namespace ConduitSharp.RateLimit.SlidingWindow;
 
 /// <summary>
-/// Sliding-log rate limiter: a drop-in <see cref="IRateLimiter"/> that replaces the built-in
-/// fixed-window algorithm.
+/// Sliding-log rate limiter: a drop-in <see cref="IRateLimiter"/> replacing the built-in
+/// fixed-window algorithm. It keeps the timestamp of every permit still inside the window, so the
+/// limit holds at every instant rather than only at aligned boundaries.
 ///
-/// Fixed windows are cheap but bursty at the seam — a caller can spend a full quota just before a
-/// boundary and another just after, delivering up to 2x the nominal rate across it. This keeps the
-/// timestamp of every permit still inside the window instead, so the limit holds across *every*
-/// instant, not just the aligned ones. The trade is memory: O(maxRequests) timestamps per active
-/// key against the fixed window's single counter. Worth it for expensive endpoints where the burst
-/// is the thing you are actually paying for; not worth it for a coarse per-minute quota.
-///
-/// It deliberately does not use <see cref="IRateLimitStore"/>: that interface counts hits per
-/// aligned window id, which is exactly the model a sliding log rejects. An algorithm is free to
-/// keep state a store cannot express — which is why the algorithm and the store are separate seams.
-/// State is per-process, so quotas are per replica.
+/// <para>State is per-process, so quotas are per replica.</para>
 /// </summary>
 public sealed class SlidingWindowRateLimiter : IRateLimiter
 {

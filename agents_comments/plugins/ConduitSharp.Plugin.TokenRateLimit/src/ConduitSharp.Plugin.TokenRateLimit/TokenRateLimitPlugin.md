@@ -17,3 +17,10 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 ## TokenRateLimitPlugin.ExtractTokens
 
 - (was line 150) Parses the buffered body as JSON and sums the configured dotted-path fields. Returns 0 when the body is not JSON (e.g. an SSE stream) or holds none of the fields.
+
+## TokenRateLimitPlugin
+
+- Charge-after rather than check-then-allow because a call's cost is unknown until the model answers. If you need a hard cap, this is not it.
+- The response is buffered so the usage fields can be parsed, write-through so the client still receives it as it streams, bounded by maxResponseBytes and reserved against the RAM budget through CaptureMemoryBytes.
+- usageFields per provider: OpenAI usage.prompt_tokens + usage.completion_tokens; Anthropic usage.input_tokens + usage.output_tokens; Gemini usageMetadata.totalTokenCount; Ollama prompt_eval_count + eval_count. The listed fields are summed.
+- SSE goes uncounted because it is not one JSON document. Front the model's non-streaming endpoint, or add a per-provider SSE reader.

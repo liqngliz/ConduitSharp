@@ -47,3 +47,8 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 
 - (was line 293) Single backup, overwritten: bounds the sink at ~2x _maxFileBytes with no scheduler and no dependency. A log shipper (promtail, the collector's filelog receiver) follows the rename.
 - (was line 305) A failed roll is not fatal — the next iteration reopens and keeps appending.
+
+## BodyCaptureToFilePlugin.CaptureMemoryBytes
+
+- What this does NOT cover: the buffer is handed to a bounded channel and returned to the pool only when the background writer drains it, which can be after the request that rented it has completed and released its reservation. The queue can therefore retain up to OTEL_BLRP_MAX_QUEUE_SIZE x maxSize beyond what is reserved at any instant. It is a hard ceiling because the channel is DropWrite, but one the request-scoped budget cannot see, so it is logged at startup rather than inferred.
+- The sink's disk use is deliberately not budgeted here. MaxDiskBufferedBodyBytes meters transient per-request spill released when the request ends, whereas this writes a persistent rolling log already bounded at ~2x maxFileBytes by Roll. Reserving those bytes per request would ratchet that budget to zero and 503 the gateway permanently, because they are never released.

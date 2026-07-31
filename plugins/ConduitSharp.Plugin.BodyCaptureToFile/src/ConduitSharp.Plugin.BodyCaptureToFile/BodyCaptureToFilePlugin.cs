@@ -57,20 +57,7 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
     /// <summary>
     /// The pooled <c>maxSize</c> buffer this plugin rents per request, declared so the gateway
     /// reserves it against <c>Gateway:RequestLimits:MaxRamBufferedBodyBytes</c> and sheds with a 503
-    /// instead of letting it multiply by concurrency unbudgeted.
-    ///
-    /// Note what this does <em>not</em> cover. The buffer is handed to a bounded channel and returned
-    /// to the pool only when the background writer drains it, which can be after the request that
-    /// rented it has completed and released its reservation. So the queue can retain up to
-    /// <c>OTEL_BLRP_MAX_QUEUE_SIZE</c> × <c>maxSize</c> beyond what is reserved at any instant — a
-    /// hard ceiling (the channel is <c>DropWrite</c>), but one the request-scoped budget cannot see.
-    /// It is logged at startup so the number is visible rather than inferred.
-    ///
-    /// The sink's <em>disk</em> use is deliberately not budgeted here: <c>MaxDiskBufferedBodyBytes</c>
-    /// meters transient per-request spill that is released when the request ends, whereas this writes
-    /// a persistent rolling log already bounded at ~2× <c>maxFileBytes</c> by <see cref="Roll"/>.
-    /// Reserving those bytes per request would ratchet that budget to zero and 503 the gateway
-    /// permanently, because they are never released.
+    /// rather than letting it multiply by concurrency unbudgeted.
     /// </summary>
     public int CaptureMemoryBytes(JsonElement config) => DirectionMaxSize(config, "request") + DirectionMaxSize(config, "response");
 

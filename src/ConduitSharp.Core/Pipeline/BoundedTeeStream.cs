@@ -5,18 +5,11 @@ namespace ConduitSharp.Core.Pipeline;
 /// <summary>
 /// Bounded write-through tee over a response body: forwards every byte to the stream underneath
 /// while keeping a copy of the first <c>maxBytes</c> in a pooled buffer, and flags whether anything
-/// was cut. A plugin that needs to read what the upstream sent swaps this in for
-/// <c>HttpResponse.Body</c>, calls the rest of the pipeline, then reads <see cref="Captured"/>.
+/// was cut. A plugin swaps this in for <c>HttpResponse.Body</c>, calls the rest of the pipeline,
+/// then reads <see cref="Captured"/>.
 ///
-/// <para>Write-through rather than hold-back: the client keeps receiving bytes as they arrive, so a
-/// plugin can inspect a response without turning a streaming reply into a buffered one. Swapping
-/// <c>HttpResponse.Body</c> also reroutes <c>BodyWriter</c> through it, so YARP's forward is captured
-/// too.</para>
-///
-/// <para>The buffer comes from <see cref="ArrayPool{T}"/>. Ownership has two exits: leave it to
-/// <see cref="Dispose(bool)"/>, or take it with <see cref="DetachBuffer"/> when it has to outlive the
-/// stream (handed to a background writer, say). Both are idempotent, because returning one array to
-/// the pool twice corrupts every later renter and is far worse than leaking it once.</para>
+/// <para>The pooled buffer has two exits: leave it to <see cref="Dispose(bool)"/>, or take it with
+/// <see cref="DetachBuffer"/> when it must outlive the stream. Both are idempotent.</para>
 /// </summary>
 public sealed class BoundedTeeStream : Stream
 {

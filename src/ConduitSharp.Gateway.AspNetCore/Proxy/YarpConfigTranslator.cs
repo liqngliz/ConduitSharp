@@ -4,19 +4,13 @@ using Yarp.ReverseProxy.Configuration;
 namespace ConduitSharp.Gateway.Proxy;
 
 /// <summary>
-/// Hands routes.json's YARP half straight to YARP.
+/// Hands routes.json's YARP half straight to YARP. <see cref="GatewayRoute.Route"/> and
+/// <see cref="GatewayRoute.Cluster"/> already are <see cref="RouteConfig"/> and
+/// <see cref="ClusterConfig"/>, so this only fills in what a user should not have to type twice
+/// and wires the gateway's circuit breaker into YARP's passive health-check slot.
 ///
-/// There is no projection here any more — <see cref="GatewayRoute.Route"/> and
-/// <see cref="GatewayRoute.Cluster"/> already <em>are</em> <see cref="RouteConfig"/> and
-/// <see cref="ClusterConfig"/>. All this does is fill in the parts a user should never have to
-/// type twice, and wire the gateway's circuit breaker into YARP's passive health-check slot.
-///
-/// That is the point of the shape: a field-by-field translator is a layer that can disagree with
-/// YARP (it once silently downgraded HTTP/2 and broke gRPC), and it has to grow every time YARP
-/// grows a feature. Neither is true of a <c>with</c> expression.
-///
-/// Routes with no cluster (plugin-only, short-circuit routes) are skipped: YARP rejects a route
-/// with no cluster before any middleware runs, so those are mapped as plain endpoints instead.
+/// <para>Routes with no cluster (plugin-only, short-circuit routes) are skipped and mapped as
+/// plain endpoints: YARP rejects a clusterless route before any middleware runs.</para>
 /// </summary>
 internal static class YarpConfigTranslator
 {

@@ -8,26 +8,15 @@ using ConduitSharp.Gateway.Routing;
 namespace ConduitSharp.Gateway.Plugins;
 
 /// <summary>
-/// Manages external plugins stored under a per-route subdirectory layout:
+/// Loads external plugins from a per-route subdirectory layout (<c>plugins/{routeId}/MyPlugin.dll</c>).
+/// Drop a compiled .dll into the matching folder and restart the gateway; no rebuild is required.
 ///
-///   plugins/
-///     {routeId}/          ← one folder per route
-///       MyPlugin.dll
-///       MyPlugin.deps.json
-///       ...
+/// <para>The folder structure is organisational only. Discovered types register globally and
+/// resolve by (PluginName, Variant); which routes actually run a plugin is decided by each route's
+/// <c>plugins</c> list in routes.json.</para>
 ///
-/// All assemblies are loaded into <see cref="AssemblyLoadContext.Default"/> with full trust.
-/// The per-route directory structure is cosmetic for organization only; discovered types are
-/// registered globally and resolve by (PluginName, Variant) key regardless of which route folder
-/// they came from. Which routes actually *run* a plugin is decided entirely by each route's
-/// <c>plugins</c> list in routes.json — that is where per-route scoping lives (auth, rate-limit,
-/// cache, forwarder, custom variants). P/Invoke and COM interop require this shared context.
-///
-/// Usage: drop a compiled plugin .dll into the matching route subdirectory,
-/// then restart the gateway. No rebuild of the gateway required.
-///
-/// Security note: loaded assemblies run in-process with full trust.
-/// Only load assemblies from sources you control.
+/// <para><b>Security:</b> assemblies are loaded into <see cref="AssemblyLoadContext.Default"/> and
+/// run in-process with full trust. Only load assemblies from sources you control.</para>
 /// </summary>
 internal sealed class PluginAssemblyLoader(ILogger<PluginAssemblyLoader> logger)
 {
