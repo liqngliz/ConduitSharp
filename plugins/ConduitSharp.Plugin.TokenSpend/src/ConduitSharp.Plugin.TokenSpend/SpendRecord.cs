@@ -44,9 +44,9 @@ public sealed record SpendRecord
     /// <summary>Wall-clock milliseconds the upstream took.</summary>
     [JsonPropertyName("ms")] public long DurationMs { get; init; }
 
-    /// <summary>True when the response was <c>text/event-stream</c>. Token counts are then 0 and
-    /// meaningless: this build does not parse SSE, and a row marked this way is the honest record of
-    /// a call that happened but went uncounted, rather than a silent gap in the history.</summary>
+    /// <summary>True when the response was an event stream, decided from the body rather than the
+    /// header. Counts are read from the terminal frame; zeros here mean the stream carried no totals
+    /// or was cut by the capture ceiling.</summary>
     [JsonPropertyName("streamed")] public bool Streamed { get; init; }
 
     /// <summary>Bounded prefix of the newest user message, present only when prompt capture is on.</summary>

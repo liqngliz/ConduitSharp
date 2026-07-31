@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Net.ServerSentEvents;
 using System.Text;
 using System.Text.Json;
 using ConduitSharp.Core.Pipeline;
@@ -14,8 +15,9 @@ namespace ConduitSharp.Plugin.TokenSpend;
 /// Records what every LLM call cost, writing one <see cref="SpendRecord"/> per request to an
 /// <see cref="ISpendStore"/>. Input, output, cache-write and cache-read are separate fields.
 ///
-/// <para>An SSE response is recorded with <see cref="SpendRecord.Streamed"/> set and zero tokens:
-/// this build does not parse event streams.</para>
+/// <para>Streamed replies are read too: <see cref="SpendRecord.Streamed"/> is set from the body
+/// rather than the header, and usage comes from the terminal SSE frame. A stream carrying no totals
+/// still lands as streamed with zeros, so an uncounted call is visible rather than absent.</para>
 ///
 /// <para>routes.json config, variant <c>token-spend</c>:</para>
 /// <code>
@@ -86,18 +88,112 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
             TurnIndex = facts.TurnIndex,
             ToolUseCount = facts.ToolUseCount,
             DurationMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-            Streamed = IsEventStream(context.Response.ContentType),
+            Streamed = IsEventStream(context.Response.ContentType) || LooksLikeEventStream(capture.Captured.Span),
             PromptPrefix = config.CapturePrompts ? facts.PromptPrefix : null,
         };
 
-        if (!record.Streamed)
-            record = WithUsage(record, capture.Captured.Span, config);
+        record = record.Streamed
+            ? await WithStreamedUsageAsync(record, capture.Captured.ToArray(), config)
+            : WithUsage(record, capture.Captured.Span, config);
 
         store.Add(record);
     }
 
     private static bool IsEventStream(string? contentType) =>
         contentType is not null && contentType.StartsWith("text/event-stream", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Sniffs the captured bytes for SSE framing. The header is the declaration; this is the
+    /// evidence, and it is what makes the row honest when the two disagree.</summary>
+    private static bool LooksLikeEventStream(ReadOnlySpan<byte> body)
+    {
+        if (body.Length < 6)
+            return false;
+        var head = Encoding.UTF8.GetString(body[..Math.Min(body.Length, 512)]);
+        return head.StartsWith("event:", StringComparison.Ordinal)
+            || head.StartsWith("data:", StringComparison.Ordinal)
+            || head.Contains("\nevent:", StringComparison.Ordinal)
+            || head.Contains("\ndata:", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Reads usage out of an SSE body with <see cref="SseParser"/> from the framework rather than a
+    /// hand-rolled line scanner. Providers put the totals in the terminal frame, so every frame is
+    /// tried and the last one carrying a non-zero total wins.
+    /// </summary>
+    private static async Task<SpendRecord> WithStreamedUsageAsync(
+        SpendRecord row, byte[] body, TokenSpendConfig config)
+    {
+        if (body.Length == 0)
+            return row;
+
+        // A capture bounded by maxResponseBytes rarely ends on a frame boundary, and the parser only
+        // dispatches an event once it sees the blank line that terminates it. Without this the last
+        // frame is dropped, which is precisely the one holding the totals.
+        var terminated = new byte[body.Length + 2];
+        body.CopyTo(terminated, 0);
+        terminated[^2] = (byte)'\n';
+        terminated[^1] = (byte)'\n';
+
+        var result = row;
+        try
+        {
+            using var stream = new MemoryStream(terminated);
+            var parser = SseParser.Create(stream, (_, data) => Encoding.UTF8.GetString(data));
+            await foreach (var frame in parser.EnumerateAsync())
+            {
+                var candidate = UsageFromFrame(result, frame.Data, config);
+                if (candidate is not null)
+                    result = candidate;
+            }
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        {
+            // A frame cut mid-JSON by the capture ceiling. Keep whatever earlier frames yielded.
+        }
+        return result;
+    }
+
+    /// <summary>Applies the configured paths to one frame, at its root and under a <c>response</c>
+    /// wrapper, since Anthropic puts usage at the top of the frame and OpenAI nests it one deeper.
+    /// Returns null when the frame carries no usable totals.</summary>
+    private static SpendRecord? UsageFromFrame(SpendRecord row, string data, TokenSpendConfig config)
+    {
+        if (string.IsNullOrWhiteSpace(data) || data[0] != '{')
+            return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(data);
+            foreach (var root in Roots(doc.RootElement))
+            {
+                var input = SumPaths(root, config.InputFields);
+                var output = SumPaths(root, config.OutputFields);
+                if (input == 0 && output == 0)
+                    continue;
+
+                return row with
+                {
+                    InputTokens = input,
+                    OutputTokens = output,
+                    CacheWriteTokens = SumPaths(root, config.CacheWriteFields),
+                    CacheReadTokens = SumPaths(root, config.CacheReadFields),
+                    ServedModel = root.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String
+                        ? m.GetString() ?? row.ServedModel
+                        : row.ServedModel,
+                };
+            }
+        }
+        catch (JsonException)
+        {
+        }
+        return null;
+
+        static IEnumerable<JsonElement> Roots(JsonElement frame)
+        {
+            yield return frame;
+            if (frame.TryGetProperty("response", out var nested) && nested.ValueKind == JsonValueKind.Object)
+                yield return nested;
+        }
+    }
 
     private static SpendRecord WithUsage(SpendRecord row, ReadOnlySpan<byte> body, TokenSpendConfig config)
     {

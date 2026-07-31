@@ -83,19 +83,22 @@ public sealed class TokenSpendPluginTests
     }
 
     [Fact]
-    public async Task EventStream_IsRecordedAsUncounted_RatherThanMissing()
+    public async Task StreamCarryingNoUsage_IsMarkedStreamedWithZeros_RatherThanMissing()
     {
+        // An error or aborted stream has frames but no totals. The row still has to record that the
+        // call happened and that its cost is unknown, rather than reading as a free normal reply.
         var (ctx, _, store) = NewContext();
 
         await new TokenSpendPlugin().ExecuteAsync(ctx, Config(Anthropic),
             ForwardStreaming("""
-                event: message_delta
-                data: {"usage":{"output_tokens":300}}
+                event: error
+                data: {"type":"error","error":{"message":"overloaded"}}
 
                 """));
 
         var row = Assert.Single(store.Rows);
         Assert.True(row.Streamed);
+        Assert.Equal(0, row.InputTokens);
         Assert.Equal(0, row.OutputTokens);
     }
 
@@ -276,6 +279,83 @@ public sealed class TokenSpendPluginTests
         var row = Assert.Single(store.Rows);
         Assert.Equal("gpt-5.4-mini", row.Model);
         Assert.Equal("gpt-5.6-luna", row.ServedModel);
+    }
+
+    // Frame shapes below are copied from captured traffic, not from documentation.
+    private const string CodexSse = """
+        event: response.created
+        data: {"type":"response.created","response":{"id":"resp_1","model":"gpt-5.6-luna","status":"in_progress"}}
+
+        event: response.output_text.delta
+        data: {"type":"response.output_text.delta","delta":"hi"}
+
+        event: response.completed
+        data: {"type":"response.completed","response":{"id":"resp_1","model":"gpt-5.6-luna","status":"completed","usage":{"input_tokens":14544,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":3456},"output_tokens":698,"output_tokens_details":{"reasoning_tokens":227},"total_tokens":15242}}}
+
+        """;
+
+    private const string ResponsesUsage = """
+        { "inputFields": ["usage.input_tokens"], "outputFields": ["usage.output_tokens"],
+          "cacheReadFields": ["usage.input_tokens_details.cached_tokens"],
+          "cacheWriteFields": ["usage.input_tokens_details.cache_write_tokens"] }
+        """;
+
+    [Fact]
+    public async Task StreamedCodexResponse_IsCountedFromTheTerminalFrame()
+    {
+        var (ctx, _, store) = NewContext();
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(ResponsesUsage), ForwardStreaming(CodexSse));
+
+        var row = Assert.Single(store.Rows);
+        Assert.True(row.Streamed);
+        Assert.Equal(14544, row.InputTokens);
+        Assert.Equal(698, row.OutputTokens);
+        Assert.Equal(3456, row.CacheReadTokens);
+        Assert.Equal("gpt-5.6-luna", row.ServedModel);
+    }
+
+    [Fact]
+    public async Task StreamIsDetectedFromTheBody_EvenWithoutTheContentTypeHeader()
+    {
+        // The live gateway recorded streamed=false on plainly SSE replies, so the body is the
+        // evidence and the header only a declaration.
+        var (ctx, _, store) = NewContext();
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(ResponsesUsage), Forward(CodexSse));
+
+        var row = Assert.Single(store.Rows);
+        Assert.True(row.Streamed);
+        Assert.Equal(14544, row.InputTokens);
+    }
+
+    [Fact]
+    public async Task TruncatedStream_KeepsWhateverFramesCompleted()
+    {
+        // maxResponseBytes cuts mid-frame; the terminal totals are gone but the row must not lie.
+        var cut = CodexSse[..(CodexSse.IndexOf("\"total_tokens\"", StringComparison.Ordinal) + 8)];
+
+        var (ctx, _, store) = NewContext();
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(ResponsesUsage), Forward(cut));
+
+        var row = Assert.Single(store.Rows);
+        Assert.True(row.Streamed);
+        Assert.Equal(0, row.InputTokens);
+    }
+
+    [Fact]
+    public async Task AnthropicStyleFrame_WithUsageAtTheFrameRoot_IsAlsoRead()
+    {
+        const string sse = """
+            event: message_delta
+            data: {"type":"message_delta","usage":{"input_tokens":12,"output_tokens":300}}
+
+            """;
+
+        var (ctx, _, store) = NewContext();
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(Anthropic), ForwardStreaming(sse));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal(12, row.InputTokens);
+        Assert.Equal(300, row.OutputTokens);
     }
 
     [Fact]

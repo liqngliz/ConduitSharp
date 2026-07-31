@@ -66,9 +66,19 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 - Model is recorded twice on purpose. Model is what the caller asked for, read from the request; ServedModel is what the provider says it used, read from the response. Live Codex traffic showed a request for gpt-5.4-mini answered by gpt-5.6-luna, so collapsing them would hide a real substitution.
 - ServedModel is empty for streamed replies until SSE parsing lands, because the name only appears inside the event frames.
 
-## Planned: SSE parsing
+## TokenSpendPlugin.WithStreamedUsageAsync
 
 - Use System.Net.ServerSentEvents.SseParser. It is in the shared framework on net10.0, verified by compile check, so this needs no package and no hand-rolled data: line scanner.
 - The usage lives in the terminal frame. A captured Codex response.completed event carried {"input_tokens":10594,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":3456},"output_tokens":6,"total_tokens":10600}.
 - Note the semantics differ from Anthropic: cached_tokens is nested inside input_tokens_details and is a SUBSET of input_tokens, whereas Anthropic reports cache reads alongside input_tokens. Summing them the same way would double-count on OpenAI.
+
+## TokenSpendPlugin.LooksLikeEventStream
+
+- Detection reads the body, not just the Content-Type. Live traffic recorded streamed=false on replies that plainly began "event: response.created", and a row claiming a free normal call is worse than one admitting it went uncounted. A YARP probe showed Response.ContentType does carry text/event-stream after the forward, so the header is not generally missing; the body is simply the evidence rather than the declaration.
+
+## TokenSpendPlugin.WithStreamedUsageAsync (the trailing blank line)
+
+- Two newlines are appended before parsing. SseParser only dispatches an event once it sees the blank line terminating it, so a capture bounded by maxResponseBytes drops its last frame, which is exactly the one holding the totals. Measured: the same stream yields [a] without the terminator and [a, response.completed] with it.
+- Every frame is tried and the last with a non-zero total wins, because providers put running counts in intermediate frames and the final tally in the terminal one.
+- Paths are applied at the frame root and again under a "response" wrapper: Anthropic puts usage at the top of a message_delta frame, OpenAI nests it one level deeper inside response.completed. Both shapes are covered by tests copied from captured traffic.
 
