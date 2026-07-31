@@ -10,7 +10,7 @@
 ROOT    := $(shell pwd)
 BIN     := $(ROOT)/bin
 LOGS    := $(ROOT)/logs
-GATEWAY := $(ROOT)/EmbeddedGateway.csproj
+GATEWAY := $(ROOT)/EmbeddedGatewayPrefixed.csproj
 PID_INV1 := $(ROOT)/.pid-inv1
 PID_INV2 := $(ROOT)/.pid-inv2
 PID_ORD  := $(ROOT)/.pid-ord
