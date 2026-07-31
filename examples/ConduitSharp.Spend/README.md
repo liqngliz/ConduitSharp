@@ -39,14 +39,17 @@ docker rm -f conduit-spend
 
 ### Your own routes
 
-Three routes ship in the image. To run different ones, mount a file over the baked-in config:
+Three routes ship in the image. Pull the shipped config out, edit it, and mount it back:
 
 ```bash
--v "$PWD/routes.json:/app/Configuration/routes.json:ro"
+docker run --rm --entrypoint cat ghcr.io/liqngliz/conduit-spend \
+  Configuration/routes.json > routes.json
 ```
 
-Start from `Configuration/routes.json` in this repo. Inside a container `127.0.0.1` is the
-container, so a service on your machine is `host.docker.internal`.
+Then add `-v "$PWD/routes.json:/app/Configuration/routes.json:ro"` to your `docker run`.
+
+Inside a container `127.0.0.1` is the container, so a service on your machine is
+`host.docker.internal`.
 
 ## Point each tool at it
 
@@ -81,8 +84,8 @@ that environment variable instead.
 OPENAI_BASE_URL=http://localhost:4000/llm/local/v1
 ```
 
-The `local` route points at `host.docker.internal:1234`, LM Studio's default port on the host.
-Change the destination in `Configuration/routes.json` for Ollama or another local server.
+The `local` route points at `host.docker.internal:1234`, LM Studio's default port on the host. For
+Ollama or another local server, change that destination in your own `routes.json` (see above).
 
 ## What you get
 
@@ -104,8 +107,8 @@ when you want to know what a provider really sends rather than what its docs cla
 ## Adding a project
 
 One route per project, so each can carry its own budget, provider, and capture settings. Copy a
-block in `Configuration/routes.json`, change `id`, the `path`, and the
-`PathRemovePrefix`, then point that project's tool at the new prefix. Per-repo `.envrc` under direnv makes the base URL set itself when
+block in your `routes.json`, change `id`, the `path`, and the `PathRemovePrefix`, then point that
+project's tool at the new prefix. Per-repo `.envrc` under direnv makes the base URL set itself when
 you `cd` in.
 
 ## Known limits
@@ -133,4 +136,4 @@ unverified.
 ## Turning capture off
 
 `body-capture-file` is here to inspect wire formats, not to run continuously. Once you have what you
-need, drop its plugin block from each route in `routes.json` and keep only `token-spend`.
+need, drop its plugin block from each route in your `routes.json` and keep only `token-spend`.
