@@ -21,6 +21,30 @@ Two environment variables, both optional:
 | `CONDUIT_SPEND_DATA` | `~/.conduit-spend` |
 | `ASPNETCORE_URLS` | `http://localhost:5000`, so set it to `:4000` to match the docs |
 
+## Or in Docker
+
+```bash
+cd examples/ConduitSharp.Spend
+docker compose up -d
+```
+
+Serves the same thing on `:4000`, with spend rows and the wire log both landing in
+`examples/ConduitSharp.Spend/logs/` on the host. To run the image directly instead:
+
+```bash
+docker build -f examples/ConduitSharp.Spend/Dockerfile -t conduit-spend .
+docker run -d --restart unless-stopped -p 4000:4000 \
+  -v "$PWD/logs:/data" --add-host host.docker.internal:host-gateway conduit-spend
+```
+
+The container uses `Configuration/routes.docker.json`, which differs from the local one in two
+ways it has to: the `local` route points at `host.docker.internal:1234` because `127.0.0.1` inside
+a container is the container itself, and the wire log writes to `/data` so both outputs share the
+one mounted volume. The `--add-host` line is what makes that hostname resolve on Linux, where
+Docker does not provide it by default.
+
+Build context is the repo root, since the project references `src/` and `plugins/` directly.
+
 ## Point each tool at it
 
 **Claude Code**

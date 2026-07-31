@@ -1,0 +1,25 @@
+# Build context is the repo root: this project references src/ and plugins/ directly.
+#   docker build -f examples/ConduitSharp.Spend/Dockerfile -t conduit-spend .
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY . .
+
+# Framework-dependent, portable publish with no pinned RID, so one build runs on amd64 and
+# arm64 alike. Pinning -r linux-x64 fails at startup on Apple Silicon.
+RUN dotnet publish examples/ConduitSharp.Spend -c Release -o /app/publish
+
+# ──────────────────────────────────────────────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
+WORKDIR /app
+COPY --from=build /app/publish .
+
+# The docker variant points the local route at host.docker.internal and puts the wire log
+# under /data, so both outputs land in the one mounted volume.
+COPY examples/ConduitSharp.Spend/Configuration/routes.docker.json ./Configuration/routes.json
+
+ENV ASPNETCORE_URLS=http://+:4000
+ENV CONDUIT_SPEND_DATA=/data
+VOLUME /data
+EXPOSE 4000
+
+ENTRYPOINT ["dotnet", "ConduitSharp.Spend.dll"]

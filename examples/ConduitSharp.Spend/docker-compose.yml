@@ -1,0 +1,16 @@
+services:
+  spend:
+    build:
+      context: ../..
+      dockerfile: examples/ConduitSharp.Spend/Dockerfile
+    image: conduit-spend:local
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      # Spend rows and the wire log both land here.
+      - ./logs:/data
+    extra_hosts:
+      # Linux does not provide host.docker.internal by default; the local route needs it
+      # to reach a model server running on the host.
+      - "host.docker.internal:host-gateway"
