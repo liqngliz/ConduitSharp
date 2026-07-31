@@ -1,0 +1,255 @@
+using System.Text;
+using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace ConduitSharp.Plugin.TokenSpend.Tests;
+
+public sealed class TokenSpendPluginTests
+{
+    // Captures rows synchronously so a test can assert on them the moment ExecuteAsync returns, and
+    // echoes the caller key back unhashed so key routing stays visible. Hashing itself is covered
+    // against the real store in JsonlSpendStoreTests.
+    private sealed class FakeStore : ISpendStore
+    {
+        public List<SpendRecord> Rows { get; } = [];
+        public void Add(SpendRecord record) => Rows.Add(record);
+        public IReadOnlyList<SpendRecord> Read(DateTimeOffset from, DateTimeOffset to) => Rows;
+        public string HashCaller(string rawKey) => rawKey;
+    }
+
+    private static (DefaultHttpContext Ctx, MemoryStream Sink, FakeStore Store) NewContext(string? requestBody = null)
+    {
+        var store = new FakeStore();
+        var services = new ServiceCollection();
+        services.AddSingleton<ISpendStore>(store);
+        var ctx = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+        ctx.Items["ConduitSharp.RouteId"] = "route-a";
+        if (requestBody is not null)
+            ctx.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(requestBody));
+        var sink = new MemoryStream();
+        ctx.Response.Body = sink;
+        return (ctx, sink, store);
+    }
+
+    private static JsonElement Config(string json) => JsonDocument.Parse(json).RootElement;
+    private static RequestDelegate Forward(string body) => ctx => ctx.Response.WriteAsync(body);
+
+    private static RequestDelegate ForwardStreaming(string body) => ctx =>
+    {
+        ctx.Response.ContentType = "text/event-stream";
+        return ctx.Response.WriteAsync(body);
+    };
+
+    private const string OpenAi = """
+        { "inputFields": ["usage.prompt_tokens"], "outputFields": ["usage.completion_tokens"] }
+        """;
+
+    private const string Anthropic = """
+        { "inputFields": ["usage.input_tokens"], "outputFields": ["usage.output_tokens"],
+          "cacheWriteFields": ["usage.cache_creation_input_tokens"],
+          "cacheReadFields":  ["usage.cache_read_input_tokens"] }
+        """;
+
+    [Fact]
+    public async Task OpenAiUsage_LandsInSeparateColumns_AndBodyStillReachesClient()
+    {
+        var (ctx, sink, store) = NewContext();
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(OpenAi),
+            Forward("""{"choices":[],"usage":{"prompt_tokens":40,"completion_tokens":110}}"""));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal(40, row.InputTokens);
+        Assert.Equal(110, row.OutputTokens);
+        Assert.Equal("route-a", row.Route);
+        Assert.False(row.Streamed);
+        Assert.Contains("completion_tokens", Encoding.UTF8.GetString(sink.ToArray()), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CacheTokens_StaySeparateFromInput()
+    {
+        var (ctx, _, store) = NewContext();
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(Anthropic),
+            Forward("""
+                {"usage":{"input_tokens":12,"output_tokens":300,
+                          "cache_creation_input_tokens":9000,"cache_read_input_tokens":54000}}
+                """));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal(12, row.InputTokens);
+        Assert.Equal(300, row.OutputTokens);
+        Assert.Equal(9000, row.CacheWriteTokens);
+        Assert.Equal(54000, row.CacheReadTokens);
+    }
+
+    [Fact]
+    public async Task EventStream_IsRecordedAsUncounted_RatherThanMissing()
+    {
+        var (ctx, _, store) = NewContext();
+
+        // Usage really is in this SSE body; the point is that this build does not parse it, and says so
+        // in the row instead of leaving the call out of the history entirely.
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(Anthropic),
+            ForwardStreaming("""
+                event: message_delta
+                data: {"usage":{"output_tokens":300}}
+
+                """));
+
+        var row = Assert.Single(store.Rows);
+        Assert.True(row.Streamed);
+        Assert.Equal(0, row.OutputTokens);
+    }
+
+    [Fact]
+    public async Task NonJsonResponse_RecordsZero_WithoutThrowing()
+    {
+        var (ctx, _, store) = NewContext();
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(OpenAi), Forward("502 Bad Gateway"));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal(0, row.InputTokens);
+        Assert.Equal(0, row.OutputTokens);
+    }
+
+    [Fact]
+    public async Task RequestBody_YieldsModelTurnIndexAndStableSessionId()
+    {
+        const string turnOne = """
+            {"model":"claude-opus-4-6","messages":[{"role":"user","content":"design the schema"}]}
+            """;
+        const string turnThree = """
+            {"model":"claude-opus-4-6","messages":[
+              {"role":"user","content":"design the schema"},
+              {"role":"assistant","content":"here it is"},
+              {"role":"user","content":"continue"}]}
+            """;
+
+        var (first, _, storeA) = NewContext(turnOne);
+        await new TokenSpendPlugin().ExecuteAsync(first, Config(OpenAi), Forward("{}"));
+
+        var (later, _, storeB) = NewContext(turnThree);
+        await new TokenSpendPlugin().ExecuteAsync(later, Config(OpenAi), Forward("{}"));
+
+        var a = Assert.Single(storeA.Rows);
+        var b = Assert.Single(storeB.Rows);
+
+        Assert.Equal("claude-opus-4-6", a.Model);
+        Assert.Equal(1, a.TurnIndex);
+        Assert.Equal(3, b.TurnIndex);
+        // Every turn resends the opening message, so the session groups without a client header.
+        Assert.Equal(a.SessionId, b.SessionId);
+        Assert.NotEqual("", a.SessionId);
+    }
+
+    [Fact]
+    public async Task PromptPrefix_IsOffByDefault_AndTruncatedWhenEnabled()
+    {
+        var longPrompt = new string('x', 500);
+        var body = $$"""{"model":"m","messages":[{"role":"user","content":"{{longPrompt}}"}]}""";
+
+        var (off, _, storeOff) = NewContext(body);
+        await new TokenSpendPlugin().ExecuteAsync(off, Config(OpenAi), Forward("{}"));
+        Assert.Null(Assert.Single(storeOff.Rows).PromptPrefix);
+
+        var (on, _, storeOn) = NewContext(body);
+        await new TokenSpendPlugin().ExecuteAsync(on, Config("""
+            { "inputFields": ["usage.prompt_tokens"], "outputFields": ["usage.completion_tokens"],
+              "capturePrompts": true, "maxPromptChars": 32 }
+            """), Forward("{}"));
+        Assert.Equal(32, Assert.Single(storeOn.Rows).PromptPrefix!.Length);
+    }
+
+    [Fact]
+    public async Task ToolTraffic_IsCountedInBothWireFormats()
+    {
+        // OpenAI: a tool role plus a tool_calls array. Anthropic: typed content blocks.
+        const string openAiShape = """
+            {"model":"gpt-x","messages":[
+              {"role":"assistant","tool_calls":[{"id":"1"},{"id":"2"}]},
+              {"role":"tool","content":"result"}]}
+            """;
+        const string anthropicShape = """
+            {"model":"claude-x","messages":[
+              {"role":"assistant","content":[{"type":"tool_use","id":"1"}]},
+              {"role":"user","content":[{"type":"tool_result","content":"ok"},{"type":"text","text":"go on"}]}]}
+            """;
+
+        var (a, _, storeA) = NewContext(openAiShape);
+        await new TokenSpendPlugin().ExecuteAsync(a, Config(OpenAi), Forward("{}"));
+        Assert.Equal(3, Assert.Single(storeA.Rows).ToolUseCount);   // 2 calls + 1 tool role
+
+        var (b, _, storeB) = NewContext(anthropicShape);
+        await new TokenSpendPlugin().ExecuteAsync(b, Config(OpenAi), Forward("{}"));
+        Assert.Equal(2, Assert.Single(storeB.Rows).ToolUseCount);   // tool_use + tool_result
+    }
+
+    [Fact]
+    public async Task CallerComesFromTheConfiguredHeader()
+    {
+        var (ctx, _, store) = NewContext();
+        ctx.Request.Headers["x-api-key"] = "sk-secret";
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config("""
+            { "inputFields": ["usage.prompt_tokens"], "outputFields": ["usage.completion_tokens"],
+              "keyHeader": "x-api-key" }
+            """), Forward("{}"));
+
+        // FakeStore echoes rather than hashes; the real store's hashing is asserted separately.
+        Assert.Equal("sk-secret", Assert.Single(store.Rows).Caller);
+    }
+
+    // Padding is stripped, the way a real token carries it, so the plugin has to restore it.
+    private static string Jwt(string payloadJson) =>
+        "header." + Convert.ToBase64String(Encoding.UTF8.GetBytes(payloadJson))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_') + ".signature";
+
+    [Fact]
+    public async Task CallerFallsBackToTheJwtClaim_WhenNoKeyHeaderMatches()
+    {
+        var config = Config("""
+            { "inputFields": ["usage.prompt_tokens"], "outputFields": ["usage.completion_tokens"],
+              "keyHeader": "x-api-key", "keyClaim": "sub" }
+            """);
+
+        var (withToken, _, store) = NewContext();
+        withToken.Request.Headers.Authorization = "Bearer " + Jwt("""{"sub":"alice@example.com"}""");
+        await new TokenSpendPlugin().ExecuteAsync(withToken, config, Forward("{}"));
+        Assert.Equal("alice@example.com", Assert.Single(store.Rows).Caller);
+
+        // Neither header present, and a token that is not a JWT at all: one shared bucket, no throw.
+        var (garbage, _, storeB) = NewContext();
+        garbage.Request.Headers.Authorization = "Bearer not-a-jwt";
+        await new TokenSpendPlugin().ExecuteAsync(garbage, config, Forward("{}"));
+        Assert.Equal("global", Assert.Single(storeB.Rows).Caller);
+    }
+
+    [Fact]
+    public async Task AnthropicMultiBlockContent_JoinsItsTextBlocks()
+    {
+        const string body = """
+            {"model":"claude-x","messages":[
+              {"role":"user","content":[{"type":"text","text":"first"},{"type":"text","text":"second"}]}]}
+            """;
+
+        var (ctx, _, store) = NewContext(body);
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config("""
+            { "inputFields": ["usage.prompt_tokens"], "outputFields": ["usage.completion_tokens"],
+              "capturePrompts": true }
+            """), Forward("{}"));
+
+        Assert.Equal("first\nsecond", Assert.Single(store.Rows).PromptPrefix);
+    }
+
+    [Fact]
+    public void ValidateConfig_RejectsMissingUsageFields()
+    {
+        var plugin = new TokenSpendPlugin();
+        Assert.Throws<InvalidOperationException>(() => plugin.ValidateConfig(Config("""{ "keyHeader": "x-api-key" }""")));
+        plugin.ValidateConfig(Config(OpenAi));   // does not throw
+    }
+}

@@ -37,6 +37,7 @@ examples/EmbeddedGateway/gateway/plugins/
 # mTLS e2e generated certs (throwaway, regenerated each run)
 tests/mtls-e2e/certs/
 docs/planning/ENTERPRISE-Plan.md
+docs/planning/SPEND.MD
 BenchmarkDotNet.Artifacts/
 
 # Generated per-run by CertificateMaterial.Generate — throwaway test CA
