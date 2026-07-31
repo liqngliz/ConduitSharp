@@ -173,7 +173,7 @@
     },
     {
       "id": "upload-service",
-      "description": "Upload API \u2014 streamed directly without buffering; body-capture-streaming logs a bounded prefix off the tee",
+      "description": "Upload API \u2014 streamed directly without buffering; body-capture logs a bounded prefix off the tee",
       "route": {
         "match": {
           "path": "/api/upload/{**rest}",
@@ -198,11 +198,13 @@
       "plugins": [
         {
           "name": "custom",
-          "variant": "body-capture-streaming",
+          "variant": "body-capture",
           "order": 10,
           "enabled": true,
           "config": {
-            "maxSize": 1024
+            "request": {
+              "maxSize": 1024
+            }
           }
         },
         {
