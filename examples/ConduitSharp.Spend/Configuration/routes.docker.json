@@ -30,6 +30,7 @@
             "inputFields": [
               "usage.prompt_tokens",
               "usage.input_tokens",
+              "-usage.input_tokens_details.cached_tokens",
               "prompt_eval_count"
             ],
             "outputFields": [
@@ -38,10 +39,12 @@
               "eval_count"
             ],
             "cacheWriteFields": [
-              "usage.cache_creation_input_tokens"
+              "usage.cache_creation_input_tokens",
+              "usage.input_tokens_details.cache_write_tokens"
             ],
             "cacheReadFields": [
-              "usage.cache_read_input_tokens"
+              "usage.cache_read_input_tokens",
+              "usage.input_tokens_details.cached_tokens"
             ],
             "maxResponseBytes": 4194304,
             "maxRequestBytes": 4194304,
@@ -103,6 +106,7 @@
             "inputFields": [
               "usage.prompt_tokens",
               "usage.input_tokens",
+              "-usage.input_tokens_details.cached_tokens",
               "prompt_eval_count"
             ],
             "outputFields": [
@@ -111,10 +115,12 @@
               "eval_count"
             ],
             "cacheWriteFields": [
-              "usage.cache_creation_input_tokens"
+              "usage.cache_creation_input_tokens",
+              "usage.input_tokens_details.cache_write_tokens"
             ],
             "cacheReadFields": [
-              "usage.cache_read_input_tokens"
+              "usage.cache_read_input_tokens",
+              "usage.input_tokens_details.cached_tokens"
             ],
             "maxResponseBytes": 4194304,
             "maxRequestBytes": 4194304,
@@ -176,6 +182,7 @@
             "inputFields": [
               "usage.prompt_tokens",
               "usage.input_tokens",
+              "-usage.input_tokens_details.cached_tokens",
               "prompt_eval_count"
             ],
             "outputFields": [
@@ -184,10 +191,12 @@
               "eval_count"
             ],
             "cacheWriteFields": [
-              "usage.cache_creation_input_tokens"
+              "usage.cache_creation_input_tokens",
+              "usage.input_tokens_details.cache_write_tokens"
             ],
             "cacheReadFields": [
-              "usage.cache_read_input_tokens"
+              "usage.cache_read_input_tokens",
+              "usage.input_tokens_details.cached_tokens"
             ],
             "maxResponseBytes": 4194304,
             "maxRequestBytes": 4194304,

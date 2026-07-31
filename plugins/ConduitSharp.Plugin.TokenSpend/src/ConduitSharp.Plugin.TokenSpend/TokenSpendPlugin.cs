@@ -224,9 +224,15 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
     {
         long sum = 0;
         foreach (var path in paths)
-            if (TryGetByPath(root, path, out var value))
-                sum += value;
-        return sum;
+        {
+            // A leading '-' subtracts. Providers disagree about whether cached tokens sit inside the
+            // input count or beside it, and that is the only way to make one column mean one thing
+            // without a per-provider branch in code.
+            var subtract = path.StartsWith('-');
+            if (TryGetByPath(root, subtract ? path[1..] : path, out var value))
+                sum += subtract ? -value : value;
+        }
+        return sum < 0 ? 0 : sum;
     }
 
     private static bool TryGetByPath(JsonElement root, string path, out long value)

@@ -7,7 +7,9 @@ namespace ConduitSharp.Plugin.TokenSpend;
 public sealed record TokenSpendConfig
 {
     /// <summary>Dotted response paths summed into the input-token column,
-    /// e.g. <c>["usage.prompt_tokens"]</c> or <c>["usage.input_tokens"]</c>.</summary>
+    /// e.g. <c>["usage.prompt_tokens"]</c> or <c>["usage.input_tokens"]</c>. A path prefixed with
+    /// <c>-</c> is subtracted, which is how one config covers providers that count cached tokens
+    /// inside the input total and those that count them beside it. The column clamps at zero.</summary>
     [JsonPropertyName("inputFields")] public IReadOnlyList<string> InputFields { get; init; } = [];
 
     /// <summary>Dotted response paths summed into the output-token column.</summary>

@@ -358,6 +358,59 @@ public sealed class TokenSpendPluginTests
         Assert.Equal(300, row.OutputTokens);
     }
 
+    // One config, both providers. The '-' prefix subtracts, which is what makes "in" mean uncached
+    // input on OpenAI (where cached_tokens sits INSIDE input_tokens) and on Anthropic (where cache
+    // reads sit BESIDE it, so the subtracted path is simply absent).
+    private const string BothProviders = """
+        { "inputFields":  ["usage.prompt_tokens", "usage.input_tokens",
+                           "-usage.input_tokens_details.cached_tokens"],
+          "outputFields": ["usage.completion_tokens", "usage.output_tokens"],
+          "cacheReadFields":  ["usage.cache_read_input_tokens", "usage.input_tokens_details.cached_tokens"],
+          "cacheWriteFields": ["usage.cache_creation_input_tokens", "usage.input_tokens_details.cache_write_tokens"] }
+        """;
+
+    [Fact]
+    public async Task OneConfig_MakesInputMeanUncachedTokens_OnBothProviders()
+    {
+        // OpenAI: 14544 input of which 3456 was cached -> 11088 fresh, 3456 cached.
+        var (a, _, storeA) = NewContext();
+        await new TokenSpendPlugin().ExecuteAsync(a, Config(BothProviders), Forward("""
+            {"usage":{"input_tokens":14544,"input_tokens_details":{"cached_tokens":3456,"cache_write_tokens":0},
+                      "output_tokens":698}}
+            """));
+        var openAi = Assert.Single(storeA.Rows);
+        Assert.Equal(11088, openAi.InputTokens);
+        Assert.Equal(3456, openAi.CacheReadTokens);
+        Assert.Equal(698, openAi.OutputTokens);
+
+        // Anthropic: 12 fresh input, 54000 cache reads reported alongside it, nothing to subtract.
+        var (b, _, storeB) = NewContext();
+        await new TokenSpendPlugin().ExecuteAsync(b, Config(BothProviders), Forward("""
+            {"usage":{"input_tokens":12,"output_tokens":300,
+                      "cache_creation_input_tokens":9000,"cache_read_input_tokens":54000}}
+            """));
+        var anthropic = Assert.Single(storeB.Rows);
+        Assert.Equal(12, anthropic.InputTokens);
+        Assert.Equal(54000, anthropic.CacheReadTokens);
+        Assert.Equal(9000, anthropic.CacheWriteTokens);
+
+        // Both now mean the same thing, so in + cacheRead is the billable input either way.
+        Assert.Equal(14544, openAi.InputTokens + openAi.CacheReadTokens);
+        Assert.Equal(54012, anthropic.InputTokens + anthropic.CacheReadTokens);
+    }
+
+    [Fact]
+    public async Task SubtractionCannotDriveAColumnNegative()
+    {
+        var (ctx, _, store) = NewContext();
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config("""
+            { "inputFields": ["-usage.input_tokens_details.cached_tokens"],
+              "outputFields": ["usage.output_tokens"] }
+            """), Forward("""{"usage":{"input_tokens_details":{"cached_tokens":500},"output_tokens":1}}"""));
+
+        Assert.Equal(0, Assert.Single(store.Rows).InputTokens);
+    }
+
     [Fact]
     public void ValidateConfig_RejectsMissingUsageFields()
     {

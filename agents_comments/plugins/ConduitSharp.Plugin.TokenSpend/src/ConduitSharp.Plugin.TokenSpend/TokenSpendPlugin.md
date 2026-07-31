@@ -82,3 +82,9 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 - Every frame is tried and the last with a non-zero total wins, because providers put running counts in intermediate frames and the final tally in the terminal one.
 - Paths are applied at the frame root and again under a "response" wrapper: Anthropic puts usage at the top of a message_delta frame, OpenAI nests it one level deeper inside response.completed. Both shapes are covered by tests copied from captured traffic.
 
+## TokenSpendPlugin.SumPaths (the '-' prefix)
+
+- A path may start with '-' to subtract. It exists for one reason: providers disagree about whether cached tokens live INSIDE the input count or beside it. OpenAI reports input_tokens 14544 of which input_tokens_details.cached_tokens 3456 is a subset; Anthropic reports input_tokens 12 with cache_read_input_tokens 54000 alongside. Without subtraction the 'in' column means different things per provider and in + cacheRead double-counts on one of them.
+- "-usage.input_tokens_details.cached_tokens" in inputFields makes 'in' mean uncached input on both: it subtracts on OpenAI and is simply absent on Anthropic, so one config serves every route.
+- Clamped at zero. A misconfiguration that subtracts more than it adds should read as unknown rather than negative, since a negative token count is never meaningful.
+
