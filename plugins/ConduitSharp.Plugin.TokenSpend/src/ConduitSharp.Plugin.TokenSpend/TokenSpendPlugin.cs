@@ -21,10 +21,11 @@ namespace ConduitSharp.Plugin.TokenSpend;
 ///
 /// <para>routes.json config, variant <c>token-spend</c>:</para>
 /// <code>
-/// { "inputFields":  ["usage.prompt_tokens"],
-///   "outputFields": ["usage.completion_tokens"],
-///   "cacheWriteFields": ["usage.cache_creation_input_tokens"],
-///   "cacheReadFields":  ["usage.cache_read_input_tokens"],
+/// { "inputFields":         ["usage.input_tokens"],
+///   "subtractInputFields": ["usage.input_tokens_details.cached_tokens"],
+///   "outputFields":        ["usage.output_tokens"],
+///   "cacheReadFields":     ["usage.input_tokens_details.cached_tokens"],
+///   "cacheWriteFields":    ["usage.input_tokens_details.cache_write_tokens"],
 ///   "keyHeader": "x-api-key", "capturePrompts": false }
 /// </code>
 /// </summary>
@@ -165,8 +166,8 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
             using var doc = JsonDocument.Parse(data);
             foreach (var root in Roots(doc.RootElement))
             {
-                var input = SumPaths(root, config.InputFields);
-                var output = SumPaths(root, config.OutputFields);
+                var input = Column(root, config.InputFields, config.SubtractInputFields);
+                var output = Column(root, config.OutputFields, config.SubtractOutputFields);
                 if (input == 0 && output == 0)
                     continue;
 
@@ -174,8 +175,8 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                 {
                     InputTokens = input,
                     OutputTokens = output,
-                    CacheWriteTokens = SumPaths(root, config.CacheWriteFields),
-                    CacheReadTokens = SumPaths(root, config.CacheReadFields),
+                    CacheWriteTokens = Column(root, config.CacheWriteFields, config.SubtractCacheWriteFields),
+                    CacheReadTokens = Column(root, config.CacheReadFields, config.SubtractCacheReadFields),
                     ServedModel = root.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String
                         ? m.GetString() ?? row.ServedModel
                         : row.ServedModel,
@@ -205,10 +206,10 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
             var root = doc.RootElement;
             return row with
             {
-                InputTokens = SumPaths(root, config.InputFields),
-                OutputTokens = SumPaths(root, config.OutputFields),
-                CacheWriteTokens = SumPaths(root, config.CacheWriteFields),
-                CacheReadTokens = SumPaths(root, config.CacheReadFields),
+                InputTokens = Column(root, config.InputFields, config.SubtractInputFields),
+                OutputTokens = Column(root, config.OutputFields, config.SubtractOutputFields),
+                CacheWriteTokens = Column(root, config.CacheWriteFields, config.SubtractCacheWriteFields),
+                CacheReadTokens = Column(root, config.CacheReadFields, config.SubtractCacheReadFields),
                 ServedModel = root.TryGetProperty("model", out var served) && served.ValueKind == JsonValueKind.String
                     ? served.GetString() ?? ""
                     : "",
@@ -224,15 +225,18 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
     {
         long sum = 0;
         foreach (var path in paths)
-        {
-            // A leading '-' subtracts. Providers disagree about whether cached tokens sit inside the
-            // input count or beside it, and that is the only way to make one column mean one thing
-            // without a per-provider branch in code.
-            var subtract = path.StartsWith('-');
-            if (TryGetByPath(root, subtract ? path[1..] : path, out var value))
-                sum += subtract ? -value : value;
-        }
-        return sum < 0 ? 0 : sum;
+            if (TryGetByPath(root, path, out var value))
+                sum += value;
+        return sum;
+    }
+
+    /// <summary>One column: what its paths add, less what its subtract paths take back. Clamped at
+    /// zero, because a column that subtracts more than it adds is a misconfiguration and a negative
+    /// token count is never meaningful.</summary>
+    private static long Column(JsonElement root, IReadOnlyList<string> add, IReadOnlyList<string> subtract)
+    {
+        var total = SumPaths(root, add) - SumPaths(root, subtract);
+        return total < 0 ? 0 : total;
     }
 
     private static bool TryGetByPath(JsonElement root, string path, out long value)

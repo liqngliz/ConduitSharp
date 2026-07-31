@@ -28,29 +28,22 @@
           "enabled": true,
           "config": {
             "inputFields": [
-              "usage.prompt_tokens",
-              "usage.input_tokens",
-              "-usage.input_tokens_details.cached_tokens",
-              "prompt_eval_count"
+              "usage.input_tokens"
             ],
             "outputFields": [
-              "usage.completion_tokens",
-              "usage.output_tokens",
-              "eval_count"
+              "usage.output_tokens"
             ],
             "cacheWriteFields": [
-              "usage.cache_creation_input_tokens",
-              "usage.input_tokens_details.cache_write_tokens"
+              "usage.cache_creation_input_tokens"
             ],
             "cacheReadFields": [
-              "usage.cache_read_input_tokens",
-              "usage.input_tokens_details.cached_tokens"
+              "usage.cache_read_input_tokens"
             ],
+            "keyHeader": "x-api-key",
             "maxResponseBytes": 4194304,
             "maxRequestBytes": 4194304,
             "capturePrompts": true,
-            "maxPromptChars": 200,
-            "keyHeader": "x-api-key"
+            "maxPromptChars": 200
           }
         },
         {
@@ -104,29 +97,16 @@
           "enabled": true,
           "config": {
             "inputFields": [
-              "usage.prompt_tokens",
-              "usage.input_tokens",
-              "-usage.input_tokens_details.cached_tokens",
-              "prompt_eval_count"
+              "usage.prompt_tokens"
             ],
             "outputFields": [
-              "usage.completion_tokens",
-              "usage.output_tokens",
-              "eval_count"
+              "usage.completion_tokens"
             ],
-            "cacheWriteFields": [
-              "usage.cache_creation_input_tokens",
-              "usage.input_tokens_details.cache_write_tokens"
-            ],
-            "cacheReadFields": [
-              "usage.cache_read_input_tokens",
-              "usage.input_tokens_details.cached_tokens"
-            ],
+            "keyHeader": "authorization",
             "maxResponseBytes": 4194304,
             "maxRequestBytes": 4194304,
             "capturePrompts": true,
-            "maxPromptChars": 200,
-            "keyHeader": "authorization"
+            "maxPromptChars": 200
           }
         },
         {
@@ -180,29 +160,25 @@
           "enabled": true,
           "config": {
             "inputFields": [
-              "usage.prompt_tokens",
-              "usage.input_tokens",
-              "-usage.input_tokens_details.cached_tokens",
-              "prompt_eval_count"
+              "usage.input_tokens"
             ],
-            "outputFields": [
-              "usage.completion_tokens",
-              "usage.output_tokens",
-              "eval_count"
-            ],
-            "cacheWriteFields": [
-              "usage.cache_creation_input_tokens",
-              "usage.input_tokens_details.cache_write_tokens"
-            ],
-            "cacheReadFields": [
-              "usage.cache_read_input_tokens",
+            "subtractInputFields": [
               "usage.input_tokens_details.cached_tokens"
             ],
+            "outputFields": [
+              "usage.output_tokens"
+            ],
+            "cacheReadFields": [
+              "usage.input_tokens_details.cached_tokens"
+            ],
+            "cacheWriteFields": [
+              "usage.input_tokens_details.cache_write_tokens"
+            ],
+            "keyHeader": "authorization",
             "maxResponseBytes": 4194304,
             "maxRequestBytes": 4194304,
             "capturePrompts": true,
-            "maxPromptChars": 200,
-            "keyHeader": "authorization"
+            "maxPromptChars": 200
           }
         },
         {

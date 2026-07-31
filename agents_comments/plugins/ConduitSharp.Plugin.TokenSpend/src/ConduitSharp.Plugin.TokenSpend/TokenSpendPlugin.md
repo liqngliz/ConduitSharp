@@ -82,9 +82,9 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 - Every frame is tried and the last with a non-zero total wins, because providers put running counts in intermediate frames and the final tally in the terminal one.
 - Paths are applied at the frame root and again under a "response" wrapper: Anthropic puts usage at the top of a message_delta frame, OpenAI nests it one level deeper inside response.completed. Both shapes are covered by tests copied from captured traffic.
 
-## TokenSpendPlugin.SumPaths (the '-' prefix)
+## TokenSpendPlugin.Column
 
-- A path may start with '-' to subtract. It exists for one reason: providers disagree about whether cached tokens live INSIDE the input count or beside it. OpenAI reports input_tokens 14544 of which input_tokens_details.cached_tokens 3456 is a subset; Anthropic reports input_tokens 12 with cache_read_input_tokens 54000 alongside. Without subtraction the 'in' column means different things per provider and in + cacheRead double-counts on one of them.
-- "-usage.input_tokens_details.cached_tokens" in inputFields makes 'in' mean uncached input on both: it subtracts on OpenAI and is simply absent on Anthropic, so one config serves every route.
-- Clamped at zero. A misconfiguration that subtracts more than it adds should read as unknown rather than negative, since a negative token count is never meaningful.
-
+- Each column is its add paths minus its subtract paths. The subtraction exists because providers disagree about nesting: OpenAI reports input_tokens 14544 with input_tokens_details.cached_tokens 3456 as a SUBSET of it, while Anthropic reports input_tokens 12 with cache_read_input_tokens 54000 ALONGSIDE it. Without it, 'in' means fresh input on one provider and total input on the other.
+- An earlier attempt encoded this as a '-' prefix inside the path string. Rejected: a sigil in a string is invisible to a schema, easy to typo, and reads as a path rather than an operator. Four explicit subtract lists cost more lines and hide nothing.
+- Clamped at zero. A column that subtracts more than it adds is a misconfiguration, and a negative token count is never meaningful.
+- Routes carry per-provider config rather than a union. A union works, but it puts OpenAI paths on the Anthropic route where they can never match, which reads as though someone expected them to.
