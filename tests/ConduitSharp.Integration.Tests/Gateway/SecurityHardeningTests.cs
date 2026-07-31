@@ -496,6 +496,55 @@ public sealed class SecurityHardeningTests
     }
 
     [Fact]
+    public async Task SwaggerSpec_UnparseableUpstreamSpec_IsServedVerbatim()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), $"conduit-sec-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+
+        // Valid JSON the OpenAPI reader rejects (no "openapi"/"swagger" version key).
+        const string upstreamSpec =
+            """{"info":{"title":"Not really a spec"},"x-vendor":"keep-me","servers":[{"url":"http://internal-host:9999"}]}""";
+        await File.WriteAllTextAsync(Path.Combine(tmpDir, "spec.json"), upstreamSpec);
+
+        try
+        {
+            Environment.SetEnvironmentVariable("Gateway__BasePath", tmpDir);
+            var routes = """
+                {
+                  "routes": [{
+                    "id": "odd-spec",
+                    "route": { "match": { "path": "/api/odd/{**rest}" } },
+                    "cluster": null,
+                    "swagger": { "specFile": "spec.json" },
+                    "plugins": [
+                      { "name": "api-key-auth", "order": 1, "config": { "header": "X-Api-Key", "apiKey": "k" } }
+                    ]
+                  }]
+                }
+                """;
+            await using var factory = await GatewayFactory.CreateAsync(
+                await FakeUpstream.StartAsync(), routes);
+            using var client = factory.CreateClient();
+
+            var response = await client.GetAsync("/swagger/odd-spec.json");
+            var body = await response.Content.ReadAsStringAsync();
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            // Everything we cannot model is passed through untouched ...
+            Assert.Contains("x-vendor", body, StringComparison.Ordinal);
+            Assert.Contains("Not really a spec", body, StringComparison.Ordinal);
+            // ... except servers, which must never publish the upstream's own host.
+            Assert.DoesNotContain("internal-host", body, StringComparison.Ordinal);
+            Assert.DoesNotContain("9999", body, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("Gateway__BasePath", null);
+            Directory.Delete(tmpDir, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SwaggerSpec_WithAuthPlugins_InjectsSecuritySchemes()
     {
         var tmpDir = Path.Combine(Path.GetTempPath(), $"conduit-sec-test-{Guid.NewGuid():N}");
