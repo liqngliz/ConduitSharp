@@ -30,7 +30,7 @@ app.MapGet("/", () => Results.Text(
        Codex         ~/.codex/config.toml -> base_url = "http://localhost:4000/llm/codex/backend-api/codex"
        LM Studio     OPENAI_BASE_URL=http://localhost:4000/llm/local/v1
 
-     spend rows   {dataDir}/spend-<utc-date>.jsonl
+     spend rows   {dataDir}/spend-<utc-date>.jsonl   (mounted at ./logs)
      wire log     /tmp/conduit-wire.jsonl   (logPath in routes.json)
      """, "text/plain"));
 

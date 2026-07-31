@@ -5,56 +5,33 @@ running `token-spend` (durable per-request token history) and `body-capture-file
 and response bodies, for checking what a provider actually sends).
 
 Point a tool's base URL at a route and its traffic is metered without the tool knowing.
-
 ## Run
-
-```bash
-dotnet run --project examples/ConduitSharp.Spend
-```
-
-Listens on `http://localhost:4000`. `GET /` prints the setup lines below with the live paths.
-
-Two environment variables, both optional:
-
-| variable | default |
-| :--- | :--- |
-| `CONDUIT_SPEND_DATA` | `~/.conduit-spend` |
-| `ASPNETCORE_URLS` | `http://localhost:5000`, so set it to `:4000` to match the docs |
-
-## Or in Docker
 
 ```bash
 cd examples/ConduitSharp.Spend
 docker compose up -d
 ```
 
-Serves the same thing on `:4000`, with spend rows and the wire log both landing in
-`examples/ConduitSharp.Spend/logs/` on the host. To run the image directly instead:
+Serves on `http://localhost:4000`. Spend rows and the wire log both land in
+`examples/ConduitSharp.Spend/logs/` on the host. `GET /` prints the setup lines below with the
+live paths.
 
 ```bash
-docker build -f examples/ConduitSharp.Spend/Dockerfile -t conduit-spend .
-docker run -d --restart unless-stopped -p 4000:4000 \
-  -v "$PWD/logs:/data" --add-host host.docker.internal:host-gateway conduit-spend
+docker compose logs -f      # follow
+docker compose down         # stop
 ```
-
-The container uses `Configuration/routes.docker.json`, which differs from the local one in two
-ways it has to: the `local` route points at `host.docker.internal:1234` because `127.0.0.1` inside
-a container is the container itself, and the wire log writes to `/data` so both outputs share the
-one mounted volume. The `--add-host` line is what makes that hostname resolve on Linux, where
-Docker does not provide it by default.
-
-Build context is the repo root, since the project references `src/` and `plugins/` directly.
 
 ## Point each tool at it
 
-**Claude Code**
+### Claude Code
 
 ```bash
 ANTHROPIC_BASE_URL=http://localhost:4000/llm/claude claude
 ```
 
-**Codex** in `~/.codex/config.toml`. A custom provider block, not an override of the built-in
-`openai` one, which Codex ignores ([openai/codex#11698](https://github.com/openai/codex/issues/11698)):
+### Codex (VS Code extension)
+
+File: `~/.codex/config.toml`
 
 ```toml
 model_provider = "conduit"
@@ -65,34 +42,27 @@ base_url = "http://localhost:4000/llm/codex/backend-api/codex"
 wire_api = "responses"
 ```
 
-Three details, each of which was found the hard way:
+Restart the extension after editing.
 
-**No `env_key`.** With it omitted, `resolve_provider_auth` falls through to whatever Codex is already
-signed in with, so a ChatGPT-plan session works with no API key. With it set, Codex reads that
-environment variable instead.
+**No `env_key`.** With it omitted, `resolve_provider_auth` falls through to whatever Codex is
+already signed in with, so a ChatGPT-plan session works with no API key. With it set, Codex reads
+that environment variable instead.
 
-**`/backend-api/codex` is required.** That is the real base path Codex uses
-(`CHATGPT_CODEX_BASE_URL` in its source), and it must be in the base URL because the gateway
-forwards whatever path arrives.
-
-**`model_provider` goes above any `[table]` header**, or TOML reads it as a key inside that table
-and silently ignores it.
-
-**LM Studio** or anything else speaking the OpenAI wire format:
+### LM Studio
 
 ```bash
 OPENAI_BASE_URL=http://localhost:4000/llm/local/v1
 ```
 
-The `local` route points at `127.0.0.1:1234`, LM Studio's default. Change the destination in
-`Configuration/routes.json` for Ollama or another local server.
+The `local` route points at `host.docker.internal:1234`, LM Studio's default port on the host.
+Change the destination in `Configuration/routes.docker.json` for Ollama or another local server.
 
 ## What you get
 
 **Spend rows**, one JSON object per request, one file per UTC day:
 
 ```bash
-cat ~/.conduit-spend/spend-$(date -u +%F).jsonl
+cat logs/spend-$(date -u +%F).jsonl
 ```
 
 ```json
@@ -101,31 +71,20 @@ cat ~/.conduit-spend/spend-$(date -u +%F).jsonl
  "turn":3,"tools":0,"ms":24,"streamed":false,"prompt":"second ask"}
 ```
 
-**Wire log**, the actual bodies both ways, at `/tmp/conduit-wire.jsonl`. This is the one to read
+**Wire log**, the actual bodies both ways, at `logs/conduit-wire.jsonl`. This is the one to read
 when you want to know what a provider really sends rather than what its docs claim.
 
 ## Adding a project
 
 One route per project, so each can carry its own budget, provider, and capture settings. Copy a
-block in `routes.json`, change `id`, the `path`, and the `PathRemovePrefix`, then point that
-project's tool at the new prefix. Per-repo `.envrc` under direnv makes the base URL set itself when
+block in `Configuration/routes.docker.json`, change `id`, the `path`, and the
+`PathRemovePrefix`, then point that project's tool at the new prefix. Per-repo `.envrc` under direnv makes the base URL set itself when
 you `cd` in.
 
 ## Known limits
 
-**Streaming is recorded but not counted.** An SSE response is not one JSON document, so the row
-lands with `"streamed": true` and zero tokens. **Claude Code streams by default**, so on the
-`claude` route expect real `turn`, `model`, `session` and `ms` with zero token counts until SSE
-parsing is added. The `local` and `codex` routes measure fully when the client does not stream.
-
-**Codex loses conversation shape.** The Responses API sends `input` where Chat Completions sends
-`messages`, and the request parser only looks for `messages`. `model`, `ms` and `route` are correct;
-`turn`, `session`, `tools` and `prompt` come back empty. Confirmed against live Codex traffic.
-
-**Codex streams, and the `streamed` flag currently misses it.** Live captures show a real SSE
-response (`event: response.created`) landing with `"streamed": false` and zero tokens, so the row
-reads as a free non-streamed call rather than an uncounted streamed one. That is worse than no flag
-and is the next thing to fix.
+**Codex polls `/models` every three minutes** with an empty GET, so most rows in the spend file
+have `turn: 0` and no tokens. Filter on `turn > 0` for real traffic.
 
 **`api.openai.com` is not usable on a ChatGPT plan.** It authenticates the OAuth token, then refuses
 with `Missing scopes: api.responses.write`. The route here points at the ChatGPT backend instead,
@@ -140,6 +99,9 @@ bounded prompt prefix, and only because `capturePrompts` is on in this example.
 **Two capture buffers per request.** Both plugins declare their footprint, so the gateway reserves
 `token-spend` + `body-capture-file` against `MaxRamBufferedBodyBytes` and sheds with a 503 at the
 ceiling rather than growing unchecked. This example raises that budget to 128 MiB to leave room.
+
+**Only `codex` has been exercised against live traffic.** `claude` and `local` are configured but
+unverified.
 
 ## Turning capture off
 
