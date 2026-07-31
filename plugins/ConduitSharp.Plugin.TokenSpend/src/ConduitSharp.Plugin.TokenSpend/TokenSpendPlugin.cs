@@ -113,6 +113,9 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                 OutputTokens = SumPaths(root, config.OutputFields),
                 CacheWriteTokens = SumPaths(root, config.CacheWriteFields),
                 CacheReadTokens = SumPaths(root, config.CacheReadFields),
+                ServedModel = root.TryGetProperty("model", out var served) && served.ValueKind == JsonValueKind.String
+                    ? served.GetString() ?? ""
+                    : "",
             };
         }
         catch (JsonException)
@@ -178,12 +181,19 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                 ? m.GetString() ?? ""
                 : "";
 
-            if (!root.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
+            // Chat Completions and Anthropic call it "messages"; the Responses API, which is what
+            // Codex speaks, calls it "input". Same role/content shape either way.
+            if ((!root.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
+                && (!root.TryGetProperty("input", out messages) || messages.ValueKind != JsonValueKind.Array))
                 return RequestFacts.None with { Model = model };
 
             string? firstUserText = null;
             string? lastUserText = null;
             var tools = 0;
+
+            // Responses declares the tool catalogue at the top level rather than inside an item.
+            if (root.TryGetProperty("tools", out var toolCatalogue) && toolCatalogue.ValueKind == JsonValueKind.Array)
+                tools += toolCatalogue.GetArrayLength();
 
             foreach (var message in messages.EnumerateArray())
             {
@@ -229,6 +239,19 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
             count++;
         if (message.TryGetProperty("tool_calls", out var calls) && calls.ValueKind == JsonValueKind.Array)
             count += calls.GetArrayLength();
+
+        // Responses represents a call as an item typed function_call / function_call_output, and
+        // ships its own tool catalogue as an additional_tools item.
+        if (message.TryGetProperty("type", out var itemType) && itemType.ValueKind == JsonValueKind.String)
+        {
+            var t = itemType.GetString();
+            if (t is "function_call" or "function_call_output" or "custom_tool_call")
+                count++;
+            else if (t is "additional_tools"
+                     && message.TryGetProperty("tools", out var extra) && extra.ValueKind == JsonValueKind.Array)
+                count += extra.GetArrayLength();
+        }
+
         if (message.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
         {
             foreach (var block in content.EnumerateArray())

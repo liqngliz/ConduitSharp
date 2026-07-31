@@ -27,7 +27,7 @@ app.MapGet("/", () => Results.Text(
      ConduitSharp spend gateway
 
        Claude Code   ANTHROPIC_BASE_URL=http://localhost:4000/llm/claude
-       Codex         ~/.codex/config.toml -> base_url = "http://localhost:4000/llm/codex"
+       Codex         ~/.codex/config.toml -> base_url = "http://localhost:4000/llm/codex/backend-api/codex"
        LM Studio     OPENAI_BASE_URL=http://localhost:4000/llm/local/v1
 
      spend rows   {dataDir}/spend-<utc-date>.jsonl

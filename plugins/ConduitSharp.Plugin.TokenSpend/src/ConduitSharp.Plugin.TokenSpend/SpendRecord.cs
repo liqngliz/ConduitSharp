@@ -18,6 +18,10 @@ public sealed record SpendRecord
     /// <summary>Model the caller asked for, as it appeared in the request body.</summary>
     [JsonPropertyName("model")] public string Model { get; init; } = "";
 
+    /// <summary>Model the provider says actually served the call, read from the response. Empty when
+    /// the response did not name one, which today includes every streamed reply.</summary>
+    [JsonPropertyName("servedModel")] public string ServedModel { get; init; } = "";
+
     /// <summary>Salted hash of the caller's API key or JWT claim. Never the raw credential.</summary>
     [JsonPropertyName("caller")] public string Caller { get; init; } = "";
 

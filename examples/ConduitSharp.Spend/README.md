@@ -57,15 +57,26 @@ ANTHROPIC_BASE_URL=http://localhost:4000/llm/claude claude
 `openai` one, which Codex ignores ([openai/codex#11698](https://github.com/openai/codex/issues/11698)):
 
 ```toml
-model          = "gpt-5.3-codex"
 model_provider = "conduit"
 
 [model_providers.conduit]
 name     = "ConduitSharp"
-base_url = "http://localhost:4000/llm/codex"
-env_key  = "OPENAI_API_KEY"
+base_url = "http://localhost:4000/llm/codex/backend-api/codex"
 wire_api = "responses"
 ```
+
+Three details, each of which was found the hard way:
+
+**No `env_key`.** With it omitted, `resolve_provider_auth` falls through to whatever Codex is already
+signed in with, so a ChatGPT-plan session works with no API key. With it set, Codex reads that
+environment variable instead.
+
+**`/backend-api/codex` is required.** That is the real base path Codex uses
+(`CHATGPT_CODEX_BASE_URL` in its source), and it must be in the base URL because the gateway
+forwards whatever path arrives.
+
+**`model_provider` goes above any `[table]` header**, or TOML reads it as a key inside that table
+and silently ignores it.
 
 **LM Studio** or anything else speaking the OpenAI wire format:
 
@@ -108,8 +119,18 @@ lands with `"streamed": true` and zero tokens. **Claude Code streams by default*
 parsing is added. The `local` and `codex` routes measure fully when the client does not stream.
 
 **Codex loses conversation shape.** The Responses API sends `input` where Chat Completions sends
-`messages`, and the request parser only looks for `messages`. Token counts, model and timing are
-correct; `turn`, `session`, `tools` and `prompt` come back empty. Verified by test, fix is small.
+`messages`, and the request parser only looks for `messages`. `model`, `ms` and `route` are correct;
+`turn`, `session`, `tools` and `prompt` come back empty. Confirmed against live Codex traffic.
+
+**Codex streams, and the `streamed` flag currently misses it.** Live captures show a real SSE
+response (`event: response.created`) landing with `"streamed": false` and zero tokens, so the row
+reads as a free non-streamed call rather than an uncounted streamed one. That is worse than no flag
+and is the next thing to fix.
+
+**`api.openai.com` is not usable on a ChatGPT plan.** It authenticates the OAuth token, then refuses
+with `Missing scopes: api.responses.write`. The route here points at the ChatGPT backend instead,
+which is what a plan entitles you to. An API-key user would want a second route at
+`https://api.openai.com` with `/v1` in the base URL.
 
 **The wire log holds prompt text in the clear.** It captures bodies, so it contains whatever you
 typed. It does not capture headers, so API keys stay out of it, but treat the file as sensitive and

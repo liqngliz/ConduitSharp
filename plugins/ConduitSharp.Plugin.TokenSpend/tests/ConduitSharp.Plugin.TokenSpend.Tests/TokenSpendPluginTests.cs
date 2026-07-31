@@ -236,6 +236,49 @@ public sealed class TokenSpendPluginTests
     }
 
     [Fact]
+    public async Task ResponsesApiRequest_IsParsedFromInputRatherThanMessages()
+    {
+        // Shape taken from a captured Codex request: items are typed "message", content blocks are
+        // "input_text", and the tool catalogue sits at the top level rather than inside an item.
+        const string body = """
+            {"model":"gpt-5.4-mini",
+             "tools":[{"type":"function","name":"shell"},{"type":"function","name":"apply_patch"}],
+             "input":[
+               {"type":"message","role":"user","content":[{"type":"input_text","text":"first ask"}]},
+               {"type":"message","role":"assistant","content":[{"type":"output_text","text":"ok"}]},
+               {"type":"function_call","name":"shell","arguments":"{}"},
+               {"type":"message","role":"user","content":[{"type":"input_text","text":"second ask"}]}]}
+            """;
+
+        var (ctx, _, store) = NewContext(body);
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config("""
+            { "inputFields": ["usage.input_tokens"], "outputFields": ["usage.output_tokens"],
+              "capturePrompts": true }
+            """), Forward("""{"model":"gpt-5.6-luna","usage":{"input_tokens":10594,"output_tokens":6}}"""));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal(4, row.TurnIndex);
+        Assert.Equal("second ask", row.PromptPrefix);
+        Assert.NotEqual("", row.SessionId);
+        Assert.Equal(3, row.ToolUseCount);          // 2 declared tools + 1 function_call
+        Assert.Equal(10594, row.InputTokens);
+    }
+
+    [Fact]
+    public async Task RequestedAndServedModelAreRecordedSeparately()
+    {
+        // Codex asks for one model and the service reports another; both are worth keeping.
+        var (ctx, _, store) = NewContext("""{"model":"gpt-5.4-mini","input":[{"role":"user","content":"hi"}]}""");
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(OpenAi),
+            Forward("""{"model":"gpt-5.6-luna","usage":{"prompt_tokens":1,"completion_tokens":2}}"""));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal("gpt-5.4-mini", row.Model);
+        Assert.Equal("gpt-5.6-luna", row.ServedModel);
+    }
+
+    [Fact]
     public void ValidateConfig_RejectsMissingUsageFields()
     {
         var plugin = new TokenSpendPlugin();

@@ -51,3 +51,24 @@ sat when it was moved and are a hint only — the symbol is the anchor.
 - The response is buffered write-through, so the client receives bytes as they arrive while the gateway keeps a bounded copy to parse.
 - ReadsRequestBody is true because the request body is what supplies the model, the turn index and the session grouping: an Anthropic or OpenAI request carries the whole message array every turn, so one intercepted request yields all three without the client cooperating.
 - Recording SSE as streamed with zero tokens is deliberate: the call stays visible in the history as uncounted rather than missing from it. Claude Code streams by default, so front a non-streaming endpoint to measure it.
+
+## TokenSpendPlugin.ParseRequest (Responses API)
+
+- Falls back from "messages" to "input" because the Responses API, which Codex speaks, names the conversation array differently. Same role/content shape, so the rest of the walk is unchanged. Verified against a captured Codex request rather than documentation.
+- Content blocks there are typed input_text / output_text but still carry a "text" field, which is why TextOf works untouched.
+
+## TokenSpendPlugin.ToolBlocks
+
+- Responses declares the tool catalogue at the top level of the request and represents an invocation as an item typed function_call / function_call_output, where Chat Completions uses a tool_calls array and a "tool" role. Both are counted so the column means the same thing across wire formats.
+
+## TokenSpendPlugin.WithUsage (ServedModel)
+
+- Model is recorded twice on purpose. Model is what the caller asked for, read from the request; ServedModel is what the provider says it used, read from the response. Live Codex traffic showed a request for gpt-5.4-mini answered by gpt-5.6-luna, so collapsing them would hide a real substitution.
+- ServedModel is empty for streamed replies until SSE parsing lands, because the name only appears inside the event frames.
+
+## Planned: SSE parsing
+
+- Use System.Net.ServerSentEvents.SseParser. It is in the shared framework on net10.0, verified by compile check, so this needs no package and no hand-rolled data: line scanner.
+- The usage lives in the terminal frame. A captured Codex response.completed event carried {"input_tokens":10594,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":3456},"output_tokens":6,"total_tokens":10600}.
+- Note the semantics differ from Anthropic: cached_tokens is nested inside input_tokens_details and is a SUBSET of input_tokens, whereas Anthropic reports cache reads alongside input_tokens. Summing them the same way would double-count on OpenAI.
+
