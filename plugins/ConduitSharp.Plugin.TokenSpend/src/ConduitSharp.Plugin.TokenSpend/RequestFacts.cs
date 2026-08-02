@@ -10,4 +10,6 @@ internal sealed record RequestFacts
     public int TurnIndex { get; init; }
     public int ToolUseCount { get; init; }
     public string? PromptPrefix { get; init; }
+    public string? SessionName { get; init; }
+    public IReadOnlyDictionary<string, string>? Metadata { get; init; }
 }

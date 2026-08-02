@@ -31,7 +31,7 @@ app.MapGet("/", () => Results.Text(
        LM Studio     OPENAI_BASE_URL=http://localhost:4000/llm/local/v1
 
      spend rows   {dataDir}/spend-<utc-date>.jsonl   (mounted at ./logs)
-     wire log     /tmp/conduit-wire.jsonl   (logPath in routes.json)
+     wire log     wherever logPath in routes.json points (/data in the image)
      """, "text/plain"));
 
 app.UseConduitSharpGateway();

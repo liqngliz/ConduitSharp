@@ -1,10 +1,9 @@
 # ConduitSharp.Spend
 
-A gateway wired for measuring what your coding agents cost. Three routes, one per provider, each
-running `token-spend` (durable per-request token history) and `body-capture-file` (the raw request
-and response bodies, for checking what a provider actually sends).
+Track token spend across any AI agent, ships pre-configured with Anthropic and Codex and Local LLM routes.  
 
-Point a tool's base URL at a route and its traffic is metered without the tool knowing.
+One command to launch: Docker run pull image, mount volume, start server. Zero install.
+
 ## Run
 
 One command, no clone:

@@ -51,4 +51,13 @@ public sealed record SpendRecord
 
     /// <summary>Bounded prefix of the newest user message, present only when prompt capture is on.</summary>
     [JsonPropertyName("prompt")] public string? PromptPrefix { get; init; }
+
+    /// <summary>Bounded prefix of the first user message in the session, used as a readable title.</summary>
+    [JsonPropertyName("sessionName")] public string? SessionName { get; init; }
+
+    /// <summary>Request-body values named by <c>metadataFields</c>. Absent when none are configured
+    /// or none resolved. Separates traffic a client sends on its own behalf from traffic the user
+    /// asked for: Codex bills a hidden title-generation call against the same key as the real turn,
+    /// and only <c>thread_source</c> tells them apart.</summary>
+    [JsonPropertyName("meta")] public IReadOnlyDictionary<string, string>? Metadata { get; init; }
 }

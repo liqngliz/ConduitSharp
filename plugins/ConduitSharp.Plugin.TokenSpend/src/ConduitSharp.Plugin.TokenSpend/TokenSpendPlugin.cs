@@ -91,6 +91,8 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
             DurationMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds,
             Streamed = IsEventStream(context.Response.ContentType) || LooksLikeEventStream(capture.Captured.Span),
             PromptPrefix = config.CapturePrompts ? facts.PromptPrefix : null,
+            SessionName = config.CapturePrompts ? facts.SessionName : null,
+            Metadata = facts.Metadata,
         };
 
         record = record.Streamed
@@ -239,6 +241,74 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
         return total < 0 ? 0 : total;
     }
 
+    private const int MaxMetadataValueChars = 200;
+
+    /// <summary>Resolves the configured metadata paths against the request body. Returns null rather
+    /// than an empty map so a row carries no <c>meta</c> key at all when nothing was asked for.</summary>
+    private static IReadOnlyDictionary<string, string>? ReadMetadata(
+        JsonElement root, IReadOnlyDictionary<string, string> paths)
+    {
+        if (paths.Count == 0)
+            return null;
+
+        Dictionary<string, string>? found = null;
+        foreach (var (name, path) in paths)
+        {
+            if (!TryGetStringByPath(root, path, out var value))
+                continue;
+            (found ??= [])[name] = value.Length <= MaxMetadataValueChars
+                ? value
+                : value[..MaxMetadataValueChars];
+        }
+        return found;
+    }
+
+    /// <summary>Same dotted walk as <see cref="TryGetByPath"/>, but yields text and re-parses a
+    /// string that a path continues through. Codex packs a whole JSON document into the
+    /// <c>x-codex-turn-metadata</c> string, so stopping at the string would put the interesting
+    /// fields out of reach.</summary>
+    private static bool TryGetStringByPath(JsonElement root, string path, out string value)
+    {
+        value = "";
+        var current = root;
+        List<JsonDocument>? nested = null;
+        try
+        {
+            foreach (var segment in path.Split('.'))
+            {
+                if (current.ValueKind == JsonValueKind.String)
+                {
+                    var text = current.GetString();
+                    if (text is null)
+                        return false;
+                    JsonDocument document;
+                    try { document = JsonDocument.Parse(text); }
+                    catch (JsonException) { return false; }
+                    (nested ??= []).Add(document);
+                    current = document.RootElement;
+                }
+                if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(segment, out current))
+                    return false;
+            }
+
+            // Every branch here allocates its own string, so the value outlives the documents the
+            // finally block disposes.
+            value = current.ValueKind switch
+            {
+                JsonValueKind.String => current.GetString() ?? "",
+                JsonValueKind.Null or JsonValueKind.Undefined => "",
+                _ => current.GetRawText(),
+            };
+            return value.Length > 0;
+        }
+        finally
+        {
+            if (nested is not null)
+                foreach (var document in nested)
+                    document.Dispose();
+        }
+    }
+
     private static bool TryGetByPath(JsonElement root, string path, out long value)
     {
         value = 0;
@@ -287,13 +357,18 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                 ? m.GetString() ?? ""
                 : "";
 
+            // Resolved before the message array is required, so a body the parse otherwise gives up
+            // on still carries its metadata.
+            var metadata = ReadMetadata(root, config.MetadataFields);
+
             // Chat Completions and Anthropic call it "messages"; the Responses API, which is what
             // Codex speaks, calls it "input". Same role/content shape either way.
             if ((!root.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
                 && (!root.TryGetProperty("input", out messages) || messages.ValueKind != JsonValueKind.Array))
-                return RequestFacts.None with { Model = model };
+                return RequestFacts.None with { Model = model, Metadata = metadata };
 
             string? firstUserText = null;
+            string? firstReadableText = null;
             string? lastUserText = null;
             var tools = 0;
 
@@ -319,7 +394,16 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                     continue;
                 firstUserText ??= text;
                 lastUserText = text;
+
+                if (firstReadableText is null 
+                    && !text.StartsWith("<environment_context>", StringComparison.Ordinal)
+                    && !text.StartsWith("You are a helpful assistant", StringComparison.OrdinalIgnoreCase))
+                {
+                    firstReadableText = text;
+                }
             }
+
+            firstReadableText ??= firstUserText;
 
             return new RequestFacts
             {
@@ -327,9 +411,13 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                 TurnIndex = messages.GetArrayLength(),
                 ToolUseCount = tools,
                 SessionId = firstUserText is null ? "" : ShortHash(firstUserText),
+                SessionName = firstReadableText is null
+                    ? null
+                    : firstReadableText[..Math.Min(firstReadableText.Length, config.MaxPromptChars)],
                 PromptPrefix = lastUserText is null
                     ? null
                     : lastUserText[..Math.Min(lastUserText.Length, config.MaxPromptChars)],
+                Metadata = metadata,
             };
         }
         catch (JsonException)

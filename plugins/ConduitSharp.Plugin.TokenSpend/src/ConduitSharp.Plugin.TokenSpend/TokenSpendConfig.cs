@@ -55,6 +55,15 @@ public sealed record TokenSpendConfig
     /// <summary>Characters of the newest user message kept when <see cref="CapturePrompts"/> is on.</summary>
     [JsonPropertyName("maxPromptChars")] public int MaxPromptChars { get; init; } = 200;
 
+    /// <summary>Named dotted request paths copied onto each row under <c>meta</c>, e.g.
+    /// <c>{"source": "client_metadata.x-codex-turn-metadata.thread_source"}</c>. A path may keep
+    /// descending past a value that is itself a JSON document held in a string, which is how Codex
+    /// ships its turn metadata. Values are truncated to 200 characters. Nothing is captured unless
+    /// a path names it, so point these at metadata rather than at content.</summary>
+    [JsonPropertyName("metadataFields")]
+    public IReadOnlyDictionary<string, string> MetadataFields { get; init; }
+        = new Dictionary<string, string>();
+
     internal static TokenSpendConfig From(JsonElement raw) =>
         raw.ValueKind == JsonValueKind.Object
             ? raw.Deserialize<TokenSpendConfig>(JsonOptions) ?? new TokenSpendConfig()

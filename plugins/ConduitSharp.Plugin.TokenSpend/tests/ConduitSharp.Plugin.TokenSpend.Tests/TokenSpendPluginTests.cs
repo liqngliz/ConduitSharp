@@ -49,6 +49,47 @@ public sealed class TokenSpendPluginTests
         """;
 
     [Fact]
+    public async Task MetadataFields_ReachThroughAJsonStringValue()
+    {
+        // Codex sends two calls per prompt against one key: the real turn, and a hidden one that
+        // names the sidebar entry. thread_source is the only thing that tells them apart, and it
+        // sits inside x-codex-turn-metadata, whose value is a JSON document held in a string.
+        var (ctx, _, store) = NewContext("""
+            {"model":"gpt-5.6-luna","input":[{"role":"user","content":"title this"}],
+             "client_metadata":{
+               "thread_id":"019fc46d",
+               "x-codex-turn-metadata":"{\"request_kind\":\"turn\",\"thread_source\":\"system\"}"}}
+            """);
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config("""
+            { "inputFields": ["usage.input_tokens"],
+              "metadataFields": {
+                "source":  "client_metadata.x-codex-turn-metadata.thread_source",
+                "kind":    "client_metadata.x-codex-turn-metadata.request_kind",
+                "thread":  "client_metadata.thread_id",
+                "missing": "client_metadata.nope.nothing" } }
+            """), Forward("""{"usage":{"input_tokens":5}}"""));
+
+        var row = Assert.Single(store.Rows);
+        Assert.NotNull(row.Metadata);
+        Assert.Equal("system", row.Metadata["source"]);
+        Assert.Equal("turn", row.Metadata["kind"]);
+        Assert.Equal("019fc46d", row.Metadata["thread"]);
+        Assert.DoesNotContain("missing", row.Metadata.Keys);
+    }
+
+    [Fact]
+    public async Task NoMetadataFieldsConfigured_LeavesTheKeyOffTheRow()
+    {
+        var (ctx, _, store) = NewContext("""{"model":"m","input":[{"role":"user","content":"hi"}]}""");
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(OpenAi),
+            Forward("""{"usage":{"prompt_tokens":1,"completion_tokens":1}}"""));
+
+        Assert.Null(Assert.Single(store.Rows).Metadata);
+    }
+
+    [Fact]
     public async Task OpenAiUsage_LandsInSeparateColumns_AndBodyStillReachesClient()
     {
         var (ctx, sink, store) = NewContext();

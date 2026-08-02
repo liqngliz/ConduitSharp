@@ -40,8 +40,8 @@
               "usage.cache_read_input_tokens"
             ],
             "keyHeader": "x-api-key",
-            "maxResponseBytes": 4194304,
-            "maxRequestBytes": 4194304,
+            "maxResponseBytes": 33554432,
+            "maxRequestBytes": 33554432,
             "capturePrompts": true,
             "maxPromptChars": 200
           }
@@ -103,8 +103,8 @@
               "usage.completion_tokens"
             ],
             "keyHeader": "authorization",
-            "maxResponseBytes": 4194304,
-            "maxRequestBytes": 4194304,
+            "maxResponseBytes": 33554432,
+            "maxRequestBytes": 33554432,
             "capturePrompts": true,
             "maxPromptChars": 200
           }
@@ -175,10 +175,16 @@
               "usage.input_tokens_details.cache_write_tokens"
             ],
             "keyHeader": "authorization",
-            "maxResponseBytes": 4194304,
-            "maxRequestBytes": 4194304,
+            "maxResponseBytes": 33554432,
+            "maxRequestBytes": 33554432,
             "capturePrompts": true,
-            "maxPromptChars": 200
+            "maxPromptChars": 200,
+            "metadataFields": {
+              "source": "client_metadata.x-codex-turn-metadata.thread_source",
+              "kind": "client_metadata.x-codex-turn-metadata.request_kind",
+              "thread": "client_metadata.thread_id",
+              "turn": "client_metadata.turn_id"
+            }
           }
         },
         {

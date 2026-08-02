@@ -1,0 +1,26 @@
+# Local development: builds the image from this checkout instead of pulling from GHCR.
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Configuration/ is mounted over the baked-in copy, so editing routes.json or appsettings.json
+# takes effect on `docker compose -f docker-compose.dev.yml restart` with no rebuild. Code
+# changes still need --build.
+#
+# Its own project name, so it never recreates the container docker-compose.yml owns.
+name: conduit-spend-dev
+
+services:
+  spend:
+    build:
+      context: ../..
+      dockerfile: examples/ConduitSharp.Spend/Dockerfile
+    image: conduit-spend:dev
+    container_name: conduit-spend-dev
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./logs:/data
+      - ./Configuration:/app/Configuration:ro
+    # Linux only: Docker Desktop provides this name already.
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"

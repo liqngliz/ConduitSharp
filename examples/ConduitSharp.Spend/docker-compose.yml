@@ -1,11 +1,8 @@
 # Optional convenience for anyone who prefers compose to `docker run`. Needs no clone: the image
-# is pulled, not built. Uncomment the build block only if you have the repo and want local changes.
+# is pulled, not built. To build from a checkout instead, use docker-compose.dev.yml.
 services:
   spend:
     image: ghcr.io/liqngliz/conduit-spend:latest
-    # build:
-    #   context: ../..
-    #   dockerfile: examples/ConduitSharp.Spend/Dockerfile
     restart: unless-stopped
     ports:
       - "4000:4000"
