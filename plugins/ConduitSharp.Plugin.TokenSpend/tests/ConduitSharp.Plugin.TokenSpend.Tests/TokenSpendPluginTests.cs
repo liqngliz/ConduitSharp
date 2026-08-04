@@ -48,6 +48,42 @@ public sealed class TokenSpendPluginTests
           "cacheReadFields":  ["usage.cache_read_input_tokens"] }
         """;
 
+    /// <summary>The real Claude Code shape: two frames splitting the columns, gzipped because the
+    /// client asked for it. Both halves have to survive, or every Claude row reads zero.</summary>
+    [Fact]
+    public async Task GzippedAnthropicStream_KeepsBothHalvesOfTheUsage()
+    {
+        const string Sse = """
+            event: message_start
+            data: {"type":"message_start","message":{"model":"claude-opus-5","usage":{"input_tokens":812,"output_tokens":1,"cache_creation_input_tokens":40,"cache_read_input_tokens":9100}}}
+
+            event: message_delta
+            data: {"type":"message_delta","usage":{"output_tokens":377}}
+
+
+            """;
+
+        var (ctx, _, store) = NewContext("""{"model":"claude-opus-5","messages":[{"role":"user","content":"hi"}]}""");
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(Anthropic), context =>
+        {
+            context.Response.ContentType = "text/event-stream";
+            context.Response.Headers.ContentEncoding = "gzip";
+            var compressed = new MemoryStream();
+            using (var gzip = new System.IO.Compression.GZipStream(compressed, System.IO.Compression.CompressionMode.Compress, leaveOpen: true))
+                gzip.Write(Encoding.UTF8.GetBytes(Sse));
+            return context.Response.Body.WriteAsync(compressed.ToArray()).AsTask();
+        });
+
+        var row = Assert.Single(store.Rows);
+        Assert.True(row.Streamed);
+        Assert.Equal(812, row.InputTokens);      // message_start only
+        Assert.Equal(377, row.OutputTokens);     // message_delta only, beating the placeholder 1
+        Assert.Equal(40, row.CacheWriteTokens);
+        Assert.Equal(9100, row.CacheReadTokens);
+        Assert.Equal("claude-opus-5", row.ServedModel);
+    }
+
     [Fact]
     public async Task MetadataFields_ReachThroughAJsonStringValue()
     {
@@ -76,6 +112,116 @@ public sealed class TokenSpendPluginTests
         Assert.Equal("turn", row.Metadata["kind"]);
         Assert.Equal("019fc46d", row.Metadata["thread"]);
         Assert.DoesNotContain("missing", row.Metadata.Keys);
+    }
+
+    /// <summary>Both real shapes. Claude buries its session in a JSON document held in a string,
+    /// alongside two account identifiers the path must not reach; Codex puts its thread id one level
+    /// down. Without this the id is a hash of the first user message, which splits a Claude chat at
+    /// every compaction and merges Codex threads that share an environment preamble.</summary>
+    [Theory]
+    [InlineData(
+        """
+        {"model":"claude-opus-5","messages":[{"role":"user","content":"hi"}],
+         "metadata":{"user_id":"{\"account_uuid\":\"acct-1\",\"device_id\":\"dev-1\",\"session_id\":\"sess-abc\"}"}}
+        """,
+        "metadata.user_id.session_id", "sess-abc")]
+    [InlineData(
+        """
+        {"model":"gpt-5.6-luna","input":[{"role":"user","content":"hi"}],
+         "client_metadata":{"thread_id":"019fc46d","turn_id":"t-9"}}
+        """,
+        "client_metadata.thread_id", "019fc46d")]
+    public async Task SessionField_TakesTheClientsOwnConversationId(string body, string path, string expected)
+    {
+        var (ctx, _, store) = NewContext(body);
+
+        await new TokenSpendPlugin().ExecuteAsync(
+            ctx, Config($$"""{ "inputFields": ["usage.input_tokens"], "sessionField": "{{path}}" }"""),
+            Forward("""{"usage":{"input_tokens":5}}"""));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal(expected, row.SessionId);
+        Assert.DoesNotContain("acct-1", row.SessionId, StringComparison.Ordinal);
+        Assert.DoesNotContain("dev-1", row.SessionId, StringComparison.Ordinal);
+    }
+
+    /// <summary>A route with no configured path, and a configured path a body does not carry, both
+    /// keep the first-message hash rather than collapsing every row onto one empty id.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("metadata.user_id.session_id")]
+    public async Task SessionField_Unresolved_FallsBackToTheFirstMessageHash(string path)
+    {
+        var (ctx, _, store) = NewContext(
+            """{"model":"m","messages":[{"role":"user","content":"count to five"}]}""");
+
+        await new TokenSpendPlugin().ExecuteAsync(
+            ctx, Config($$"""{ "inputFields": ["usage.input_tokens"], "sessionField": "{{path}}" }"""),
+            Forward("""{"usage":{"input_tokens":5}}"""));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal(16, row.SessionId.Length);
+    }
+
+    /// <summary>Claude Code wraps injected context in a tag and prepends it to the message the human
+    /// typed, so the span has to be cut out rather than the message thrown away: what follows it is
+    /// the prompt. Codex sends its scaffolding as a message of its own, which is skipped whole.</summary>
+    [Fact]
+    public async Task Preambles_AreCutFromTheSessionNameOnly_PromptStaysVerbatim()
+    {
+        var (ctx, _, store) = NewContext("""
+            {"model":"m","messages":[
+              {"role":"user","content":"<environment_context>\n<cwd>/x</cwd>\n</environment_context>"},
+              {"role":"user","content":"<system-reminder>\nAs you answer\n</system-reminder>\nadd the knob"},
+              {"role":"assistant","content":"done"},
+              {"role":"user","content":"<system-reminder>ignore this</system-reminder>now ship it"}]}
+            """);
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config("""
+            { "inputFields": ["usage.input_tokens"], "capturePrompts": true,
+              "preambleTags": ["system-reminder"], "preamblePrefixes": ["<environment_context>"] }
+            """), Forward("""{"usage":{"input_tokens":5}}"""));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal("add the knob", row.SessionName);
+        Assert.Equal("<system-reminder>ignore this</system-reminder>now ship it", row.PromptPrefix);
+    }
+
+    /// <summary>A span the request cap cut before its closing tag takes the rest of the text with it
+    /// for session-naming purposes, so the message before it still names the session. The prompt is
+    /// unaffected by preamble stripping and keeps the newest user message verbatim either way.</summary>
+    [Fact]
+    public async Task UnclosedPreambleTag_TakesTheRestOfTheMessage_ForSessionNamingOnly()
+    {
+        var (ctx, _, store) = NewContext(
+            """
+            {"model":"m","messages":[{"role":"user","content":"real one"},
+             {"role":"user","content":"<system-reminder>\nAs you answer the user"}]}
+            """);
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config("""
+            { "inputFields": ["usage.input_tokens"], "capturePrompts": true,
+              "preambleTags": ["system-reminder"] }
+            """), Forward("""{"usage":{"input_tokens":5}}"""));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal("real one", row.SessionName);
+        Assert.Equal("<system-reminder>\nAs you answer the user", row.PromptPrefix);
+    }
+
+    /// <summary>No lists configured, which is every route that has not been taught its client's
+    /// scaffolding: the text is stored as it arrived.</summary>
+    [Fact]
+    public async Task NoPreamblesConfigured_LeavesTheTextAlone()
+    {
+        var (ctx, _, store) = NewContext(
+            """{"model":"m","messages":[{"role":"user","content":"<system-reminder>x</system-reminder>hi"}]}""");
+
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config("""
+            { "inputFields": ["usage.input_tokens"], "capturePrompts": true }
+            """), Forward("""{"usage":{"input_tokens":5}}"""));
+
+        Assert.Equal("<system-reminder>x</system-reminder>hi", Assert.Single(store.Rows).PromptPrefix);
     }
 
     [Fact]

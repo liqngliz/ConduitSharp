@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Net.ServerSentEvents;
 using System.Text;
@@ -79,6 +80,8 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
             context.Response.Body = originalBody;
         }
 
+        var body = Decode(capture.Captured.ToArray(), context.Response.Headers.ContentEncoding.ToString());
+
         var record = new SpendRecord
         {
             Timestamp = DateTimeOffset.UtcNow,
@@ -89,17 +92,49 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
             TurnIndex = facts.TurnIndex,
             ToolUseCount = facts.ToolUseCount,
             DurationMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-            Streamed = IsEventStream(context.Response.ContentType) || LooksLikeEventStream(capture.Captured.Span),
+            Streamed = IsEventStream(context.Response.ContentType) || LooksLikeEventStream(body),
             PromptPrefix = config.CapturePrompts ? facts.PromptPrefix : null,
             SessionName = config.CapturePrompts ? facts.SessionName : null,
             Metadata = facts.Metadata,
         };
 
         record = record.Streamed
-            ? await WithStreamedUsageAsync(record, capture.Captured.ToArray(), config)
-            : WithUsage(record, capture.Captured.Span, config);
+            ? await WithStreamedUsageAsync(record, body, config)
+            : WithUsage(record, body, config);
 
         store.Add(record);
+    }
+
+    /// <summary>
+    /// Undoes the upstream's content coding. An upstream honours the client's <c>Accept-Encoding</c>,
+    /// so the captured bytes are frequently gzip or brotli rather than text: Anthropic compresses its
+    /// SSE stream, and without this every Claude row reads zero tokens.
+    /// </summary>
+    private static byte[] Decode(byte[] body, string contentEncoding)
+    {
+        if (body.Length == 0 || contentEncoding.Length == 0)
+            return body;
+
+        using var source = new MemoryStream(body);
+        using Stream? decoder =
+            contentEncoding.Contains("gzip", StringComparison.OrdinalIgnoreCase) ? new GZipStream(source, CompressionMode.Decompress)
+            : contentEncoding.Contains("br", StringComparison.OrdinalIgnoreCase) ? new BrotliStream(source, CompressionMode.Decompress)
+            : contentEncoding.Contains("deflate", StringComparison.OrdinalIgnoreCase) ? new ZLibStream(source, CompressionMode.Decompress)
+            : null;
+        if (decoder is null)
+            return body;
+
+        using var output = new MemoryStream();
+        try
+        {
+            decoder.CopyTo(output);
+        }
+        catch (InvalidDataException)
+        {
+            // The capture ceiling cut the stream mid-block. CopyTo writes as it goes, so whatever
+            // decoded before the break is kept.
+        }
+        return output.Length > 0 ? output.ToArray() : body;
     }
 
     private static bool IsEventStream(string? contentType) =>
@@ -173,12 +208,20 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                 if (input == 0 && output == 0)
                     continue;
 
+                // Per column, the largest total any frame has reported so far. Anthropic splits its
+                // usage across two frames — `message_start` carries the input and cache columns with
+                // a placeholder output of 1, `message_delta` carries the real output and no input —
+                // so last-frame-wins would drop whichever half arrived first.
+                // ponytail: assumes a provider reports running or final totals, not per-frame deltas.
+                // A delta-reporting provider would undercount; none of the three routes here does.
                 return row with
                 {
-                    InputTokens = input,
-                    OutputTokens = output,
-                    CacheWriteTokens = Column(root, config.CacheWriteFields, config.SubtractCacheWriteFields),
-                    CacheReadTokens = Column(root, config.CacheReadFields, config.SubtractCacheReadFields),
+                    InputTokens = Math.Max(row.InputTokens, input),
+                    OutputTokens = Math.Max(row.OutputTokens, output),
+                    CacheWriteTokens = Math.Max(
+                        row.CacheWriteTokens, Column(root, config.CacheWriteFields, config.SubtractCacheWriteFields)),
+                    CacheReadTokens = Math.Max(
+                        row.CacheReadTokens, Column(root, config.CacheReadFields, config.SubtractCacheReadFields)),
                     ServedModel = root.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String
                         ? m.GetString() ?? row.ServedModel
                         : row.ServedModel,
@@ -190,11 +233,15 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
         }
         return null;
 
+        // Anthropic puts usage at the frame root on `message_delta` and one level down under
+        // `message` on `message_start`; OpenAI nests it under `response`.
         static IEnumerable<JsonElement> Roots(JsonElement frame)
         {
             yield return frame;
-            if (frame.TryGetProperty("response", out var nested) && nested.ValueKind == JsonValueKind.Object)
-                yield return nested;
+            if (frame.TryGetProperty("response", out var response) && response.ValueKind == JsonValueKind.Object)
+                yield return response;
+            if (frame.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.Object)
+                yield return message;
         }
     }
 
@@ -261,6 +308,47 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                 : value[..MaxMetadataValueChars];
         }
         return found;
+    }
+
+    /// <summary>Strips the client's own scaffolding out of a user message, used only to pick which
+    /// message names the session, never to build the prompt itself. Two shapes, because clients use
+    /// both: a tagged span the client wraps around injected context, cut wherever it appears since
+    /// Claude Code prepends it to a real message; and a whole message that is nothing but preamble,
+    /// matched on its opening words and returned empty so the caller skips it. An unclosed tag takes
+    /// the rest of the text with it, which is what a span cut short by the request cap looks like.</summary>
+    private static string WithoutPreamble(string text, TokenSpendConfig config)
+    {
+        foreach (var tag in config.PreambleTags)
+        {
+            var open = $"<{tag}>";
+            var close = $"</{tag}>";
+            int start;
+            while ((start = text.IndexOf(open, StringComparison.OrdinalIgnoreCase)) >= 0)
+            {
+                var end = text.IndexOf(close, start, StringComparison.OrdinalIgnoreCase);
+                text = end < 0 ? text[..start] : text.Remove(start, end - start + close.Length);
+            }
+        }
+
+        text = text.Trim();
+        foreach (var prefix in config.PreamblePrefixes)
+        {
+            if (text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return "";
+        }
+        return text;
+    }
+
+    private const int MaxSessionIdChars = 64;
+
+    /// <summary>The conversation id the client already carries, or null when no path is configured or
+    /// the path resolves to nothing, which leaves the caller on its first-message hash. A UUID is 36
+    /// characters; the cap is here because the path is user-supplied and could name anything.</summary>
+    private static string? ReadSessionId(JsonElement root, string path)
+    {
+        if (path.Length == 0 || !TryGetStringByPath(root, path, out var value))
+            return null;
+        return value.Length <= MaxSessionIdChars ? value : value[..MaxSessionIdChars];
     }
 
     /// <summary>Same dotted walk as <see cref="TryGetByPath"/>, but yields text and re-parses a
@@ -358,17 +446,17 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                 : "";
 
             // Resolved before the message array is required, so a body the parse otherwise gives up
-            // on still carries its metadata.
+            // on still carries its metadata and its session.
             var metadata = ReadMetadata(root, config.MetadataFields);
+            var session = ReadSessionId(root, config.SessionField);
 
             // Chat Completions and Anthropic call it "messages"; the Responses API, which is what
             // Codex speaks, calls it "input". Same role/content shape either way.
             if ((!root.TryGetProperty("messages", out var messages) || messages.ValueKind != JsonValueKind.Array)
                 && (!root.TryGetProperty("input", out messages) || messages.ValueKind != JsonValueKind.Array))
-                return RequestFacts.None with { Model = model, Metadata = metadata };
+                return RequestFacts.None with { Model = model, Metadata = metadata, SessionId = session ?? "" };
 
             string? firstUserText = null;
-            string? firstReadableText = null;
             string? lastUserText = null;
             var tools = 0;
 
@@ -389,31 +477,29 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
 
                 if (role is not "user")
                     continue;
-                var text = TextOf(message);
-                if (text.Length == 0)
-                    continue;
-                firstUserText ??= text;
-                lastUserText = text;
 
-                if (firstReadableText is null 
-                    && !text.StartsWith("<environment_context>", StringComparison.Ordinal)
-                    && !text.StartsWith("You are a helpful assistant", StringComparison.OrdinalIgnoreCase))
-                {
-                    firstReadableText = text;
-                }
+                // Prompt keeps the message verbatim: it is the newest turn, already known to be
+                // real rather than scaffolding, so stripping would just cut what the human typed.
+                var raw = TextOf(message);
+                if (raw.Length > 0)
+                    lastUserText = raw;
+
+                // Session naming needs the opposite: preamble-only messages (a Codex environment
+                // block, a Claude system-reminder with nothing else) must not become the name.
+                var cleaned = WithoutPreamble(raw, config);
+                if (cleaned.Length > 0)
+                    firstUserText ??= cleaned;
             }
-
-            firstReadableText ??= firstUserText;
 
             return new RequestFacts
             {
                 Model = model,
                 TurnIndex = messages.GetArrayLength(),
                 ToolUseCount = tools,
-                SessionId = firstUserText is null ? "" : ShortHash(firstUserText),
-                SessionName = firstReadableText is null
+                SessionId = session ?? (firstUserText is null ? "" : ShortHash(firstUserText)),
+                SessionName = firstUserText is null
                     ? null
-                    : firstReadableText[..Math.Min(firstReadableText.Length, config.MaxPromptChars)],
+                    : firstUserText[..Math.Min(firstUserText.Length, config.MaxPromptChars)],
                 PromptPrefix = lastUserText is null
                     ? null
                     : lastUserText[..Math.Min(lastUserText.Length, config.MaxPromptChars)],

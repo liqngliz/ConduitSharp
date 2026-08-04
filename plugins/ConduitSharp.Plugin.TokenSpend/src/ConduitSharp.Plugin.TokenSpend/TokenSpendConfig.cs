@@ -55,6 +55,26 @@ public sealed record TokenSpendConfig
     /// <summary>Characters of the newest user message kept when <see cref="CapturePrompts"/> is on.</summary>
     [JsonPropertyName("maxPromptChars")] public int MaxPromptChars { get; init; } = 200;
 
+    /// <summary>Tag names whose <c>&lt;tag&gt;…&lt;/tag&gt;</c> spans are cut out of a user message before it
+    /// is read, e.g. <c>["system-reminder"]</c> for Claude Code, which prepends injected context to
+    /// the message the human typed. Per route, because each client scaffolds differently.</summary>
+    [JsonPropertyName("preambleTags")] public IReadOnlyList<string> PreambleTags { get; init; } = [];
+
+    /// <summary>Opening text marking a user message as entirely the client's own, e.g.
+    /// <c>["&lt;environment_context&gt;"]</c> for Codex. Matched after <see cref="PreambleTags"/> spans are
+    /// cut. Such a message is skipped, so the prompt and session name on a row come from the first
+    /// real one.</summary>
+    [JsonPropertyName("preamblePrefixes")] public IReadOnlyList<string> PreamblePrefixes { get; init; } = [];
+
+    /// <summary>Dotted request path to the conversation id the client already carries, e.g.
+    /// <c>metadata.user_id.session_id</c> for Claude Code or <c>client_metadata.thread_id</c> for
+    /// Codex. Both bury it inside a JSON document held in a string, which the path descends into.
+    /// Name the leaf, not its parent: Claude's <c>user_id</c> object also holds a device id and an
+    /// account uuid, neither of which should reach disk. Unset, or a path a body does not carry,
+    /// falls back to hashing the first user message, which splits a conversation whenever the client
+    /// compacts and merges conversations whose first message is a shared synthetic preamble.</summary>
+    [JsonPropertyName("sessionField")] public string SessionField { get; init; } = "";
+
     /// <summary>Named dotted request paths copied onto each row under <c>meta</c>, e.g.
     /// <c>{"source": "client_metadata.x-codex-turn-metadata.thread_source"}</c>. A path may keep
     /// descending past a value that is itself a JSON document held in a string, which is how Codex

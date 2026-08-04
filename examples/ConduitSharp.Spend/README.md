@@ -65,9 +65,22 @@ Inside a container `127.0.0.1` is the container, so a service on your machine is
 
 ### Claude Code
 
-```bash
-ANTHROPIC_BASE_URL=http://localhost:4000/llm/claude claude
+File: `~/.claude/settings.json`
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:4000/llm/claude"
+  }
+}
 ```
+
+Restart Claude Code after editing. A `.claude/settings.json` inside a repo overrides the one in your
+home directory, which is how you give a single project its own route.
+
+Anthropic gzips its SSE stream, so `token-spend` decompresses before reading usage. Anthropic also
+splits the columns across two frames, input and cache in `message_start` and output in
+`message_delta`, which is why the plugin keeps the largest total per column rather than the last.
 
 ### Codex (VS Code extension)
 
@@ -111,6 +124,11 @@ cat logs/spend-$(date -u +%F).jsonl
  "turn":3,"tools":0,"ms":24,"streamed":false,"prompt":"second ask"}
 ```
 
+`session` is the client's own conversation id where it sends one, read from `sessionField`:
+`metadata.user_id.session_id` for Claude Code, `client_metadata.thread_id` for Codex. A route without
+it, like `local`, falls back to a hash of the conversation's first user message, which splits a chat
+whenever the client compacts and merges chats that open with the same synthetic preamble.
+
 **Wire log**, the actual bodies both ways, at `logs/conduit-wire.jsonl`. This is the one to read
 when you want to know what a provider really sends rather than what its docs claim.
 
@@ -140,8 +158,14 @@ bounded prompt prefix, and only because `capturePrompts` is on in this example.
 `token-spend` + `body-capture-file` against `MaxRamBufferedBodyBytes` and sheds with a 503 at the
 ceiling rather than growing unchecked. This example raises that budget to 128 MiB to leave room.
 
-**Only `codex` has been exercised against live traffic.** `claude` and `local` are configured but
+**`codex` and `claude` have been exercised against live traffic.** `local` is configured but
 unverified.
+
+**The wire log mangles compressed responses.** `body-capture-file` stores bodies as text, so a gzip
+response comes back with its invalid byte sequences replaced and cannot be decompressed. Anthropic
+compresses, so `claude` response bodies are unreadable there. Requests are unaffected, as are `codex`
+and `local` responses, which arrive uncompressed. Spend rows are unaffected either way: `token-spend`
+buffers and decodes its own copy.
 
 ## Turning capture off
 

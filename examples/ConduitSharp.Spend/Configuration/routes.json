@@ -43,7 +43,17 @@
             "maxResponseBytes": 33554432,
             "maxRequestBytes": 33554432,
             "capturePrompts": true,
-            "maxPromptChars": 200
+            "maxPromptChars": 200,
+            "sessionField": "metadata.user_id.session_id",
+            "preambleTags": [
+              "system-reminder",
+              "ide_opened_file",
+              "ide_selection"
+            ],
+            "preamblePrefixes": [
+              "<transcript>",
+              "The following is the user's CLAUDE"
+            ]
           }
         },
         {
@@ -59,7 +69,8 @@
               "maxSize": 262144
             },
             "logPath": "/data/conduit-wire.jsonl",
-            "maxFileBytes": 134217728
+            "maxFileBytes": 134217728,
+            "decompress": true
           }
         },
         {
@@ -179,6 +190,11 @@
             "maxRequestBytes": 33554432,
             "capturePrompts": true,
             "maxPromptChars": 200,
+            "sessionField": "client_metadata.thread_id",
+            "preamblePrefixes": [
+              "<environment_context>",
+              "You are a helpful assistant"
+            ],
             "metadataFields": {
               "source": "client_metadata.x-codex-turn-metadata.thread_source",
               "kind": "client_metadata.x-codex-turn-metadata.request_kind",
