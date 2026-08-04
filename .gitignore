@@ -45,3 +45,17 @@ tests/ConduitSharp.Mtls.E2E.Tests/assets/certs/
 /graph.json
 /lifeblood_context.md
 *.bak
+
+# React Dashboard & Spend Gateway
+node_modules/
+dist/
+dist-ssr/
+coverage/
+.env*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+examples/ConduitSharp.Spend/wwwroot/
+examples/ConduitSharp.Spend/logs/*
+!examples/ConduitSharp.Spend/logs/.gitkeep
