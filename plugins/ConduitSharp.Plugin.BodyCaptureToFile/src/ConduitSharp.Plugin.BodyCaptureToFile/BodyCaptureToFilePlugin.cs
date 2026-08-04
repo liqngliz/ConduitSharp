@@ -6,6 +6,7 @@ using ConduitSharp.Core.Pipeline;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Buffers;
+using System.IO.Compression;
 using System.Text;
 
 namespace ConduitSharp.Plugin.BodyCaptureToFile;
@@ -16,6 +17,10 @@ namespace ConduitSharp.Plugin.BodyCaptureToFile;
 /// <code>{ "request": { "maxSize": 4096 }, "response": { "maxSize": 8192 }, "logPath": "...", "maxFileBytes": ... }</code>
 /// A direction is captured only when its block is present with a positive <c>maxSize</c>. The request
 /// is read off the gateway's buffered body; the response is copied by a bounded write-through tee.
+///
+/// <para>Bodies are stored as text. Set <c>"decompress": true</c> for an upstream that honours
+/// <c>Accept-Encoding</c>, which Anthropic does: without it a gzip body is written through a UTF-8
+/// conversion that replaces its invalid sequences, and the result cannot be decompressed afterwards.</para>
 /// </summary>
 public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
 {
@@ -100,6 +105,11 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
                         $"Plugin 'body-capture-file' config error: '{direction}.maxSize' must be an integer.");
                 }
             }
+            if (config.TryGetProperty("decompress", out var decompressProp)
+                && decompressProp.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                throw new InvalidOperationException("Plugin 'body-capture-file' config error: 'decompress' must be a boolean.");
+            }
             if (config.TryGetProperty("maxFileBytes", out var maxFileProp))
             {
                 if (maxFileProp.ValueKind != JsonValueKind.Number || !maxFileProp.TryGetInt64(out var maxFileBytes) || maxFileBytes <= 0)
@@ -115,9 +125,12 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
     {
         var requestMax  = DirectionMaxSize(config, "request");
         var responseMax = DirectionMaxSize(config, "response");
+        var decompress  = config.ValueKind == JsonValueKind.Object
+            && config.TryGetProperty("decompress", out var decompressProp)
+            && decompressProp.ValueKind == JsonValueKind.True;
 
         if (requestMax > 0)
-            await CaptureRequestAsync(context, requestMax);
+            await CaptureRequestAsync(context, requestMax, decompress);
 
         var originalResponseBody = context.Response.Body;
         BoundedTeeStream? responseTee = null;
@@ -135,13 +148,61 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
         {
             if (responseTee is not null)
             {
-                Enqueue(context, "response", responseTee.DetachBuffer(), responseTee.CapturedLength, responseTee.Truncated);
+                var (buffer, length, truncated) = Decompress(
+                    responseTee.DetachBuffer(), responseTee.CapturedLength, responseTee.Truncated,
+                    decompress ? context.Response.Headers.ContentEncoding.ToString() : "", responseMax);
+                Enqueue(context, "response", buffer, length, truncated);
                 context.Response.Body = originalResponseBody;
             }
         }
     }
 
-    private async Task CaptureRequestAsync(HttpContext context, int maxSize)
+    /// <summary>
+    /// Undoes the body's content coding before it is queued, swapping in a fresh pooled buffer and
+    /// returning the original so the writer's ownership contract is unchanged. Output is bounded by
+    /// the same <c>maxSize</c> as the capture, so the gateway's memory reservation still holds.
+    /// Returns the input untouched when decompression is off, absent, or yields nothing.
+    /// </summary>
+    private static (byte[] Buffer, int Length, bool Truncated) Decompress(
+        byte[] buffer, int length, bool truncated, string contentEncoding, int maxSize)
+    {
+        if (length == 0 || contentEncoding.Length == 0)
+            return (buffer, length, truncated);
+
+        using var source = new MemoryStream(buffer, 0, length, writable: false);
+        using Stream? decoder =
+            contentEncoding.Contains("gzip", StringComparison.OrdinalIgnoreCase) ? new GZipStream(source, CompressionMode.Decompress)
+            : contentEncoding.Contains("br", StringComparison.OrdinalIgnoreCase) ? new BrotliStream(source, CompressionMode.Decompress)
+            : contentEncoding.Contains("deflate", StringComparison.OrdinalIgnoreCase) ? new ZLibStream(source, CompressionMode.Decompress)
+            : null;
+        if (decoder is null)
+            return (buffer, length, truncated);
+
+        var output = ArrayPool<byte>.Shared.Rent(maxSize);
+        var decoded = 0;
+        try
+        {
+            int read;
+            while (decoded < maxSize && (read = decoder.Read(output, decoded, maxSize - decoded)) > 0)
+                decoded += read;
+        }
+        catch (InvalidDataException)
+        {
+            // A capture cut at maxSize ends mid-block. Reads before the break already landed in
+            // output, so keep them; truncated is already true in that case.
+        }
+
+        if (decoded == 0)
+        {
+            ArrayPool<byte>.Shared.Return(output);
+            return (buffer, length, truncated);
+        }
+
+        ArrayPool<byte>.Shared.Return(buffer);
+        return (output, decoded, truncated || decoded == maxSize);
+    }
+
+    private async Task CaptureRequestAsync(HttpContext context, int maxSize, bool decompress)
     {
         context.Request.Body.Position = 0;
 
@@ -159,6 +220,8 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
 
         context.Request.Body.Position = 0;
 
+        (buffer, length, truncated) = Decompress(buffer, length, truncated,
+            decompress ? context.Request.Headers.ContentEncoding.ToString() : "", maxSize);
         Enqueue(context, "request", buffer, length, truncated);
     }
 

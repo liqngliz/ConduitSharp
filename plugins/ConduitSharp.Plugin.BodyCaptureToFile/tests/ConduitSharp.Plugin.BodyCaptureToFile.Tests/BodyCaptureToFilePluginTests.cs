@@ -265,6 +265,50 @@ public sealed class BodyCaptureToFilePluginTests : IDisposable
         Assert.Equal("the response body", docs["response"]);
     }
 
+    /// <summary>Anthropic gzips its responses. Without decompress the log holds the compressed bytes
+    /// run through a UTF-8 conversion, which is unrecoverable, so the flag is the difference between
+    /// a readable body and a dead one.</summary>
+    [Theory]
+    [InlineData(true,  "{\"usage\":{\"output_tokens\":377}}")]
+    [InlineData(false, null)]
+    public async Task ExecuteAsync_Decompress_ControlsWhetherAGzipResponseIsReadable(bool decompress, string? expected)
+    {
+        using var plugin = Build();
+
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/gzip";
+        context.Request.Body = new MemoryStream();
+        var sink = new MemoryStream();
+        context.Response.Body = sink;
+
+        const string Payload = """{"usage":{"output_tokens":377}}""";
+        var compressed = new MemoryStream();
+        using (var gzip = new System.IO.Compression.GZipStream(compressed, System.IO.Compression.CompressionMode.Compress, leaveOpen: true))
+            gzip.Write(Encoding.UTF8.GetBytes(Payload));
+        var compressedBytes = compressed.ToArray();
+
+        var config = JsonDocument.Parse(
+            $$"""{ "response": { "maxSize": 4096 }, "decompress": {{(decompress ? "true" : "false")}} }""").RootElement;
+        await plugin.ExecuteAsync(context, config, ctx =>
+        {
+            ctx.Response.Headers.ContentEncoding = "gzip";
+            return ctx.Response.Body.WriteAsync(compressedBytes).AsTask();
+        });
+
+        await Task.Delay(100);
+
+        var body = JsonDocument.Parse((await File.ReadAllLinesAsync(_tempLogFile)).Single())
+            .RootElement.GetProperty("body").GetString();
+
+        if (expected is not null)
+            Assert.Equal(expected, body);
+        else
+            Assert.NotEqual(Payload, body);   // stored compressed, and mangled past recovery
+
+        // The client still gets the bytes the upstream sent, compressed either way.
+        Assert.Equal(compressedBytes, sink.ToArray());
+    }
+
     public void Dispose()
     {
         if (File.Exists(_tempLogFile))
