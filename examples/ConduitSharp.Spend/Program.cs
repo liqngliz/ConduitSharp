@@ -22,7 +22,25 @@ builder.AddConduitSharpGateway(options => options.EnablePluginDirectoryScan = fa
 
 var app = builder.Build();
 
-app.MapGet("/", () => Results.Text(
+app.UseDefaultFiles();
+app.UseStaticFiles(); // Serves from wwwroot
+
+app.MapGet("/api/spend", () => 
+    Directory.GetFiles(dataDir, "spend-*.jsonl")
+             .Select(f => Path.GetFileNameWithoutExtension(f).Replace("spend-", ""))
+             .ToArray());
+
+app.MapGet("/api/spend/{date}", (string date, ISpendStore store) =>
+{
+    if (DateTime.TryParse(date, out var parsed))
+    {
+        var start = new DateTimeOffset(parsed.Year, parsed.Month, parsed.Day, 0, 0, 0, TimeSpan.Zero);
+        return store.Read(start, start.AddDays(1).AddTicks(-1));
+    }
+    return Array.Empty<SpendRecord>();
+});
+
+app.MapGet("/info", () => Results.Text(
     $"""
      ConduitSharp spend gateway
 
