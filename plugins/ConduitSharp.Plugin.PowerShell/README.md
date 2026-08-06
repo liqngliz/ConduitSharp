@@ -39,4 +39,4 @@ The script receives the current request as a `$Request` parameter. `$ErrorAction
 
 ## Production notes
 
-Each request currently creates a fresh PowerShell instance. For concurrent load or heavy ETL workloads see [PowerShell plugin — production considerations](../../docs/ARCHITECTURE.md#powershell-plugin--production-considerations) (runspace pooling, out-of-process execution, PSCustomObject memory guidance).
+Each request currently creates a fresh PowerShell instance. For concurrent load or heavy ETL workloads see [PowerShell plugin: production considerations](../../docs/ARCHITECTURE.md#powershell-plugin-production-considerations) (runspace pooling, out-of-process execution, PSCustomObject memory guidance).
