@@ -590,6 +590,7 @@ The front page above covers getting started. The full reference lives in the in-
 - [Architecture](docs/ARCHITECTURE.md) — request lifecycle, package graph, key decisions
 - [Bare-metal / Windows Service / IIS install](docs/DEPLOYMENT_BAREMETAL.md)
 - [Migration guide](CHANGELOG.md#migrating-routesjson)
+- [Releasing](docs/RELEASE.md) — the git commands that publish each artifact
 
 ---
 

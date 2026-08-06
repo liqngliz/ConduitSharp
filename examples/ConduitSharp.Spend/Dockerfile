@@ -1,11 +1,29 @@
 # Build context is the repo root: this project references src/ and plugins/ directly.
-#   docker build -f examples/ConduitSharp.Spend/Dockerfile -t conduit-spend .
+#   docker build -f examples/ConduitSharp.Spend/Dockerfile -t token-flow .
 #
-# Published by the docker-spend job in .github/workflows/release.yml as
-# ghcr.io/<owner>/conduit-spend, multi-arch, so users run it without cloning.
+# Published by .github/workflows/tokenflow.yml as ghcr.io/<owner>/token-flow, multi-arch,
+# so users run it without cloning.
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Dashboard. wwwroot/ is gitignored build output, so the image builds it rather than
+# expecting it in the checkout — that is what left the published image serving a 404.
+# Pinned to BUILDPLATFORM: the output is static assets, identical on every arch, and an
+# emulated arm64 npm build costs minutes for nothing.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS dashboard
+WORKDIR /dash
+COPY examples/ConduitSharp.Spend/dashboard/package.json examples/ConduitSharp.Spend/dashboard/package-lock.json ./
+RUN npm ci
+COPY examples/ConduitSharp.Spend/dashboard/ ./
+RUN npm run build          # vite build.outDir is '../wwwroot', so this lands in /wwwroot
+
+# ──────────────────────────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .
+
+# Microsoft.NET.Sdk.Web treats wwwroot as publish content automatically, so dropping the
+# built dashboard here is the whole wiring — no csproj change.
+COPY --from=dashboard /wwwroot examples/ConduitSharp.Spend/wwwroot
 
 # Framework-dependent, portable publish with no pinned RID, so one build runs on amd64 and
 # arm64 alike. Pinning -r linux-x64 fails at startup on Apple Silicon.

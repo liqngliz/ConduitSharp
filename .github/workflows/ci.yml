@@ -138,3 +138,71 @@ jobs:
 
       - name: mTLS E2E (Docker client-certificate handshake)
         run: make test-e2e-mtls
+
+  # ---------------------------------------------------------------------------
+  # Token Flow dashboard — its own job rather than steps bolted onto build-and-test,
+  # so a broken React component and a broken .NET build are told apart at a glance and
+  # neither blocks the other's feedback. Independent of the .NET jobs, so no `needs`.
+  # ---------------------------------------------------------------------------
+  dashboard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: examples/ConduitSharp.Spend/dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: examples/ConduitSharp.Spend/dashboard/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # `npm run lint` is deliberately not here: oxlint's native binding fails to install
+      # (empty node_modules/@oxlint after a clean `npm ci`), so the step has never been run
+      # against this code and would gate CI on an unknown.
+      - name: Test & Collect Coverage
+        run: npx vitest run --coverage
+
+      # vitest type-checks nothing outside the files a test imports; `tsc -b` in the build
+      # script is what catches an error in a component no test touches. It also proves the
+      # asset build the Docker image depends on still works.
+      - name: Build
+        run: npm run build
+
+      # Same reporting chain as the .NET job above, reading vitest's cobertura output.
+      - name: Generate Code Coverage Summary
+        uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: examples/ConduitSharp.Spend/dashboard/coverage/cobertura-coverage.xml
+          badge: true
+          format: markdown
+          output: both
+
+      - name: Write Coverage to Job Summary
+        working-directory: .
+        run: |
+          echo "## 🖥️ Dashboard Coverage" >> $GITHUB_STEP_SUMMARY
+          cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
+
+      # A distinct header, or this overwrites the .NET coverage comment — sticky-comment
+      # keys on it, and the default is shared between the two jobs.
+      - name: Add Coverage PR Comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        if: github.event_name == 'pull_request'
+        with:
+          header: dashboard-coverage
+          recreate: true
+          path: code-coverage-results.md
+
+      - name: Upload HTML Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-coverage-html
+          path: examples/ConduitSharp.Spend/dashboard/coverage

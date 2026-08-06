@@ -23,12 +23,15 @@ packages/
 !.config/
 !.gitattributes
 !.github/
+!.dockerignore
 
 alt-*
 
 
 # Runtime artefacts
 logs/
+temp_*
+temp_clone_*
 examples/LegacyGateway/logs/
 examples/LegacyGateway/bin/
 examples/LegacyGateway/.pid-*

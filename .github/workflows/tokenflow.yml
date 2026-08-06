@@ -1,0 +1,99 @@
+name: Token Flow
+
+# Token Flow ships on its own tag, not the library's `v*`. A dashboard fix goes out without
+# cutting NuGet packages and binaries, and the image version says nothing about the gateway
+# library version it happens to embed.
+on:
+  push:
+    tags: [ 'tokenflow-v*' ]
+  # Manual re-run for a tag that already exists (a transient GHCR failure, say) without
+  # having to delete and re-push the tag.
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/token-flow
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gate the publish on the dashboard actually building and passing. The image builds
+  # the dashboard itself (see the Dockerfile's node stage), so without this a broken
+  # component would ship as a broken page rather than a red build.
+  # ---------------------------------------------------------------------------
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/ConduitSharp.Spend/dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: examples/ConduitSharp.Spend/dashboard/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Test & Collect Coverage
+        run: npx vitest run --coverage
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload HTML Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-coverage-html
+          path: examples/ConduitSharp.Spend/dashboard/coverage
+
+  # ---------------------------------------------------------------------------
+  # Image — the whole install. `docker run ghcr.io/<owner>/token-flow` is a working
+  # gateway and dashboard with no clone. Built for both arches so the manifest actually
+  # offers arm64 (Apple Silicon, Graviton) rather than silently amd64-only.
+  # ---------------------------------------------------------------------------
+  image:
+    needs: dashboard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # type=semver can't read a `tokenflow-v` prefix, so the version comes out of the tag
+      # by regex. On workflow_dispatch there is no tag to match and only :latest is produced.
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=match,pattern=tokenflow-v(\d+\.\d+\.\d+),group=1
+            type=match,pattern=tokenflow-v(\d+\.\d+),group=1
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: examples/ConduitSharp.Spend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
