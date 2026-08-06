@@ -365,89 +365,19 @@ public async Task ExecuteAsync(HttpContext context, JsonElement config, RequestD
 
 ## Route configuration (routes.json)
 
-Path resolution priority:
-1. `Gateway:RoutesPath` config value (env override `Gateway__RoutesPath`)
-2. `{AppContext.BaseDirectory}/Configuration/routes.json` (default next to binary)
-3. When embedding: `ConduitSharpGatewayOptions.Routes` (in-memory table) wins over both.
+**[docs/ROUTING.md](ROUTING.md) is the single source of truth for this schema** — every field, the
+file-resolution order, path syntax, query matching, load-balancing policy names, and the built-in
+plugin list. Do not re-specify any of it here; edit ROUTING.md and link.
 
-```jsonc
-{
-  "routes": [
-    {
-      "id": "user-service",           // unique, [A-Za-z0-9_-] only; duplicates throw at startup
-      "description": "optional label shown in Swagger UI dropdown",
-      // --- YARP's RouteConfig, verbatim. routeId/clusterId/order are filled in from `id`
-      //     and list position, so they are never written here.
-      "route": {
-        "match": {
-          "path": "/api/users/{**rest}",  // see path matching below
-          "methods": ["GET", "POST"],     // omit for any verb
-          "headers": [                     // YARP matcher objects, not a dict — so modes work
-            { "name": "X-Version", "values": ["2"], "mode": "ExactHeader" }
-          ],
-          "queryParameters": [
-            { "name": "locale", "values": ["en"], "mode": "Exact" }
-          ]
-        }
-        // anything else RouteConfig exposes also works here: hosts, transforms, corsPolicy, ...
-      },
+What is true here and nowhere else:
 
-      // --- YARP's ClusterConfig, verbatim. null = plugin-only route (YARP never sees it).
-      "cluster": {
-        "loadBalancingPolicy": "RoundRobin",   // any registered ILoadBalancingPolicy name
-        "destinations": {
-          "node-0": { "address": "http://svc-1:8080" }   // keys are yours; they show up in traces
-        },
-        "httpRequest": { "activityTimeout": "00:00:05" },      // per-attempt timeout before 504
-        "httpClient": { "dangerousAcceptAnyServerCertificate": false }
-        // ...plus sessionAffinity, healthCheck.active, sslProtocols, etc. — all free
-      },
-
-      // --- ConduitSharp's own, because YARP has no concept of them.
-      "retry": {                          // omit = no retries. Idempotent methods only.
-        "maxAttempts": 3,                 // total attempts INCLUDING the first
-        "delayMs": 200,
-        "backoff": "Exponential",         // Fixed | Linear | Exponential
-        "jitter": true,
-        "retryOn": [502, 503, 504]
-      },
-      "circuitBreaker": {                 // omit = no circuit breaking
-        "threshold": 5,                   // consecutive failures before a node's circuit opens
-        "cooldownMs": 10000               // how long it stays open before one trial request
-      },
-      "plugins": [
-        { "name": "jwt-auth", "order": 1, "enabled": true, "config": { ... } },
-        { "name": "rate-limit", "order": 2, "enabled": true, "config": { ... } },
-        { "name": "custom", "variant": "fan-out", "order": 99, "config": { ... } }
-      ],
-      "swagger": {
-        "fetchFrom": "http://svc-1:8080/swagger/v1/swagger.json"
-        // OR "specFile": "./specs/user-service.json"
-      },
-      "maxRequestBodyBytes": null      // overrides the global body-size cap for this route; null inherits it
-    }
-  ]
-}
-```
-
-### Path matching rules
-
-| Pattern | Example template | Matches |
-|---|---|---|
-| Literal | `/api/orders` | Exact path only (case-insensitive) |
-| Named param | `/api/orders/{id}` | Captures exactly one segment |
-| Catch-all | `/api/{**rest}` | Captures zero or more remaining segments |
-
-Routes are evaluated **first-match-wins** in list order. Put more-specific routes
-before catch-alls.
-
-### Enum values accepted in JSON
-
-- **`route.match.methods`** — plain strings; YARP validates them
-- **`cluster.loadBalancingPolicy`** — any registered `ILoadBalancingPolicy` name: `"RoundRobin"`,
-  `"Random"`, `"PowerOfTwoChoices"`, `"LeastRequests"`, `"FirstAlphabetical"`, or a drop-in DLL's
-- **`retry.backoff`** — `"Fixed"`, `"Linear"`, `"Exponential"`
-- **`plugins[].name`** — `"jwt-auth"`, `"jwks-jwt-auth"`, `"api-key-auth"`, `"api-key-auth-hashed"`, `"rate-limit"`, `"header-transform"`, `"cache"`, `"http-proxy"`, `"custom"` (requires `"variant"`)
+- Routes are evaluated **first-match-wins** in list order. Put more-specific routes before
+  catch-alls.
+- `"cluster": null` makes the route plugin-only. YARP never sees it.
+- `retry.backoff` accepts `"Fixed"`, `"Linear"`, `"Exponential"`.
+- `plugins[].name` accepts `"jwt-auth"`, `"jwks-jwt-auth"`, `"api-key-auth"`,
+  `"api-key-auth-hashed"`, `"rate-limit"`, `"header-transform"`, `"cache"`, `"http-proxy"`,
+  `"custom"` (requires `"variant"`).
 
 The whole document may be written in camelCase — `GatewayRoutesConfiguration.JsonOptions` binds
 case-insensitively, which is what lets YARP's attribute-free records sit next to ConduitSharp's

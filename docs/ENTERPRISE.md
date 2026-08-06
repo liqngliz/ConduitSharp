@@ -127,7 +127,7 @@ cache and rate-limit store (in-memory or Redis/Valkey), a swappable load-balanci
 a YARP forwarding engine (HTTP/2, gRPC, WebSockets), legacy scripts turned into endpoints via
 the PowerShell plugin, open-ended extension via `Custom`, an aggregated Swagger UI as an
 opt-in add-on, and a sidecar observability stack that plugs into Aspire or Grafana without
-touching the gateway — see [ARCHITECTURE.md](docs/ARCHITECTURE.md#capabilities-at-a-glance)
+touching the gateway — see [ARCHITECTURE.md](ARCHITECTURE.md#capabilities-at-a-glance)
 for what each piece is doing.
 
 That's one gateway. It scales the same way across an org — one ConduitSharp instance per
@@ -153,14 +153,14 @@ route table small enough to actually review. See
 - [Enterprise scenarios](#enterprise-scenarios) — Scenario 1: ERP reporting · Scenario 2: AD/SailPoint · Scenario 3: Batch jobs
 - [Why ConduitSharp](#why-conduitsharp)
 - [At a glance](#at-a-glance)
-- [Deployment patterns](#deployment-patterns) — edge · sidecar · APIM integration (see [ARCHITECTURE.md](docs/ARCHITECTURE.md#deployment-patterns) for diagrams)
+- [Deployment patterns](#deployment-patterns) — edge · sidecar · APIM integration (see [ARCHITECTURE.md](ARCHITECTURE.md#deployment-patterns) for diagrams)
 - [Compared to alternatives](#compared-to-alternatives)
 - [Installation](#installation)
-- [Gateway settings](docs/GATEWAY_SETTINGS.md)
-- [Configuring routes](docs/ROUTING.md)
-- [Claim-based authorization (RBAC)](docs/AUTHORIZATION.md)
-- [TLS / HTTPS](docs/TLS.md)
-- [Observability](docs/OBSERVABILITY.md)
+- [Gateway settings](GATEWAY_SETTINGS.md)
+- [Configuring routes](ROUTING.md)
+- [Claim-based authorization (RBAC)](AUTHORIZATION.md)
+- [TLS / HTTPS](TLS.md)
+- [Observability](OBSERVABILITY.md)
 - [Swagger aggregation](#swagger-aggregation)
 - [Health endpoints](#health-endpoints)
 - [Admin API](#admin-api)
@@ -341,11 +341,11 @@ public sealed class PowerShellPlugin : IPipelinePlugin
 `$ErrorActionPreference = 'Stop'` ensures both terminating and non-terminating script errors surface as a 500 rather than silently returning an empty body.
 
 A ready-to-use build of this pattern — no copy-pasting the shim required — lives at
-[plugins/ConduitSharp.Plugin.PowerShell](plugins/ConduitSharp.Plugin.PowerShell): it
+[plugins/ConduitSharp.Plugin.PowerShell](../plugins/ConduitSharp.Plugin.PowerShell): it
 runs a `.ps1` in-process via the embedded `Microsoft.PowerShell.SDK` (no system `pwsh`
 install needed), so it can be dropped into `plugins/` as-is.
 
-> For production deployments with concurrent load or heavy ETL workloads, see [PowerShell plugin — production considerations](docs/ARCHITECTURE.md#powershell-plugin--production-considerations) for runspace pooling, out-of-process execution, and PSCustomObject memory guidance.
+> For production deployments with concurrent load or heavy ETL workloads, see [PowerShell plugin — production considerations](ARCHITECTURE.md#powershell-plugin--production-considerations) for runspace pooling, out-of-process execution, and PSCustomObject memory guidance.
 
 #### Extend without touching the gateway source — ship via NuGet
 
@@ -425,7 +425,7 @@ response streaming, and trailers work on every route with no opt-in: protocol fi
 forwarder is for.
 
 Retries, per-route mTLS, and the circuit breaker stay ConduitSharp's, wrapped around the forwarder —
-see [Retries and circuit breaking](docs/ROUTING.md#retries-and-circuit-breaking).
+see [Retries and circuit breaking](ROUTING.md#retries-and-circuit-breaking).
 
 ---
 
@@ -457,7 +457,7 @@ flowchart TB
     rB --> svcB["identity microservices"]
 ```
 
-Each Data Product owns a small, reviewable route table instead of one team wading through a global one; the edge gateway still owns the single external contract and org-wide policy. Full topology diagrams, trace waterfall examples, and scaling constraints are in [docs/ARCHITECTURE.md — Deployment patterns](docs/ARCHITECTURE.md#deployment-patterns).
+Each Data Product owns a small, reviewable route table instead of one team wading through a global one; the edge gateway still owns the single external contract and org-wide policy. Full topology diagrams, trace waterfall examples, and scaling constraints are in [docs/ARCHITECTURE.md — Deployment patterns](ARCHITECTURE.md#deployment-patterns).
 
 ---
 
@@ -523,7 +523,7 @@ with one DI line each (e.g. `builder.Services.AddSingleton<ICacheService, RedisC
 The aggregated Swagger UI is a separate add-on so you don't take a Swashbuckle dependency you
 don't want — `dotnet add package ConduitSharp.Gateway.AspNetCore.Swagger`, then call
 `app.UseConduitSharpGatewaySwagger()` before `UseConduitSharpGateway()`. Runnable samples:
-[examples/EmbeddedGateway](examples/EmbeddedGateway) and [examples/EmbeddedGatewayPrefixed](examples/EmbeddedGatewayPrefixed).
+[examples/EmbeddedGateway](../examples/EmbeddedGateway) and [examples/EmbeddedGatewayPrefixed](../examples/EmbeddedGatewayPrefixed).
 
 ### Docker
 
@@ -547,7 +547,7 @@ conduitsharp
 Works on Windows, macOS, and Linux. Requires .NET 10 SDK.
 
 For **bare metal, Windows Service, or IIS** — the legacy-estate deployment paths where the
-runtime is bundled in the binary — see [docs/DEPLOYMENT_BAREMETAL.md](docs/DEPLOYMENT_BAREMETAL.md).
+runtime is bundled in the binary — see [docs/DEPLOYMENT_BAREMETAL.md](DEPLOYMENT_BAREMETAL.md).
 
 ---
 
@@ -555,11 +555,11 @@ runtime is bundled in the binary — see [docs/DEPLOYMENT_BAREMETAL.md](docs/DEP
 
 Configuration and operational detail lives in focused docs so this page stays scannable:
 
-- [Gateway settings](docs/GATEWAY_SETTINGS.md) — `appsettings.json`, env-var overrides, request-body budgets
-- [Configuring routes](docs/ROUTING.md) — routes, load balancing, [retries & circuit breaking](docs/ROUTING.md#retries-and-circuit-breaking), path & query syntax, built-in plugins
-- [Claim-based authorization (RBAC)](docs/AUTHORIZATION.md) — `requiredClaims`, multiple providers, [Microsoft Entra ID setup](docs/AUTHORIZATION.md#microsoft-entra-id-azure-ad--v20-token-app-role-rbac)
-- [TLS / HTTPS and mTLS](docs/TLS.md) — inbound Kestrel, outbound upstream, mutual TLS
-- [Observability](docs/OBSERVABILITY.md) — traces, metrics, OTLP export, structured logging
+- [Gateway settings](GATEWAY_SETTINGS.md) — `appsettings.json`, env-var overrides, request-body budgets
+- [Configuring routes](ROUTING.md) — routes, load balancing, [retries & circuit breaking](ROUTING.md#retries-and-circuit-breaking), path & query syntax, built-in plugins
+- [Claim-based authorization (RBAC)](AUTHORIZATION.md) — `requiredClaims`, multiple providers, [Microsoft Entra ID setup](AUTHORIZATION.md#microsoft-entra-id-azure-ad--v20-token-app-role-rbac)
+- [TLS / HTTPS and mTLS](TLS.md) — inbound Kestrel, outbound upstream, mutual TLS
+- [Observability](OBSERVABILITY.md) — traces, metrics, OTLP export, structured logging
 
 ## Swagger aggregation
 
@@ -570,39 +570,12 @@ ConduitSharp can aggregate OpenAPI specs from your upstream services and serve t
 
 Add a `"swagger"` block to any route in `routes.json`:
 
-```json
-{
-  "routes": [
-    {
-      "id": "user-service",
-      "description": "User management API",
-      "route": { "match": { "path": "/api/users/{**rest}" } },
-      "cluster": {
-        "loadBalancingPolicy": "RoundRobin",
-        "destinations": { "node-0": { "address": "http://user-service:8080" } },
-        "httpRequest": { "activityTimeout": "00:00:05" }
-      },
-      "plugins": [],
-      "swagger": {
-        "fetchFrom": "http://user-service:8080/swagger/v1/swagger.json"
-      }
-    },
-    {
-      "id": "order-service",
-      "description": "Order processing API",
-      "route": { "match": { "path": "/api/orders/{**rest}" } },
-      "cluster": {
-        "loadBalancingPolicy": "RoundRobin",
-        "destinations": { "node-0": { "address": "http://order-service:8080" } },
-        "httpRequest": { "activityTimeout": "00:00:05" }
-      },
-      "plugins": [],
-      "swagger": {
-        "specFile": "./specs/order-service.json"
-      }
-    }
-  ]
-}
+```jsonc
+// one `swagger` block per route; the rest of the route is unchanged.
+// Full route schema: docs/ROUTING.md
+"swagger": { "fetchFrom": "http://user-service:8080/swagger/v1/swagger.json" }
+
+"swagger": { "specFile": "./specs/order-service.json" }
 ```
 
 With this config, `http://your-gateway/swagger` serves a Swagger UI with a dropdown showing both services. Routes without a `"swagger"` block do not appear. If no routes have a swagger block, the `/swagger` endpoint is not registered at all.
@@ -943,19 +916,19 @@ builder.Services.AddSingleton<IPipelinePlugin, AcmePlugin>();   // one line per 
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions, test commands, and contribution guidelines.  
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for internal design decisions and component overview.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for build instructions, test commands, and contribution guidelines.  
+See [ARCHITECTURE.md](ARCHITECTURE.md) for internal design decisions and component overview.
 
 ---
 
 ## Code of conduct
 
-This project follows the [Contributor Covenant 2.1](CODE_OF_CONDUCT.md). Report violations to **oniplus.ar@gmail.com**.
+This project follows the [Contributor Covenant 2.1](../CODE_OF_CONDUCT.md). Report violations to **oniplus.ar@gmail.com**.
 
 ---
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+Licensed under the [Apache License, Version 2.0](../LICENSE).
 
 You may use ConduitSharp freely in open source and commercial projects. The Apache 2.0 license includes an explicit patent grant — contributors' patent rights are licensed to all users of the software.

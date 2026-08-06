@@ -58,6 +58,78 @@ Write it all in camelCase; YARP's records bind case-insensitively.
 > **Upgrading from 0.1.4?** The schema changed. See the
 > [migration guide](../CHANGELOG.md#migrating-routesjson).
 
+### Where the file is read from
+
+1. `Gateway:RoutesPath` config value (env override `Gateway__RoutesPath`)
+2. `{AppContext.BaseDirectory}/Configuration/routes.json`, next to the binary
+3. When embedding, `ConduitSharpGatewayOptions.Routes` (in-memory table) wins over both
+
+### Every field
+
+This block is the reference the rest of the docs point at. Nothing below is required except `id`
+and `route`.
+
+```jsonc
+{
+  "routes": [
+    {
+      "id": "user-service",           // unique, [A-Za-z0-9_-] only; duplicates throw at startup
+      "description": "optional label shown in Swagger UI dropdown",
+
+      // --- YARP's RouteConfig, verbatim. routeId/clusterId/order are filled in from `id`
+      //     and list position, so they are never written here.
+      "route": {
+        "match": {
+          "path": "/api/users/{**rest}",  // see "Path syntax" below
+          "methods": ["GET", "POST"],     // omit for any verb
+          "headers": [                    // YARP matcher objects, not a dict — so modes work
+            { "name": "X-Version", "values": ["2"], "mode": "ExactHeader" }
+          ],
+          "queryParameters": [
+            { "name": "locale", "values": ["en"], "mode": "Exact" }
+          ]
+        }
+        // anything else RouteConfig exposes also works here: hosts, transforms, corsPolicy, ...
+      },
+
+      // --- YARP's ClusterConfig, verbatim. null = plugin-only route (YARP never sees it).
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",   // any registered ILoadBalancingPolicy name
+        "destinations": {
+          "node-0": { "address": "http://svc-1:8080" }   // keys are yours; they show up in traces
+        },
+        "httpRequest": { "activityTimeout": "00:00:05" },      // per-attempt timeout before 504
+        "httpClient": { "dangerousAcceptAnyServerCertificate": false }
+        // ...plus sessionAffinity, healthCheck.active, sslProtocols, etc. — all free
+      },
+
+      // --- ConduitSharp's own, because YARP has no concept of them.
+      "retry": {                          // omit = no retries. Idempotent methods only.
+        "maxAttempts": 3,                 // total attempts INCLUDING the first
+        "delayMs": 200,
+        "backoff": "Exponential",         // Fixed | Linear | Exponential
+        "jitter": true,
+        "retryOn": [502, 503, 504]
+      },
+      "circuitBreaker": {                 // omit = no circuit breaking
+        "threshold": 5,                   // consecutive failures before a node's circuit opens
+        "cooldownMs": 10000               // how long it stays open before one trial request
+      },
+      "plugins": [
+        { "name": "jwt-auth", "order": 1, "enabled": true, "config": { } },
+        { "name": "rate-limit", "order": 2, "enabled": true, "config": { } },
+        { "name": "custom", "variant": "fan-out", "order": 99, "config": { } }
+      ],
+      "swagger": {
+        "fetchFrom": "http://svc-1:8080/swagger/v1/swagger.json"
+        // OR "specFile": "./specs/user-service.json"
+      },
+      "maxRequestBodyBytes": null      // overrides the global body-size cap for this route; null inherits it
+    }
+  ]
+}
+```
+
 ### Load balancing
 
 `cluster.loadBalancingPolicy` names a YARP load-balancing policy. Built in:

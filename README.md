@@ -156,12 +156,9 @@ All routing lives in `Configuration/routes.json` — no database, no admin UI, j
 }
 ```
 
-A route has two halves, and the split is deliberate:
+`route` and `cluster` are YARP's own `RouteConfig` and `ClusterConfig`, used verbatim, so every YARP feature is available the day YARP ships it. Everything else (`retry`, `circuitBreaker`, `plugins`, `swagger`, `maxRequestBodyBytes`) is ConduitSharp's, because YARP has no concept of any of it.
 
-- **`route` and `cluster` are YARP's own `RouteConfig` and `ClusterConfig`**, used verbatim — so *every* YARP feature (session affinity, active health checks, transforms, header/query matchers) is available the day YARP ships it. `routeId`, `clusterId`, and `order` are derived from the route's `id` and its position in the file, so you never type them.
-- **Everything else is ConduitSharp's** — `retry`, `circuitBreaker`, `plugins`, `swagger`, `maxRequestBodyBytes` — because YARP has no concept of any of them.
-
-Write it all in camelCase; YARP's records bind case-insensitively. The full field reference — load balancing policies, retry/circuit-breaker fields, path & query syntax — is in the [in-depth docs](#-documentation).
+**[docs/ROUTING.md](docs/ROUTING.md) is the full field reference** — every field, load balancing policies, retry and circuit-breaker options, path and query syntax, and the built-in plugin list.
 
 ### JWKS-based authorization (Auth0 · Microsoft Entra ID / Azure AD · Google · Keycloak · Okta)
 
