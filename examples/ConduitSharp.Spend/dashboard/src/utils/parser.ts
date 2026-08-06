@@ -57,7 +57,7 @@ export interface MetricsData {
   dailyUsage: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
   modelBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
   routeBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
-  topPrompts: { prompt: string; in: number; cacheRead: number; cacheWrite: number; out: number; totalTokens: number; session: string; turn: number; model: string }[];
+  topPrompts: { prompt: string; in: number; cacheRead: number; cacheWrite: number; out: number; totalTokens: number; session: string; turn: number; model: string; hasToolCall?: boolean }[];
 }
 
 export interface TokenWeights {
@@ -79,7 +79,7 @@ export function computeMetrics(records: SpendRecord[], useWeights: boolean = fal
     topPrompts: [],
   };
 
-  const promptsMap: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number; total: number; session: string; turn: number; model: string }> = {};
+  const promptsMap: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number; total: number; session: string; turn: number; model: string; hasToolCall?: boolean }> = {};
 
   for (const rawRecord of records) {
     let record = rawRecord;
@@ -179,7 +179,7 @@ export function computeMetrics(records: SpendRecord[], useWeights: boolean = fal
     // Prompts
     if (record.prompt && (record.in + record.out + record.cacheRead + record.cacheWrite > 0)) {
       if (!promptsMap[record.prompt]) {
-        promptsMap[record.prompt] = { in: 0, cacheRead: 0, cacheWrite: 0, out: 0, total: 0, session: record.session || '', turn: record.turn || 0, model: record.model || '' };
+        promptsMap[record.prompt] = { in: 0, cacheRead: 0, cacheWrite: 0, out: 0, total: 0, session: record.session || '', turn: record.turn || 0, model: record.model || '', hasToolCall: false };
       }
       const p = promptsMap[record.prompt];
       p.in += record.in;
@@ -198,38 +198,57 @@ export function computeMetrics(records: SpendRecord[], useWeights: boolean = fal
     }
     sess.prompts.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
     
-    // Documented behavior for Codex and Claude:
-    // They emit the total cumulative tool count for every prompt. 
-    // To detect which specific prompt actually triggered a tool call, we start with a count of 0,
-    // move chronologically, and if a prompt has a higher tool count than the current tracked count,
-    // we flag that prompt as having a tool call and update our running count.
-    let currToolCount = 0;
+    // A single session can have multiple concurrent conversation streams (e.g. main stream, summarizer subagents).
+    // To correctly detect tool calls, we partition prompts into streams.
+    // A stream is a chain of non-decreasing turns and non-decreasing tools.
+    const streams: { lastTurn: number; lastTools: number }[] = [];
+    
     for (const p of sess.prompts) {
-      if (p.tools > currToolCount) {
-        p.hasToolCall = true;
-        currToolCount = p.tools;
+      let bestStream: typeof streams[0] | null = null;
+      for (const s of streams) {
+        if (s.lastTurn <= p.turn && s.lastTools <= p.tools) {
+          if (!bestStream || s.lastTools > bestStream.lastTools) {
+            bestStream = s;
+          }
+        }
+      }
+
+      if (bestStream) {
+        if (p.tools > bestStream.lastTools) {
+          p.hasToolCall = true;
+          if (promptsMap[p.prompt]) promptsMap[p.prompt].hasToolCall = true;
+        } else {
+          p.hasToolCall = false;
+        }
+        bestStream.lastTurn = p.turn;
+        bestStream.lastTools = p.tools;
       } else {
-        p.hasToolCall = false;
+        streams.push({ lastTurn: p.turn, lastTools: p.tools });
+        if (p.tools > 0) {
+          p.hasToolCall = true;
+          if (promptsMap[p.prompt]) promptsMap[p.prompt].hasToolCall = true;
+        } else {
+          p.hasToolCall = false;
+        }
       }
     }
 
     const foldedPrompts: typeof sess.prompts = [];
     let pre: typeof sess.prompts[0] | null = null;
     let preOrigDate = 0;
-    let preOrigTurn = 0;
     
     for (const cur of sess.prompts) {
       if (!pre) {
         pre = { ...cur };
         preOrigDate = new Date(cur.ts).getTime();
-        preOrigTurn = cur.turn;
         foldedPrompts.push(pre);
         continue;
       }
       
       const curDate = new Date(cur.ts).getTime();
       
-      if (curDate > preOrigDate && cur.turn > preOrigTurn && cur.prompt === pre.prompt) {
+      // Fold identical consecutive prompts regardless of turn boundaries
+      if (curDate >= preOrigDate && cur.prompt === pre.prompt) {
         pre.in += cur.in;
         pre.out += cur.out;
         pre.cacheRead += cur.cacheRead;
@@ -240,11 +259,9 @@ export function computeMetrics(records: SpendRecord[], useWeights: boolean = fal
         pre.ts = cur.ts;
         
         preOrigDate = curDate;
-        preOrigTurn = cur.turn;
       } else {
         pre = { ...cur };
         preOrigDate = curDate;
-        preOrigTurn = cur.turn;
         foldedPrompts.push(pre);
       }
     }
@@ -252,7 +269,7 @@ export function computeMetrics(records: SpendRecord[], useWeights: boolean = fal
   }
 
   metrics.topPrompts = Object.entries(promptsMap)
-    .map(([prompt, stats]) => ({ prompt, in: stats.in, cacheRead: stats.cacheRead, cacheWrite: stats.cacheWrite, out: stats.out, totalTokens: stats.total, session: stats.session, turn: stats.turn, model: stats.model }))
+    .map(([prompt, stats]) => ({ prompt, in: stats.in, cacheRead: stats.cacheRead, cacheWrite: stats.cacheWrite, out: stats.out, totalTokens: stats.total, session: stats.session, turn: stats.turn, model: stats.model, hasToolCall: stats.hasToolCall }))
     .sort((a, b) => b.totalTokens - a.totalTokens)
     .slice(0, 10);
 
