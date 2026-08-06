@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { MetricsData } from '../utils/parser';
 import { SessionFlowchart } from './SessionFlowchart';
 
-export const SessionsTable: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
+const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
+
+export const SessionsTable: React.FC<{ metrics: MetricsData; focusedSession?: string | null; onSessionClear?: () => void }> = ({ metrics, focusedSession, onSessionClear }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
-  type SortColumn = 'name' | 'read' | 'written' | 'total';
+  type SortColumn = 'name' | 'lastActive' | 'read' | 'written' | 'total';
   const [sortColumn, setSortColumn] = useState<SortColumn>('total');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
@@ -27,18 +29,42 @@ export const SessionsTable: React.FC<{ metrics: MetricsData }> = ({ metrics }) =
     return sortDirection === 'asc' ? <span className="text-primary ml-1">↑</span> : <span className="text-primary ml-1">↓</span>;
   };
 
+  useEffect(() => {
+    if (focusedSession) {
+      setExpandedSessionId(focusedSession);
+      setTimeout(() => {
+        const row = document.getElementById(`session-row-${focusedSession}`);
+        if (row) {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          row.classList.add('bg-white/20');
+          row.style.transition = 'background-color 0.5s ease-out';
+          setTimeout(() => {
+            row.classList.remove('bg-white/20');
+          }, 1500);
+        }
+      }, 100);
+      onSessionClear?.();
+    }
+  }, [focusedSession, onSessionClear]);
+
   // Format sessions data
-  const sessions = Object.entries(metrics.sessions).map(([id, data]) => ({
-    id,
-    name: data.sessionName || id,
-    read: data.in + data.cacheWrite + data.cacheRead,
-    written: data.out,
-    turns: data.turnCount,
-    rawIn: data.in,
-    rawCacheRead: data.cacheRead,
-    rawCacheWrite: data.cacheWrite,
-    rawOut: data.out
-  }));
+  const sessions = Object.entries(metrics.sessions).map(([sessionId, session]) => {
+    const lastActive = Math.max(...session.prompts.map(p => new Date(p.ts || 0).getTime()), 0);
+
+    return {
+      id: sessionId,
+      name: session.sessionName || sessionId,
+      read: session.cacheRead + session.in,
+      written: session.out,
+      rawIn: session.in,
+      rawOut: session.out,
+      rawCacheRead: session.cacheRead,
+      rawCacheWrite: session.cacheWrite,
+      turns: session.turnCount,
+      lastActive,
+      session
+    };
+  });
 
   const filteredSessions = sessions
     .filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.id.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -47,6 +73,9 @@ export const SessionsTable: React.FC<{ metrics: MetricsData }> = ({ metrics }) =
       if (sortColumn === 'name') {
         valA = a.name.toLowerCase();
         valB = b.name.toLowerCase();
+      } else if (sortColumn === 'lastActive') {
+        valA = a.lastActive;
+        valB = b.lastActive;
       } else if (sortColumn === 'read') {
         valA = a.read;
         valB = b.read;
@@ -84,6 +113,9 @@ export const SessionsTable: React.FC<{ metrics: MetricsData }> = ({ metrics }) =
                 <th className="p-4 text-sm font-semibold text-gray-400 cursor-pointer hover:text-white transition-colors whitespace-nowrap" onClick={() => handleSort('name')}>
                   Session Name / ID {getSortIcon('name')}
                 </th>
+                <th className="p-4 text-sm font-semibold text-gray-400 cursor-pointer hover:text-white transition-colors whitespace-nowrap" onClick={() => handleSort('lastActive')}>
+                  Last Active {getSortIcon('lastActive')}
+                </th>
                 <th className="p-4 text-sm font-semibold text-gray-400 text-right cursor-pointer hover:text-white transition-colors whitespace-nowrap" onClick={() => handleSort('read')}>
                   Input {getSortIcon('read')}
                 </th>
@@ -100,6 +132,7 @@ export const SessionsTable: React.FC<{ metrics: MetricsData }> = ({ metrics }) =
                 filteredSessions.map((s) => (
                   <React.Fragment key={s.id}>
                     <tr 
+                      id={`session-row-${s.id}`}
                       className={`border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer ${expandedSessionId === s.id ? 'bg-white/5' : ''}`}
                       onClick={() => toggleExpand(s.id)}
                     >
@@ -107,23 +140,26 @@ export const SessionsTable: React.FC<{ metrics: MetricsData }> = ({ metrics }) =
                         <div className={`font-medium truncate ${s.name === s.id && s.turns > 15 ? 'text-primary font-bold' : 'text-gray-200'}`}>{s.name}{s.name === s.id && s.turns > 15 ? ' 🏃‍♂️' : ''}</div>
                         {s.name !== s.id && <div className={`text-xs font-mono mt-1 truncate ${s.turns > 15 ? 'text-primary font-bold' : 'text-gray-500'}`}>{s.id}{s.turns > 15 ? ' 🏃‍♂️' : ''}</div>}
                       </td>
+                      <td className="p-4 text-gray-400 text-xs">
+                        {s.lastActive > 0 ? new Date(s.lastActive).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Unknown'}
+                      </td>
                       <td className="p-4 text-right">
-                        <div className="font-mono text-gray-300">{s.read.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                        <div className="font-mono text-gray-300">{formatCompact(s.read)}</div>
                         <div className="text-[10px] text-gray-500 font-mono mt-1 flex justify-end gap-1">
-                          <span>in:{s.rawIn.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          <span>in:<span className="text-blue-500">{formatCompact(s.rawIn)}</span></span>
                           <span className="text-gray-600">|</span>
-                          <span>cw:{s.rawCacheWrite.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          <span>cw:<span className="text-pink-500">{formatCompact(s.rawCacheWrite)}</span></span>
                           <span className="text-gray-600">|</span>
-                          <span>cr:{s.rawCacheRead.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          <span>cr:<span className="text-purple-500">{formatCompact(s.rawCacheRead)}</span></span>
                         </div>
                       </td>
                       <td className="p-4 text-right">
-                        <div className="font-mono text-gray-300">{s.written.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                        <div className="font-mono text-gray-300">{formatCompact(s.written)}</div>
                         <div className="text-[10px] text-gray-500 font-mono mt-1 flex justify-end">
-                          <span>out:{s.rawOut.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          <span>out:<span className="text-amber-500">{formatCompact(s.rawOut)}</span></span>
                         </div>
                       </td>
-                      <td className="p-4 text-right font-mono text-secondary font-bold">{(s.read + s.written).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                      <td className="p-4 text-right font-mono text-secondary font-bold">{formatCompact(s.read + s.written)}</td>
                     </tr>
                     {expandedSessionId === s.id && (
                       <tr className="bg-black/20 border-b border-white/5">

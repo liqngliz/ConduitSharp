@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { computeMetrics, computeInsights, type SpendRecord } from '../utils/parser';
 import { Metrics } from './Metrics';
 import { Insights } from './Insights';
+import { ActiveFlow } from './ActiveFlow';
 import { Charts } from './Charts';
 import { SessionsTable } from './SessionsTable';
 import { WeightsControl } from './WeightsControl';
@@ -14,6 +15,7 @@ export const Dashboard: React.FC = () => {
   const [routes, setRoutes] = useState<string[]>([]);
   const [weightsConfig, setWeightsConfig] = useState<Record<string, any>>({});
   const [useWeights, setUseWeights] = useState<boolean>(true);
+  const [focusedSession, setFocusedSession] = useState<string | null>(null);
 
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
@@ -156,11 +158,11 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </header>
-      
       <Metrics metrics={metrics} routeName={activeRoute === 'all' ? 'All Agents' : activeRoute} />
-      <Insights insights={insights} topPrompts={metrics.topPrompts} sessions={metrics.sessions} />
+      <ActiveFlow metrics={metrics} onSessionSelect={setFocusedSession} />
+      <Insights insights={insights} topPrompts={metrics.topPrompts} sessions={metrics.sessions} onSessionSelect={setFocusedSession} />
       <Charts metrics={metrics} />
-      <SessionsTable metrics={metrics} />
+      <SessionsTable metrics={metrics} focusedSession={focusedSession} onSessionClear={() => setFocusedSession(null)} />
       <WeightsControl 
         models={Object.keys(metrics.modelBreakdown)}
         weightsConfig={weightsConfig}

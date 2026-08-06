@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 
-export const AnimatedNumber: React.FC<{ value: number; durationMs?: number }> = ({ value, durationMs = 800 }) => {
+export const AnimatedNumber: React.FC<{ value: number; durationMs?: number; compact?: boolean }> = ({ value, durationMs = 800, compact = false }) => {
   const [displayValue, setDisplayValue] = useState(value);
   const currentDisplay = useRef(displayValue);
 
@@ -34,5 +34,11 @@ export const AnimatedNumber: React.FC<{ value: number; durationMs?: number }> = 
     return () => window.cancelAnimationFrame(frameId);
   }, [value, durationMs]);
 
-  return <>{displayValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</>;
+  return (
+    <>
+      {compact
+        ? Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(displayValue)
+        : displayValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+    </>
+  );
 };

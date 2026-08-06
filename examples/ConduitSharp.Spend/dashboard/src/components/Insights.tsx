@@ -1,21 +1,12 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import type { InsightsData, MetricsData } from '../utils/parser';
+import { AnimatedNumber } from './AnimatedNumber';
 
-export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsData['topPrompts']; sessions: MetricsData['sessions'] }> = ({ insights, topPrompts, sessions }) => {
+const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
+
+export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsData['topPrompts']; sessions: MetricsData['sessions']; onSessionSelect?: (sessionId: string) => void }> = ({ insights, topPrompts, sessions, onSessionSelect }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isAtBottom, setIsAtBottom] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const checkScroll = () => {
-    if (scrollRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-      setIsAtBottom(scrollHeight <= clientHeight || scrollHeight - scrollTop - clientHeight < 10);
-    }
-  };
-
-  useEffect(() => {
-    checkScroll();
-  }, [isExpanded, topPrompts]);
   return (
     <div className="space-y-6 mt-8">
       <h2 className="text-2xl font-bold glow-text">AI Insights</h2>
@@ -26,29 +17,29 @@ export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsDat
           <h3 className="text-gray-400 text-sm font-medium">Vague Prompts</h3>
           <p className="text-3xl font-bold mt-2 text-danger">{insights.vaguePrompts} ❓</p>
           <p className="text-xs text-gray-500 mt-2">Short prompts causing high token input.</p>
-          <p className="text-[10px] text-gray-400 mt-1">Avg Vague: {insights.avgVagueTokens?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0} | Avg Non-Vague: {insights.avgNonVagueTokens?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0}</p>
+          <p className="text-[10px] text-gray-400 mt-1">Avg Vague: <AnimatedNumber value={insights.avgVagueTokens || 0} compact /> | Avg Non-Vague: <AnimatedNumber value={insights.avgNonVagueTokens || 0} compact /></p>
         </div>
 
         <div className="glass-panel p-6 animate-slide-up" style={{ animationDelay: '100ms' }} data-testid="insight-marathon">
           <h3 className="text-gray-400 text-sm font-medium">Marathon Sessions</h3>
           <p className="text-3xl font-bold mt-2 text-primary">{insights.marathonSessions} 🏃‍♂️</p>
           <p className="text-xs text-gray-500 mt-2">Sessions with &gt;15 turns.</p>
-          <p className="text-[10px] text-gray-400 mt-1">Avg Marathon Prompt: {insights.avgMarathonPromptTokens?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0} | Avg Non-Marathon: {insights.avgNonMarathonPromptTokens?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0}</p>
+          <p className="text-[10px] text-gray-400 mt-1">Avg Marathon Prompt: <AnimatedNumber value={insights.avgMarathonPromptTokens || 0} compact /> | Avg Non-Marathon: <AnimatedNumber value={insights.avgNonMarathonPromptTokens || 0} compact /></p>
         </div>
 
         <div className="glass-panel p-6 animate-slide-up" style={{ animationDelay: '200ms' }} data-testid="insight-input">
           <h3 className="text-gray-400 text-sm font-medium">Input Heavy Requests</h3>
           <p className="text-3xl font-bold mt-2 text-secondary">{insights.inputHeavy} 🏋️‍♂️</p>
           <p className="text-xs text-gray-500 mt-2">Requests with &gt;5k input, low output.</p>
-          <p className="text-[10px] text-gray-400 mt-1">Avg Heavy: {insights.avgInputHeavyTokens?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0} | Avg Normal: {insights.avgNonInputHeavyTokens?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0}</p>
+          <p className="text-[10px] text-gray-400 mt-1">Avg Heavy: <AnimatedNumber value={insights.avgInputHeavyTokens || 0} compact /> | Avg Normal: <AnimatedNumber value={insights.avgNonInputHeavyTokens || 0} compact /></p>
         </div>
 
         <div className="glass-panel p-6 animate-slide-up" style={{ animationDelay: '300ms' }} data-testid="insight-tool">
           <h3 className="text-gray-400 text-sm font-medium">Tool Heavy Sessions</h3>
           <p className="text-3xl font-bold mt-2 text-success">{insights.toolHeavy} 🔧</p>
           <p className="text-xs text-gray-500 mt-2">High ratio of tool prompt tokens vs no-tool prompt tokens.</p>
-          <p className="text-[10px] text-gray-400 mt-1">Avg Tool: {insights.avgToolTokens?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0} | Avg No-Tool: {insights.avgChatTokens?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0}</p>
-          <p className="text-[10px] text-gray-400 mt-1">Tool Prompts: {insights.globalToolPrompts?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0} | No-Tool Prompts: {insights.globalChatPrompts?.toLocaleString(undefined, { maximumFractionDigits: 0 }) || 0}</p>
+          <p className="text-[10px] text-gray-400 mt-1">Avg Tool: <AnimatedNumber value={insights.avgToolTokens || 0} compact /> | Avg No-Tool: <AnimatedNumber value={insights.avgChatTokens || 0} compact /></p>
+          <p className="text-[10px] text-gray-400 mt-1">Tool Prompts: <AnimatedNumber value={insights.globalToolPrompts || 0} compact /> | No-Tool Prompts: <AnimatedNumber value={insights.globalChatPrompts || 0} compact /></p>
         </div>
 
       </div>
@@ -63,16 +54,15 @@ export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsDat
 
       <div className="glass-panel p-6 animate-slide-up relative" style={{ animationDelay: '400ms' }}>
         <h3 className="text-xl font-semibold mb-4 flex justify-between items-center">
-          Most Expensive Prompts
+          Most Expensive Prompt Sequences
           {isExpanded && (
             <button onClick={() => setIsExpanded(false)} className="text-sm text-gray-400 hover:text-white transition-colors">Collapse</button>
           )}
         </h3>
         <div 
           ref={scrollRef}
-          onScroll={checkScroll}
-          className={`pr-2 custom-scrollbar ${isExpanded ? 'overflow-y-auto max-h-[440px]' : 'overflow-hidden max-h-[280px]'}`}
-          style={!isAtBottom ? { 
+          className={`pr-2 ${!isExpanded ? 'overflow-hidden max-h-[280px] custom-scrollbar' : ''}`}
+          style={!isExpanded ? { 
             maskImage: 'linear-gradient(to bottom, black 80%, transparent 100%)',
             WebkitMaskImage: 'linear-gradient(to bottom, black 80%, transparent 100%)'
           } : undefined}
@@ -85,40 +75,45 @@ export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsDat
               
               const sess = sessions[p.session];
               const isMarathon = sess?.turnCount > 15;
-              const hasToolCall = sess?.prompts.find(pr => pr.prompt === p.prompt)?.hasToolCall;
+              const hasToolCall = p.hasToolCall;
               
               let prefix = '';
               let promptColor = 'text-gray-300';
               
-              if (isVague && isInputHeavy) {
-                prefix = '❓🏋️‍♂️ ';
-                promptColor = 'text-danger';
-              } else if (isVague) {
-                prefix = '❓ ';
-                promptColor = 'text-danger';
-              } else if (isInputHeavy) {
-                prefix = '🏋️‍♂️ ';
-                promptColor = 'text-secondary';
-              } else if (hasToolCall) {
-                prefix = '🔧 ';
+              if (hasToolCall) {
+                prefix += '🔧 ';
                 promptColor = 'text-success';
+              }
+              if (isInputHeavy) {
+                prefix += '🏋️‍♂️ ';
+                promptColor = 'text-secondary'; // Input Heavy overrides color if both
+              }
+              if (isVague) {
+                prefix += '❓ ';
+                promptColor = 'text-danger'; // Vague overrides color if multiple
               }
 
               return (
-              <li key={idx} className="bg-white/5 rounded-lg p-3 flex flex-col md:flex-row justify-between items-start md:items-center gap-2" data-testid={`top-prompt-${idx}`}>
-                <div className="flex flex-col w-full md:w-1/2 overflow-hidden">
-                  <span className={`truncate font-medium ${promptColor}`} title={p.prompt}>{prefix}{p.prompt}</span>
+              <li 
+                key={idx} 
+                className="bg-white/5 rounded-lg p-3 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 hover:bg-white/10 transition-colors cursor-pointer" 
+                data-testid={`top-prompt-${idx}`}
+                onClick={() => onSessionSelect?.(p.session)}
+              >
+                <div className="flex flex-col w-full md:w-[40%] overflow-hidden pr-4">
+                  <span className={`truncate font-medium ${promptColor}`} title={p.prompt}>{prefix}{p.prompt.length > 45 ? p.prompt.substring(0, 45) + '...' : p.prompt}</span>
                   <div className="text-xs text-gray-500 font-mono mt-1">
-                    <span className={isMarathon ? 'text-primary font-bold' : ''}>{p.session}{isMarathon ? ' 🏃‍♂️' : ''}</span> model:{p.model}
+                    <span className={isMarathon ? 'text-primary font-bold' : ''}>{p.session}{isMarathon ? ' 🏃‍♂️' : ''}</span>
                   </div>
+
                 </div>
-                <div className="flex gap-4 text-xs font-mono w-full md:w-auto justify-between md:justify-end">
-                  <span className="text-gray-400">In: {p.in.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                  <span className="text-gray-400">CR: {p.cacheRead.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                  <span className="text-gray-400">CW: {p.cacheWrite.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                  <span className="text-gray-400">Out: {p.out.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                  <span className="text-secondary font-bold">Total: {p.totalTokens.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                  <span className="text-gray-500 ml-2">({Math.round((p.out / Math.max(1, p.totalTokens)) * 100)}% written)</span>
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-xs font-mono w-full md:w-[60%] items-center">
+                  <span className="text-gray-400 truncate">In: <span className="text-blue-500">{formatCompact(p.in)}</span></span>
+                  <span className="text-gray-400 truncate">CR: <span className="text-purple-500">{formatCompact(p.cacheRead)}</span></span>
+                  <span className="text-gray-400 truncate">CW: <span className="text-pink-500">{formatCompact(p.cacheWrite)}</span></span>
+                  <span className="text-gray-400 truncate">Out: <span className="text-amber-500">{formatCompact(p.out)}</span></span>
+                  <span className="text-gray-400 font-bold truncate">Tot: <span className="text-secondary">{formatCompact(p.totalTokens)}</span></span>
+                  <span className="text-gray-500 truncate">{p.model}</span>
                 </div>
               </li>
             )}) : <li className="text-gray-500">No prompts found</li>}

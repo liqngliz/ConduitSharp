@@ -47,6 +47,7 @@ describe('Insights Component', () => {
   it('renders top prompts', () => {
     render(<Insights insights={mockInsights} topPrompts={mockTopPrompts} sessions={mockSessions} />);
     expect(screen.getByText('Hello world')).toBeInTheDocument();
-    expect(screen.getByText('Total: 1,500')).toBeInTheDocument();
+    expect(screen.getByText(/Tot:/)).toBeInTheDocument();
+    expect(screen.getAllByText('1.5K').length).toBeGreaterThan(0);
   });
 });
