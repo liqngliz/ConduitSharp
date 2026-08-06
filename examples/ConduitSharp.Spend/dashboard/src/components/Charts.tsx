@@ -4,7 +4,7 @@ import type { MetricsData } from '../utils/parser';
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
 const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
 
-export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
+export const Charts: React.FC<{ metrics: MetricsData }> = React.memo(({ metrics }) => {
   // Format daily usage data
   const dailyData = Object.entries(metrics.dailyUsage)
     .map(([date, counts]) => ({
@@ -100,7 +100,7 @@ export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
                 const percent = totalAllTokens > 0 ? (d.Total / totalAllTokens) * 100 : 0;
                 return (
                   <div key={d.model} className="w-full group">
-                    <div className="flex justify-between text-sm mb-1 items-end">
+                    <div className="flex justify-between text-sm mb-1 items-center">
                       <div className="flex items-center gap-2 overflow-hidden pr-2">
                         <div className="w-3 h-3 rounded-sm shrink-0 transition-transform group-hover:scale-125" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></div>
                         <span className="font-mono text-gray-300 truncate">{d.model}</span>
@@ -127,4 +127,4 @@ export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
       </div>
     </div>
   );
-};
+});

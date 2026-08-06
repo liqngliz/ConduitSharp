@@ -32,10 +32,10 @@ const mockSessions = {
 describe('Insights Component', () => {
   it('renders correctly', () => {
     render(<Insights insights={mockInsights} topPrompts={mockTopPrompts} sessions={mockSessions} />);
-    expect(screen.getByText('5 ❓')).toBeInTheDocument(); // Vague
-    expect(screen.getByText('2 🏃‍♂️')).toBeInTheDocument(); // Marathon
-    expect(screen.getByText('10 🏋️‍♂️')).toBeInTheDocument(); // Input Heavy
-    expect(screen.getByText('1 🔧')).toBeInTheDocument(); // Tool Heavy
+    expect(screen.getByText('5')).toBeInTheDocument(); // Vague
+    expect(screen.getByText('2')).toBeInTheDocument(); // Marathon
+    expect(screen.getByText('10')).toBeInTheDocument(); // Input Heavy
+    expect(screen.getByText('1')).toBeInTheDocument(); // Tool Heavy
   });
 
   it('renders model dominance', () => {

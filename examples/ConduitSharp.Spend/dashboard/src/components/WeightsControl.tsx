@@ -37,10 +37,10 @@ export const WeightsControl: React.FC<Props> = ({ models, weightsConfig, setWeig
     return (
       <button 
         onClick={() => setExpanded(true)}
-        className="fixed bottom-6 right-6 flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-full px-4 py-3 shadow-lg transition-transform hover:scale-105 z-50"
+        className="fixed bottom-6 right-6 flex items-center gap-2 bg-surface/80 backdrop-blur-md border border-white/10 rounded-full px-5 py-3 shadow-lg transition-all hover:scale-105 hover:shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:border-cyan-500/50 hover:bg-surface z-50 group"
       >
-        <Weight size={20} />
-        <span className="font-semibold text-sm">Token Weights</span>
+        <Weight size={20} className="text-gray-400 group-hover:text-cyan-400 transition-colors" />
+        <span className="font-semibold text-sm text-gray-200 group-hover:text-white transition-colors">Token Weights</span>
       </button>
     );
   }

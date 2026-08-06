@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import type { MetricsData } from '../utils/parser';
 import { SessionFlowchart } from './SessionFlowchart';
+import { SportShoe, Wrench } from 'lucide-react';
 
 const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
 
-export const SessionsTable: React.FC<{ metrics: MetricsData; focusedSession?: string | null; onSessionClear?: () => void }> = ({ metrics, focusedSession, onSessionClear }) => {
+export const SessionsTable = React.memo(({ metrics, focusedSession, onSessionClear }: { metrics: MetricsData; focusedSession?: string | null; onSessionClear?: () => void }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   type SortColumn = 'name' | 'lastActive' | 'read' | 'written' | 'total';
@@ -132,11 +133,8 @@ export const SessionsTable: React.FC<{ metrics: MetricsData; focusedSession?: st
                 filteredSessions.map((s) => {
                   const isMarathon = s.name === s.id && s.turns > 15;
                   const isTool = s.session.isToolHeavy;
-                  const nameColor = isTool ? 'text-success font-bold' : (isMarathon ? 'text-primary font-bold' : 'text-gray-200');
-                  const prefix = isTool ? '🔧 ' : '';
-                  const suffix = isMarathon ? ' 🏃‍♂️' : '';
-                  const subColor = s.turns > 15 ? 'text-primary font-bold' : 'text-gray-500';
-                  const subSuffix = s.turns > 15 ? ' 🏃‍♂️' : '';
+                  const nameColor = isTool ? 'text-success font-bold' : (isMarathon ? 'text-primary font-bold' : 'text-white');
+                  const subColor = s.turns > 15 ? 'text-primary font-bold' : 'text-gray-400';
 
                   return (
                   <React.Fragment key={s.id}>
@@ -146,8 +144,17 @@ export const SessionsTable: React.FC<{ metrics: MetricsData; focusedSession?: st
                       onClick={() => toggleExpand(s.id)}
                     >
                       <td className="p-4 max-w-[200px] sm:max-w-[300px]">
-                        <div className={`font-medium truncate ${nameColor}`}>{prefix}{s.name}{suffix}</div>
-                        {s.name !== s.id && <div className={`text-xs font-mono mt-1 truncate ${subColor}`}>{s.id}{subSuffix}</div>}
+                        <div className={`flex items-center gap-1.5 font-medium truncate ${nameColor}`}>
+                          {isTool && <Wrench size={14} className="text-emerald-500 shrink-0" />}
+                          <span className="truncate">{s.name}</span>
+                          {isMarathon && <SportShoe size={14} className="text-primary shrink-0" />}
+                        </div>
+                        {s.name !== s.id && (
+                          <div className={`flex items-center gap-1.5 text-xs font-mono mt-1 truncate ${subColor}`}>
+                            <span className="truncate">{s.id}</span>
+                            {s.turns > 15 && <SportShoe size={12} className="text-primary shrink-0" />}
+                          </div>
+                        )}
                       </td>
                       <td className="p-4 text-gray-400 text-xs">
                         {s.lastActive > 0 ? new Date(s.lastActive).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Unknown'}
@@ -193,4 +200,4 @@ export const SessionsTable: React.FC<{ metrics: MetricsData; focusedSession?: st
       </div>
     </div>
   );
-};
+});

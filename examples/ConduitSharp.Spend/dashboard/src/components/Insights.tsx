@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import React from 'react';
 import type { InsightsData, MetricsData } from '../utils/parser';
 import { AnimatedNumber } from './AnimatedNumber';
+import { MessageCircleQuestion, SportShoe, Dumbbell, Wrench } from 'lucide-react';
 
 const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
 
-export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsData['topPrompts']; sessions: MetricsData['sessions']; onSessionSelect?: (sessionId: string) => void }> = ({ insights, topPrompts, sessions, onSessionSelect }) => {
+export const Insights = React.memo(({ insights, topPrompts, sessions, onSessionSelect }: { insights: InsightsData; topPrompts: MetricsData['topPrompts']; sessions: MetricsData['sessions']; onSessionSelect?: (sessionId: string) => void }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -15,28 +17,28 @@ export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsDat
         
         <div className="glass-panel p-6 animate-slide-up" data-testid="insight-vague">
           <h3 className="text-gray-400 text-sm font-medium">Vague Prompts</h3>
-          <p className="text-3xl font-bold mt-2 text-danger">{insights.vaguePrompts} ❓</p>
+          <p className="text-3xl font-bold mt-2 text-danger flex items-center gap-2">{insights.vaguePrompts} <MessageCircleQuestion size={24} className="opacity-80" /></p>
           <p className="text-xs text-gray-500 mt-2">Short prompts causing high token input.</p>
           <p className="text-[10px] text-gray-400 mt-1">Avg Vague: <AnimatedNumber value={insights.avgVagueTokens || 0} compact /> | Avg Non-Vague: <AnimatedNumber value={insights.avgNonVagueTokens || 0} compact /></p>
         </div>
 
         <div className="glass-panel p-6 animate-slide-up" style={{ animationDelay: '100ms' }} data-testid="insight-marathon">
           <h3 className="text-gray-400 text-sm font-medium">Marathon Sessions</h3>
-          <p className="text-3xl font-bold mt-2 text-primary">{insights.marathonSessions} 🏃‍♂️</p>
+          <p className="text-3xl font-bold mt-2 text-primary flex items-center gap-2">{insights.marathonSessions} <SportShoe size={24} className="opacity-80" /></p>
           <p className="text-xs text-gray-500 mt-2">Sessions with &gt;15 turns.</p>
           <p className="text-[10px] text-gray-400 mt-1">Avg Marathon Prompt: <AnimatedNumber value={insights.avgMarathonPromptTokens || 0} compact /> | Avg Non-Marathon: <AnimatedNumber value={insights.avgNonMarathonPromptTokens || 0} compact /></p>
         </div>
 
         <div className="glass-panel p-6 animate-slide-up" style={{ animationDelay: '200ms' }} data-testid="insight-input">
           <h3 className="text-gray-400 text-sm font-medium">Input Heavy Requests</h3>
-          <p className="text-3xl font-bold mt-2 text-secondary">{insights.inputHeavy} 🏋️‍♂️</p>
+          <p className="text-3xl font-bold mt-2 text-secondary flex items-center gap-2">{insights.inputHeavy} <Dumbbell size={24} className="opacity-80" /></p>
           <p className="text-xs text-gray-500 mt-2">Requests with &gt;5k input, low output.</p>
           <p className="text-[10px] text-gray-400 mt-1">Avg Heavy: <AnimatedNumber value={insights.avgInputHeavyTokens || 0} compact /> | Avg Normal: <AnimatedNumber value={insights.avgNonInputHeavyTokens || 0} compact /></p>
         </div>
 
         <div className="glass-panel p-6 animate-slide-up" style={{ animationDelay: '300ms' }} data-testid="insight-tool">
           <h3 className="text-gray-400 text-sm font-medium">Tool Heavy Sessions</h3>
-          <p className="text-3xl font-bold mt-2 text-success">{insights.toolHeavy} 🔧</p>
+          <p className="text-3xl font-bold mt-2 text-success flex items-center gap-2">{insights.toolHeavy} <Wrench size={24} className="opacity-80" /></p>
           <p className="text-xs text-gray-500 mt-2">High ratio of tool prompt tokens vs no-tool prompt tokens.</p>
           <p className="text-[10px] text-gray-400 mt-1">Avg Tool: <AnimatedNumber value={insights.avgToolTokens || 0} compact /> | Avg No-Tool: <AnimatedNumber value={insights.avgChatTokens || 0} compact /></p>
           <p className="text-[10px] text-gray-400 mt-1">Tool Prompts: <AnimatedNumber value={insights.globalToolPrompts || 0} compact /> | No-Tool Prompts: <AnimatedNumber value={insights.globalChatPrompts || 0} compact /></p>
@@ -76,20 +78,20 @@ export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsDat
               const isMarathon = sess?.turnCount > 15;
               const hasToolCall = p.hasToolCall;
               
-              let prefix = '';
+              const prefixIcons: React.ReactNode[] = [];
               let promptColor = 'text-gray-300';
               
               if (hasToolCall) {
-                prefix += '🔧 ';
+                prefixIcons.push(<Wrench key="wrench" size={14} className="text-emerald-500 shrink-0" />);
                 promptColor = 'text-success';
               }
               if (isInputHeavy) {
-                prefix += '🏋️‍♂️ ';
-                promptColor = 'text-secondary'; // Input Heavy overrides color if both
+                prefixIcons.push(<Dumbbell key="dumbbell" size={14} className="text-cyan-500 shrink-0" />);
+                promptColor = 'text-secondary';
               }
               if (isVague) {
-                prefix += '❓ ';
-                promptColor = 'text-danger'; // Vague overrides color if multiple
+                prefixIcons.push(<MessageCircleQuestion key="vague" size={14} className="text-rose-500 shrink-0" />);
+                promptColor = 'text-danger';
               }
 
               return (
@@ -100,9 +102,13 @@ export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsDat
                 onClick={() => onSessionSelect?.(p.session)}
               >
                 <div className="flex flex-col w-full md:w-[40%] overflow-hidden pr-4">
-                  <span className={`truncate font-medium ${promptColor}`} title={p.prompt}>{prefix}{p.prompt.length > 45 ? p.prompt.substring(0, 45) + '...' : p.prompt}</span>
-                  <div className="text-xs text-gray-500 font-mono mt-1">
-                    <span className={isMarathon ? 'text-primary font-bold' : ''}>{p.session}{isMarathon ? ' 🏃‍♂️' : ''}</span>
+                  <div className={`flex items-center gap-1.5 truncate font-medium ${promptColor}`} title={p.prompt}>
+                    {prefixIcons}
+                    <span className="truncate">{p.prompt.length > 45 ? p.prompt.substring(0, 45) + '...' : p.prompt}</span>
+                  </div>
+                  <div className="text-xs text-gray-500 font-mono mt-1 flex items-center gap-1.5">
+                    <span className={isMarathon ? 'text-primary font-bold' : ''}>{p.session}</span>
+                    {isMarathon && <SportShoe size={12} className="text-primary shrink-0" />}
                   </div>
 
                 </div>
@@ -131,4 +137,4 @@ export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsDat
       </div>
     </div>
   );
-};
+});

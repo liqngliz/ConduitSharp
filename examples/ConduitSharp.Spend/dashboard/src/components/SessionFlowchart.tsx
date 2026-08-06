@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { MetricsData } from '../utils/parser';
 import { AnimatedNumber } from './AnimatedNumber';
+import { MessageCircleQuestion, SportShoe, Dumbbell, Wrench } from 'lucide-react';
 
 type SortOrder = 'latest' | 'oldest' | 'total' | 'in' | 'cw' | 'cr' | 'out';
 
@@ -24,7 +25,8 @@ export const Flowchart: React.FC<{
   title: string;
   headerTitle?: React.ReactNode;
   onPromptClick?: (sessionId: string) => void;
-}> = ({ prompts, totals, title, headerTitle, onPromptClick }) => {
+  isExpanded?: boolean;
+}> = ({ prompts, totals, title, headerTitle, onPromptClick, isExpanded = true }) => {
   const [sortOrder, setSortOrder] = useState<SortOrder>('latest');
 
   const totalTokens = totals.in + totals.out + totals.cr + totals.cw;
@@ -149,7 +151,7 @@ export const Flowchart: React.FC<{
           const yOut = currentPathY + outThick / 2;
 
           return (
-            <g key={`paths-left-${p.ts}-${p.total}`} style={{ mixBlendMode: 'screen' }}>
+            <g key={`paths-left-${p.sessionId}-${p.ts}`} style={{ mixBlendMode: 'screen' }}>
               {p.in > 0 && (
                 <path 
                   d={createPath(340, yIn, 440, midYIn + hIn / 2)} 
@@ -248,7 +250,7 @@ export const Flowchart: React.FC<{
 
         {/* Right Node (Total) */}
         <g transform={`translate(760, ${totalY})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
-          <rect width="220" height={totalHeight} rx="12" fill="#1f2937" stroke="#06B6D4" strokeWidth="2" className="shadow-lg" style={{ transition: 'height 0.8s ease-in-out' }} />
+          <rect width="220" height={totalHeight} rx="12" fill="#083344" stroke="rgb(6, 182, 212)" strokeWidth="1" style={{ filter: 'drop-shadow(0 0 15px rgba(6, 182, 212, 0.4))', transition: 'height 0.8s ease-in-out' }} />
           <g transform={`translate(0, ${totalHeight/2})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
             <text x="110" y="-10" fill="#9ca3af" fontSize="14" textAnchor="middle" fontWeight="600" letterSpacing="1">{title}</text>
             <text x="110" y="20" fill="#f3f4f6" fontSize="28" textAnchor="middle" fontWeight="bold">
@@ -265,28 +267,31 @@ export const Flowchart: React.FC<{
           const isVague = rawPrompt.length < 30 && totalIn > 1000;
           const isInputHeavy = totalIn > 5000 && p.out < 100;
           
-          let prefix = '';
+          const prefixIcons: React.ReactNode[] = [];
           let shortenLength = 25;
           let promptColor = '#f3f4f6';
+          let iconX = 12;
           
           if (p.hasToolCall) {
-            prefix += '🔧 ';
+            prefixIcons.push(<Wrench key="wrench" x={iconX} y={32} width={14} height={14} className="text-emerald-500" />);
+            iconX += 18;
             shortenLength -= 3;
             promptColor = '#10B981';
           }
           if (isInputHeavy) {
-            prefix += '🏋️‍♂️ ';
+            prefixIcons.push(<Dumbbell key="dumbbell" x={iconX} y={32} width={14} height={14} className="text-cyan-500" />);
+            iconX += 18;
             shortenLength -= 3;
-            promptColor = '#06B6D4'; // overrides color
+            promptColor = '#06B6D4';
           }
           if (isVague) {
-            prefix += '❓ ';
+            prefixIcons.push(<MessageCircleQuestion key="vague" x={iconX} y={32} width={14} height={14} className="text-rose-500" />);
+            iconX += 18;
             shortenLength -= 3;
-            promptColor = '#F43F5E'; // overrides color
+            promptColor = '#F43F5E';
           }
           
           const truncated = rawPrompt.length > shortenLength ? rawPrompt.substring(0, shortenLength) + '...' : rawPrompt;
-          const promptText = prefix + truncated;
           
           let timeStr = '';
           if (p.ts) {
@@ -296,7 +301,7 @@ export const Flowchart: React.FC<{
 
           return (
             <g 
-              key={`node-${p.ts}-${p.total}`} 
+              key={`node-${p.sessionId}-${p.ts}`} 
               transform={`translate(20, ${y})`}
               style={{ transition: 'transform 0.8s ease-in-out' }}
             >
@@ -305,22 +310,41 @@ export const Flowchart: React.FC<{
                 {timeStr}
               </text>
               <text x={320 - 12} y="25" fill="#f3f4f6" fontSize="15" textAnchor="end" fontWeight="bold">
-                <AnimatedNumber value={p.total} compact as="tspan" />
+                <AnimatedNumber value={p.total} compact as="tspan" disableAnimation={!isExpanded && i >= 4} />
               </text>
-              <text x="12" y="45" fill={promptColor} fontSize="14">
-                {promptText}
-              </text>
+              {prefixIcons.length > 0 ? (
+                <g>
+                  {prefixIcons}
+                  <text x={iconX} y={43} fill={promptColor} fontSize="14">
+                    {truncated}
+                  </text>
+                </g>
+              ) : (
+                <text x="12" y="43" fill={promptColor} fontSize="14">
+                  {truncated}
+                </text>
+              )}
               <text x="12" y="65" fill="#9ca3af" fontSize="12" className="font-mono">
                 {p.model || 'Unknown'}
               </text>
-              <text x="12" y="85" fill={p.turnCount > 15 ? '#6D28D9' : '#6b7280'} fontSize="10" className="font-mono font-bold">
-                {p.sessionId}{p.turnCount > 15 ? ' 🏃‍♂️' : ''}
-              </text>
+              
+              {p.turnCount > 15 ? (
+                <g>
+                  <text x="12" y="85" fill="#6D28D9" fontSize="10" fontWeight="bold" className="font-mono">
+                    {p.sessionId}
+                  </text>
+                  <SportShoe x={12 + p.sessionId.length * 6 + 6} y={75} width={12} height={12} className="text-purple-600" />
+                </g>
+              ) : (
+                <text x="12" y="85" fill="#6b7280" fontSize="10" className="font-mono font-bold">
+                  {p.sessionId}
+                </text>
+              )}
               <text x="12" y="105" fill="#9ca3af" fontSize="11" className="font-mono">
-                In:<tspan fill="#3b82f6"><AnimatedNumber value={p.in} compact as="tspan" /></tspan>|
-                CW:<tspan fill="#ec4899"><AnimatedNumber value={p.cacheWrite} compact as="tspan" /></tspan>|
-                CR:<tspan fill="#8b5cf6"><AnimatedNumber value={p.cacheRead} compact as="tspan" /></tspan>|
-                Out:<tspan fill="#f59e0b"><AnimatedNumber value={p.out} compact as="tspan" /></tspan>
+                In:<tspan fill="#3b82f6"><AnimatedNumber value={p.in} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>|
+                CW:<tspan fill="#ec4899"><AnimatedNumber value={p.cacheWrite} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>|
+                CR:<tspan fill="#8b5cf6"><AnimatedNumber value={p.cacheRead} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>|
+                Out:<tspan fill="#f59e0b"><AnimatedNumber value={p.out} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>
               </text>
 
               {onPromptClick && (

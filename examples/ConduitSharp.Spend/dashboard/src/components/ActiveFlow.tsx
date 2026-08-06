@@ -2,10 +2,10 @@ import React, { useState, useMemo } from 'react';
 import type { MetricsData } from '../utils/parser';
 import { Flowchart, type FlowchartPrompt } from './SessionFlowchart';
 
-export const ActiveFlow: React.FC<{ 
+export const ActiveFlow = React.memo<{ 
   metrics: MetricsData; 
   onSessionSelect?: (sessionId: string) => void;
-}> = ({ metrics, onSessionSelect }) => {
+}>(({ metrics, onSessionSelect }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Extract and sort all prompts globally
@@ -71,17 +71,18 @@ export const ActiveFlow: React.FC<{
           <Flowchart 
             prompts={prompts} 
             totals={totals} 
-            title="ACTIVE FLOW BUDGET" 
+            title="TOTAL TOKEN FLOW" 
             headerTitle="Active Flow"
             onPromptClick={onSessionSelect}
+            isExpanded={isExpanded}
           />
         </div>
         
         {!isExpanded && needsCollapse && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+          <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-background to-transparent flex items-end justify-center pb-4 z-10 pointer-events-none">
             <button 
               onClick={() => setIsExpanded(true)}
-              className="bg-primary/20 hover:bg-primary/40 text-primary border border-primary/50 px-6 py-2 rounded-full font-bold shadow-lg backdrop-blur-md transition-all hover:scale-105"
+              className="glass-panel hover:bg-white/10 text-white px-6 py-2 rounded-full font-semibold shadow-[0_0_15px_rgba(255,255,255,0.1)] backdrop-blur-md transition-all hover:scale-105 border border-white/20 pointer-events-auto"
             >
               See {prompts.length - 4} more prompts ↓
             </button>
@@ -101,4 +102,4 @@ export const ActiveFlow: React.FC<{
       )}
     </div>
   );
-};
+});

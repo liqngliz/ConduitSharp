@@ -38,12 +38,12 @@ describe('Metrics Component', () => {
   it('shows Caching insight when cache is highest', () => {
     const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, in: 100, out: 50, cacheRead: 500, cacheWrite: 0 } };
     render(<Metrics metrics={metrics} routeName="Claude" />);
-    expect(screen.getByText(/most usage is Caching/)).toBeInTheDocument();
+    expect(screen.getByText(/Most usage: Caching/)).toBeInTheDocument();
   });
 
   it('shows Writing output insight when output is highest', () => {
     const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, in: 100, out: 1000, cacheRead: 10, cacheWrite: 0 } };
     render(<Metrics metrics={metrics} routeName="Claude" />);
-    expect(screen.getByText(/most usage is Writing output/)).toBeInTheDocument();
+    expect(screen.getByText(/Most usage: Writing output/)).toBeInTheDocument();
   });
 });
