@@ -14,24 +14,24 @@ START, END = "<!-- BENCH-MICRO:START -->", "<!-- BENCH-MICRO:END -->"
 
 SECTIONS = [
     ("GatewayComparisonBenchmarks",
-     "Route-table scaling — request hits the last of N routes",
+     "Route-table scaling: request hits the last of N routes",
      "ConduitSharp rides ASP.NET endpoint routing's DFA: flat time and allocations at any\n"
-     "route count. Ocelot's route finder scans templates per request — cost grows with N."),
+     "route count. Ocelot's route finder scans templates per request, so cost grows with N."),
     ("GatewayPolicyComparisonBenchmarks",
-     "Policy chain — JWT auth (HS256) + rate limit on both sides",
+     "Policy chain: JWT auth (HS256) + rate limit on both sides",
      ""),
     ("GatewayBodyComparisonBenchmarks",
-     "Upload bodies — POST (streamed) and PUT on a retry route (buffered)",
-     "Both gateways stream a POST upload — retries never apply to a POST, whose body could not\n"
+     "Upload bodies: POST (streamed) and PUT on a retry route (buffered)",
+     "Both gateways stream a POST upload; retries never apply to a POST, whose body could not\n"
      "be safely replayed, so neither side allocates a buffer. Identical work: the delta is\n"
      "per-request overhead, and ConduitSharp allocates about half.\n"
      "\n"
      "The `-retry` arms are the buffered path, same-on-same: a PUT each side must be able to\n"
      "replay. Ocelot ships no retry, so it runs the load rig's, built on its official Polly\n"
      "package's `AddPolly` seam\n"
-     "([BufferingPollyHandler](benchmarks/load/ocelot/BufferingPollyHandler.cs)) — the whole body\n"
+     "([BufferingPollyHandler](benchmarks/load/ocelot/BufferingPollyHandler.cs)), with the whole body\n"
      "held on the heap via `LoadIntoBufferAsync`, per in-flight request, no ceiling. ConduitSharp\n"
-     "buffers up to 1 MiB in pooled memory and spills the rest to tmpfs on this rig — bounded\n"
+     "buffers up to 1 MiB in pooled memory and spills the rest to tmpfs on this rig: bounded\n"
      "RAM either way, and the tiers degrade to disk and then 503 instead of OOM under\n"
      "concurrency (measured in [benchmarks/load](benchmarks/load/README.md))."),
 ]
@@ -92,7 +92,7 @@ readme_path = sys.argv[3] if len(sys.argv) > 3 else "README.md"
 
 parts = [
     START,
-    "### Head-to-head microbenchmarks — ConduitSharp vs Ocelot (.NET gateways only)",
+    "### Head-to-head microbenchmarks: ConduitSharp vs Ocelot (.NET gateways only)",
     "",
 ]
 for basename, title, note in SECTIONS:
@@ -119,8 +119,8 @@ if len(parts) <= 3:
 
 parts += [
     "Both gateways in-proc (TestServer), forwarding over a real loopback socket to the same",
-    "1 KB upstream — identical downstream cost, the delta is gateway overhead.",
-    "**Allocated per request is deterministic — compare that column;** time columns are",
+    "1 KB upstream, identical downstream cost; the delta is gateway overhead.",
+    "**Allocated per request is deterministic, compare that column;** time columns are",
     "trend-only on shared CI runners. APISIX is nginx/Lua and cannot be micro-benched",
     "in-process; its comparison is the throughput ratio table above. Full tables:",
     f"[docs/benchmarks/micro.md](docs/benchmarks/micro.md) · [source run]({run_url})",
