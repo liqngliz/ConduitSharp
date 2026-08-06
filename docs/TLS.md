@@ -3,9 +3,9 @@
 _Part of the [ConduitSharp documentation](../README.md)._
 
 
-### Inbound — clients calling your gateway
+### Inbound (clients calling your gateway)
 
-TLS termination on the inbound side is handled by Kestrel, not the gateway itself. Add a `Kestrel` section to `appsettings.json` pointing at your certificate:
+Kestrel terminates inbound TLS. Add a `Kestrel` section to `appsettings.json`:
 
 ```json
 {
@@ -24,24 +24,23 @@ TLS termination on the inbound side is handled by Kestrel, not the gateway itsel
 }
 ```
 
-Keep the password out of source control — use an environment variable instead. ASP.NET Core maps double-underscore to nested keys automatically:
+Keep the password out of source control. Double-underscore maps to a nested key:
 
 ```bash
 KESTREL__ENDPOINTS__HTTPS__CERTIFICATE__PASSWORD=your-password dotnet run
 ```
 
-The flow is:
 ```
 caller → HTTPS → mygateway.com:443 (Kestrel unwraps TLS) → ConduitSharp → http://upstream:8080
 ```
 
-Your `routes.json` stays exactly the same regardless of whether callers use HTTP or HTTPS.
+`routes.json` is identical for HTTP and HTTPS callers.
 
-### Outbound — gateway calling upstream services
+### Outbound (gateway calling upstream services)
 
 **Upstream has a trusted certificate (Let's Encrypt, public CA)**
 
-Nothing to configure. Use `https://` in your node URL and certificate validation happens automatically:
+Nothing to configure. Use `https://` in the node URL; validation is automatic.
 
 ```json
 "cluster": {
@@ -64,19 +63,19 @@ Set `dangerousAcceptAnyServerCertificate` on the cluster's HTTP client:
 
 **Both legs secured (end-to-end TLS)**
 
-When callers use HTTPS and your upstreams also require HTTPS, both legs are independent:
+Each leg carries its own certificate and validation rules:
 
 ```
 caller → HTTPS → mygateway.com (Kestrel) → HTTPS → upstream-service:443
 ```
 
-Configure Kestrel for the inbound cert (above) and set the upstream node URL to `https://` for the outbound leg. Each leg has its own certificate and validation rules.
+Kestrel cert (above) for inbound, `https://` node URL for outbound.
 
 **Mutual TLS to upstream (mTLS)**
 
-Configure client certificates per route in `appsettings.json` — no code changes required.
+Per-route client certificates in `appsettings.json`. No code changes.
 
-Using a PFX file:
+PFX file:
 
 ```json
 {
@@ -94,7 +93,7 @@ Using a PFX file:
 }
 ```
 
-On Windows, use the machine certificate store instead (no PFX file to manage):
+Windows machine certificate store (no PFX file to manage):
 
 ```json
 {
@@ -113,17 +112,17 @@ On Windows, use the machine certificate store instead (no PFX file to manage):
 }
 ```
 
-Keep PFX passwords out of the file — use an environment variable override:
+Keep PFX passwords out of the file. Environment variable override:
 
 ```bash
 Gateway__Tls__ClientCertificates__0__Password=secret
 ```
 
 > **mTLS and `dangerousAcceptAnyServerCertificate` are mutually exclusive on a route.** Presenting a
-> client certificate to a server you refuse to authenticate defeats the point of mTLS — it is
-> *mutual*. The gateway rejects that combination at startup rather than letting it look secure. If the mTLS
-> upstream uses an internal CA, trust the CA instead (e.g. `SSL_CERT_FILE=/certs/ca.crt` on
-> Linux). A runnable Docker example of the full handshake lives in
+> client certificate to a server you refuse to authenticate is not mutual authentication, so the
+> gateway rejects the combination at startup instead of letting it look secure. For an mTLS upstream
+> on an internal CA, trust the CA instead (e.g. `SSL_CERT_FILE=/certs/ca.crt` on Linux). Runnable
+> Docker example of the full handshake:
 > [tests/ConduitSharp.Mtls.E2E.Tests/assets](../tests/ConduitSharp.Mtls.E2E.Tests/assets) (`make test-e2e-mtls`).
 
 ---

@@ -580,7 +580,7 @@ The front page above covers getting started. The full reference lives in the in-
 - [Gateway settings](docs/GATEWAY_SETTINGS.md) — `appsettings.json`, env-var overrides, request-body budgets
 - [Configuring routes — full reference](docs/ROUTING.md) — load balancing, path & query syntax, per-route limits
 - [Retries and circuit breaking](docs/ROUTING.md#retries-and-circuit-breaking)
-- [Claim-based authorization (RBAC)](docs/AUTHORIZATION.md) · [Microsoft Entra ID setup](docs/AUTHORIZATION.md#microsoft-entra-id-azure-ad--v20-token-app-role-rbac)
+- [Claim-based authorization (RBAC)](docs/AUTHORIZATION.md) · [Microsoft Entra ID setup](docs/AUTHORIZATION.md#microsoft-entra-id-azure-ad-v20-token-app-role-rbac)
 - [TLS / HTTPS and mTLS](docs/TLS.md)
 - [Observability](docs/OBSERVABILITY.md)
 - [Deployment patterns](docs/ARCHITECTURE.md#deployment-patterns) — edge · sidecar · per-Data-Product
