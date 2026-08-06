@@ -1,15 +1,32 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 
-export const AnimatedNumber: React.FC<{ value: number; durationMs?: number; compact?: boolean; as?: 'span' | 'tspan' }> = ({ value, durationMs = 800, compact = false, as = 'span' }) => {
-  const [displayValue, setDisplayValue] = useState(value);
-  const currentDisplay = useRef(displayValue);
+const formatValue = (val: number, compact: boolean) => {
+  return compact
+    ? Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(val)
+    : val.toLocaleString(undefined, { maximumFractionDigits: 0 });
+};
+
+export const AnimatedNumber: React.FC<{ value: number; durationMs?: number; compact?: boolean; as?: 'span' | 'tspan', disableAnimation?: boolean }> = ({ value, durationMs = 400, compact = false, as = 'span', disableAnimation = false }) => {
+  const nodeRef = useRef<HTMLSpanElement | SVGTSpanElement>(null);
+  const currentDisplay = useRef(value);
 
   useEffect(() => {
+    if (disableAnimation) {
+      currentDisplay.current = value;
+      return;
+    }
+
     let startTimestamp: number | null = null;
     const startValue = currentDisplay.current;
     const endValue = value;
+    const frameRef = { current: 0 };
     
-    if (startValue === endValue) return;
+    if (startValue === endValue) {
+      if (nodeRef.current) {
+        nodeRef.current.textContent = formatValue(endValue, compact);
+      }
+      return;
+    }
 
     const step = (timestamp: number) => {
       if (!startTimestamp) startTimestamp = timestamp;
@@ -19,27 +36,30 @@ export const AnimatedNumber: React.FC<{ value: number; durationMs?: number; comp
       const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
       
       const current = Math.floor(startValue + (endValue - startValue) * easeProgress);
-      setDisplayValue(current);
       currentDisplay.current = current;
 
+      if (nodeRef.current) {
+        nodeRef.current.textContent = formatValue(current, compact);
+      }
+
       if (progress < 1) {
-        window.requestAnimationFrame(step);
+        frameRef.current = window.requestAnimationFrame(step);
       } else {
-        setDisplayValue(endValue);
         currentDisplay.current = endValue;
+        if (nodeRef.current) {
+          nodeRef.current.textContent = formatValue(endValue, compact);
+        }
       }
     };
 
-    const frameId = window.requestAnimationFrame(step);
-    return () => window.cancelAnimationFrame(frameId);
-  }, [value, durationMs]);
+    frameRef.current = window.requestAnimationFrame(step);
+    return () => window.cancelAnimationFrame(frameRef.current);
+  }, [value, durationMs, compact, disableAnimation]);
 
-  const content = compact
-    ? Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(displayValue)
-    : displayValue.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const displayVal = disableAnimation ? value : currentDisplay.current;
 
   if (as === 'tspan') {
-    return <tspan className="tabular-nums">{content}</tspan>;
+    return <tspan ref={nodeRef as React.RefObject<SVGTSpanElement>} className="tabular-nums">{formatValue(displayVal, compact)}</tspan>;
   }
-  return <span className="tabular-nums">{content}</span>;
+  return <span ref={nodeRef as React.RefObject<HTMLSpanElement>} className="tabular-nums">{formatValue(displayVal, compact)}</span>;
 };

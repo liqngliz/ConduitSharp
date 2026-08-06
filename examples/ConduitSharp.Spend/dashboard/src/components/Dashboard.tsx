@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { computeMetrics, computeInsights, type SpendRecord } from '../utils/parser';
 import { Metrics } from './Metrics';
 import { Insights } from './Insights';
@@ -13,9 +13,12 @@ export const Dashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeRoute, setActiveRoute] = useState<string>('all');
   const [routes, setRoutes] = useState<string[]>([]);
+  const seenIds = useRef<Set<string>>(new Set());
   const [weightsConfig, setWeightsConfig] = useState<Record<string, any>>({});
   const [useWeights, setUseWeights] = useState<boolean>(true);
   const [focusedSession, setFocusedSession] = useState<string | null>(null);
+
+  const clearFocus = useCallback(() => setFocusedSession(null), []);
 
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
@@ -40,17 +43,24 @@ export const Dashboard: React.FC = () => {
       })
       .then((results: SpendRecord[][]) => {
         const parsed = results.flat();
+        
+        const newSet = new Set<string>();
+        parsed.forEach(r => newSet.add(`${r.ts}-${r.session}-${r.turn}`));
+        
         setRecords(prev => {
-          const map = new Map();
-          for (const r of [...parsed, ...prev]) {
-            map.set(`${r.ts}-${r.session}-${r.turn}`, r);
-          }
-          return Array.from(map.values());
+          const merged = [...parsed, ...prev.filter(r => !newSet.has(`${r.ts}-${r.session}-${r.turn}`))];
+          // Merging into newSet which is mutated by reference in the next line, but it's safe 
+          // because we immediately add all elements from newSet into seenIds.current
+          merged.forEach(r => newSet.add(`${r.ts}-${r.session}-${r.turn}`));
+          return merged;
         });
+        newSet.forEach(k => seenIds.current.add(k));
+
         setRoutes(prev => {
           const newRoutes = parsed.map(r => r.route || 'unknown');
           return Array.from(new Set([...prev, ...newRoutes]));
         });
+        
         setLoading(false);
       })
       .catch(err => {
@@ -63,18 +73,37 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     const eventSource = new EventSource('/api/spend/stream');
     
+    let buffer: SpendRecord[] = [];
+    let flushTimeout: ReturnType<typeof setTimeout> | null = null;
+    
+    const flushBuffer = () => {
+      if (buffer.length === 0) return;
+      
+      const newRecords = [...buffer];
+      buffer = []; // clear early
+      
+      setRecords(prev => [...prev, ...newRecords]);
+      
+      const routesToAdd = Array.from(new Set(newRecords.map(r => r.route || 'unknown')));
+      setRoutes(prev => {
+        const missing = routesToAdd.filter(r => !prev.includes(r));
+        return missing.length > 0 ? [...prev, ...missing] : prev;
+      });
+      
+      flushTimeout = null;
+    };
+
     eventSource.onmessage = (event) => {
       try {
         const record = JSON.parse(event.data);
-        setRecords(prev => {
-          // Prevent exact duplicates if overlap with initial fetch
-          const key = `${record.ts}-${record.session}-${record.turn}`;
-          if (prev.some(r => `${r.ts}-${r.session}-${r.turn}` === key)) return prev;
-          return [...prev, record];
-        });
-        // Also ensure new routes are added to the route filter list
-        const routeName = record.route || 'unknown';
-        setRoutes(prev => prev.includes(routeName) ? prev : [...prev, routeName]);
+        const key = `${record.ts}-${record.session}-${record.turn}`;
+        if (seenIds.current.has(key)) return;
+        seenIds.current.add(key);
+        
+        buffer.push(record);
+        if (!flushTimeout) {
+          flushTimeout = setTimeout(flushBuffer, 250);
+        }
       } catch (err) {
         console.error('Failed to parse incoming SSE record', err, event.data);
       }
@@ -82,10 +111,13 @@ export const Dashboard: React.FC = () => {
 
     eventSource.onerror = (err) => {
       console.error('SSE connection error:', err);
-      // EventSource automatically attempts to reconnect, so we don't need to manually recreate it
     };
 
     return () => {
+      if (flushTimeout) {
+        clearTimeout(flushTimeout);
+        flushBuffer();
+      }
       eventSource.close();
     };
   }, []);
@@ -108,14 +140,18 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8">
       <header className="flex flex-col items-center justify-center mb-8 text-center">
-        <h1 className="text-4xl font-bold glow-text tracking-tight mb-2">
+        <h1 className="text-5xl font-extrabold glow-text tracking-tighter mb-4">
           Your {activeRoute === 'all' ? 'AI' : activeRoute} tokens visualized.
         </h1>
-        <p className="text-gray-400 mb-6">See under the hood where your tokens go!</p>
-        <div className="flex gap-2 bg-surface/50 p-1 rounded-xl backdrop-blur border border-white/10">
+        <p className="text-gray-300 max-w-2xl text-lg font-medium mb-8">See under the hood where your tokens go!</p>
+        <div className="flex flex-wrap justify-center gap-4">
           <button
             onClick={() => setActiveRoute('all')}
-            className={`px-4 py-2 rounded-lg transition-all font-medium text-sm ${activeRoute === 'all' ? 'bg-primary text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+            className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
+              activeRoute === 'all' 
+                ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.5)]' 
+                : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+            }`}
           >
             All Agents
           </button>
@@ -123,7 +159,11 @@ export const Dashboard: React.FC = () => {
             <button
               key={route}
               onClick={() => setActiveRoute(route)}
-              className={`px-4 py-2 rounded-lg transition-all font-medium text-sm ${activeRoute === route ? 'bg-primary text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
+              className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
+                activeRoute === route 
+                  ? 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.5)]' 
+                  : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200'
+              }`}
             >
               {route}
             </button>
@@ -162,7 +202,7 @@ export const Dashboard: React.FC = () => {
       <ActiveFlow metrics={metrics} onSessionSelect={setFocusedSession} />
       <Insights insights={insights} topPrompts={metrics.topPrompts} sessions={metrics.sessions} onSessionSelect={setFocusedSession} />
       <Charts metrics={metrics} />
-      <SessionsTable metrics={metrics} focusedSession={focusedSession} onSessionClear={() => setFocusedSession(null)} />
+      <SessionsTable metrics={metrics} focusedSession={focusedSession} onSessionClear={clearFocus} />
       <WeightsControl 
         models={Object.keys(metrics.modelBreakdown)}
         weightsConfig={weightsConfig}
