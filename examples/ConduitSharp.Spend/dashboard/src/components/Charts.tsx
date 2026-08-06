@@ -1,10 +1,8 @@
 import React from 'react';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell
-} from 'recharts';
 import type { MetricsData } from '../utils/parser';
 
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
+const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
 
 export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
   // Format daily usage data
@@ -15,6 +13,7 @@ export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
       CW: counts.cacheWrite,
       CR: counts.cacheRead,
       Out: counts.out,
+      Total: counts.in + counts.cacheWrite + counts.cacheRead + counts.out
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -31,62 +30,97 @@ export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
     .filter(d => d.Total > 0)
     .sort((a, b) => b.Total - a.Total);
 
+  const totalAllTokens = modelData.reduce((acc, curr) => acc + curr.Total, 0);
+
+  const maxDaily = Math.max(...dailyData.map(d => d.Total), 1);
+
   return (
     <div className="space-y-6 mt-8">
       <h2 className="text-2xl font-bold glow-text">Usage Charts</h2>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Daily Usage Chart */}
-        <div className="glass-panel p-6 animate-slide-up" data-testid="chart-daily">
-          <h3 className="text-xl font-semibold mb-4 text-center">Tokens per Day</h3>
-          <div className="w-full h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dailyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="date" stroke="#9ca3af" />
-                <YAxis stroke="#9ca3af" />
-                <RechartsTooltip
-                  contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
-                  itemStyle={{ color: '#e5e7eb' }}
-                  formatter={(value: any) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                />
-                <Legend />
-                <Bar dataKey="In" stackId="a" fill="#3b82f6" name="In" />
-                <Bar dataKey="CW" stackId="a" fill="#ec4899" name="Cache Write" />
-                <Bar dataKey="CR" stackId="a" fill="#8b5cf6" name="Cache Read" />
-                <Bar dataKey="Out" stackId="a" fill="#f59e0b" name="Out" />
-              </BarChart>
-            </ResponsiveContainer>
+        <div className="glass-panel p-6 animate-slide-up flex flex-col" data-testid="chart-daily">
+          <div className="flex flex-col sm:flex-row justify-between items-center sm:items-start mb-8 gap-4">
+            <h3 className="text-xl font-semibold text-center sm:text-left">Tokens per Day</h3>
+            <div className="flex gap-3 text-xs font-mono bg-black/20 p-2 rounded-lg border border-white/5">
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>In</span>
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-pink-500 shadow-[0_0_8px_rgba(236,72,153,0.6)]"></div>CW</span>
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(139,92,246,0.6)]"></div>CR</span>
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]"></div>Out</span>
+            </div>
+          </div>
+          
+          <div className="flex-1 flex items-end gap-1 sm:gap-2 h-52 mt-auto relative px-2">
+            {dailyData.length > 0 ? dailyData.map((d) => {
+              const heightPct = (d.Total / maxDaily) * 100;
+              // Prevent division by zero
+              const safeTotal = d.Total || 1;
+              
+              return (
+                <div key={d.date} className="flex-1 flex flex-col justify-end items-center group relative h-full">
+                  {/* Tooltip */}
+                  <div className="absolute bottom-[calc(100%+10px)] opacity-0 group-hover:opacity-100 transition-all duration-200 bg-surface/95 backdrop-blur-xl border border-white/10 text-xs rounded-xl p-4 z-10 pointer-events-none shadow-2xl scale-95 group-hover:scale-100 origin-bottom min-w-[140px]">
+                    <div className="font-bold mb-3 text-gray-200 border-b border-white/10 pb-2">{new Date(d.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</div>
+                    <div className="flex justify-between gap-4 mb-1"><span className="text-gray-400">In:</span> <span className="text-blue-400 font-mono">{formatCompact(d.In || 0)}</span></div>
+                    <div className="flex justify-between gap-4 mb-1"><span className="text-gray-400">CW:</span> <span className="text-pink-400 font-mono">{formatCompact(d.CW || 0)}</span></div>
+                    <div className="flex justify-between gap-4 mb-1"><span className="text-gray-400">CR:</span> <span className="text-purple-400 font-mono">{formatCompact(d.CR || 0)}</span></div>
+                    <div className="flex justify-between gap-4 mb-2"><span className="text-gray-400">Out:</span> <span className="text-amber-400 font-mono">{formatCompact(d.Out || 0)}</span></div>
+                    <div className="flex justify-between gap-4 pt-2 border-t border-white/10"><span className="text-gray-300 font-bold">Total:</span> <span className="text-secondary font-mono font-bold">{formatCompact(d.Total || 0)}</span></div>
+                  </div>
+                  
+                  {/* Stacked Bar */}
+                  <div className="w-full max-w-[40px] flex flex-col justify-end rounded-t-md overflow-hidden relative group-hover:brightness-125 transition-all cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.2)] group-hover:shadow-[0_0_20px_rgba(255,255,255,0.1)]" style={{ height: `${heightPct}%`, minHeight: heightPct > 0 ? '4px' : '0' }}>
+                    <div className="w-full bg-amber-500/90 transition-all duration-1000 hover:bg-amber-400" style={{ height: `${((d.Out || 0) / safeTotal) * 100}%` }}></div>
+                    <div className="w-full bg-purple-500/90 transition-all duration-1000 hover:bg-purple-400" style={{ height: `${((d.CR || 0) / safeTotal) * 100}%` }}></div>
+                    <div className="w-full bg-pink-500/90 transition-all duration-1000 hover:bg-pink-400" style={{ height: `${((d.CW || 0) / safeTotal) * 100}%` }}></div>
+                    <div className="w-full bg-blue-500/90 transition-all duration-1000 hover:bg-blue-400" style={{ height: `${((d.In || 0) / safeTotal) * 100}%` }}></div>
+                  </div>
+                  
+                  <div className="text-[10px] text-gray-500 mt-3 truncate w-full text-center font-mono">
+                    {new Date(d.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                  </div>
+                </div>
+              );
+            }) : <div className="text-gray-500 w-full text-center mt-20">No data available</div>}
           </div>
         </div>
 
-        {/* Model Breakdown Chart */}
-        <div className="glass-panel p-6 animate-slide-up" style={{ animationDelay: '100ms' }} data-testid="chart-model">
+        <div className="glass-panel p-6 animate-slide-up flex flex-col" style={{ animationDelay: '100ms' }} data-testid="chart-model">
           <h3 className="text-xl font-semibold mb-4 text-center">Tokens by Model</h3>
-          <div className="w-full h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <Pie
-                  data={modelData}
-                  dataKey="Total"
-                  nameKey="model"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={100}
-                  label={({ percent }) => `${percent !== undefined ? (percent * 100).toFixed(0) : 0}%`}
-                >
-                  {modelData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <RechartsTooltip
-                  contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
-                  itemStyle={{ color: '#e5e7eb' }}
-                  formatter={(value: any) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="w-full h-72 flex flex-col overflow-y-auto custom-scrollbar pr-2 relative">
+            
+            <div className="flex items-center justify-between mb-4 border-b border-white/10 pb-2">
+              <span className="font-bold text-gray-300 text-sm">Total Usage</span>
+              <span className="font-bold text-secondary">{formatCompact(totalAllTokens)}</span>
+            </div>
+            
+            <div className="flex-1 space-y-4">
+              {modelData.map((d, idx) => {
+                const percent = totalAllTokens > 0 ? (d.Total / totalAllTokens) * 100 : 0;
+                return (
+                  <div key={d.model} className="w-full group">
+                    <div className="flex justify-between text-sm mb-1 items-end">
+                      <div className="flex items-center gap-2 overflow-hidden pr-2">
+                        <div className="w-3 h-3 rounded-sm shrink-0 transition-transform group-hover:scale-125" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></div>
+                        <span className="font-mono text-gray-300 truncate">{d.model}</span>
+                      </div>
+                      <span className="text-gray-400 font-mono text-xs whitespace-nowrap">
+                        {formatCompact(d.Total)} <span className="text-gray-500 font-bold ml-1">{percent.toFixed(1)}%</span>
+                      </span>
+                    </div>
+                    <div className="w-full bg-black/40 rounded-full h-2 overflow-hidden shadow-inner relative">
+                      <div 
+                        className="h-full rounded-full transition-all duration-1000 ease-out relative"
+                        style={{ width: `${percent}%`, backgroundColor: COLORS[idx % COLORS.length] }}
+                      >
+                        <div className="absolute inset-0 bg-white/20" style={{ maskImage: 'linear-gradient(to right, transparent, black)', WebkitMaskImage: 'linear-gradient(to right, transparent, black)' }}></div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 

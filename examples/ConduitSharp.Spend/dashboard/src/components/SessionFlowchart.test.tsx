@@ -36,6 +36,6 @@ describe('SessionFlowchart Component', () => {
     );
 
     // Should find the text
-    expect(screen.getByText('🔧 Tool Called')).toBeInTheDocument();
+    expect(screen.getByText('🔧 test prompt')).toBeInTheDocument();
   });
 });

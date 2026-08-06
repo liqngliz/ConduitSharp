@@ -23,30 +23,25 @@ const mockMetrics: MetricsData = {
   ],
 };
 
-const dummyProps = {
-  startDate: '2026-08-01',
-  setStartDate: () => {},
-  endDate: '2026-08-07',
-  setEndDate: () => {},
-};
+
 
 describe('Metrics Component', () => {
   it('renders total input tokens correctly', () => {
-    render(<Metrics metrics={mockMetrics} routeName="Claude" {...dummyProps} />);
-    expect(screen.getByText('1,500')).toBeInTheDocument();
+    render(<Metrics metrics={mockMetrics} routeName="Claude" />);
+    expect(screen.getAllByText('1.5K').length).toBeGreaterThan(0);
   });
 
 
 
   it('shows Caching insight when cache is highest', () => {
     const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, in: 100, out: 50, cacheRead: 500, cacheWrite: 0 } };
-    render(<Metrics metrics={metrics} routeName="Claude" {...dummyProps} />);
+    render(<Metrics metrics={metrics} routeName="Claude" />);
     expect(screen.getByText(/most usage is Caching/)).toBeInTheDocument();
   });
 
   it('shows Writing output insight when output is highest', () => {
     const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, in: 100, out: 1000, cacheRead: 10, cacheWrite: 0 } };
-    render(<Metrics metrics={metrics} routeName="Claude" {...dummyProps} />);
+    render(<Metrics metrics={metrics} routeName="Claude" />);
     expect(screen.getByText(/most usage is Writing output/)).toBeInTheDocument();
   });
 });

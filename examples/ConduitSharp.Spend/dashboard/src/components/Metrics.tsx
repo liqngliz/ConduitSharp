@@ -29,8 +29,13 @@ export const Metrics: React.FC<{ metrics: MetricsData; routeName: string }> = ({
               </span>
             </span>
           </h3>
-          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={totalTokens} /></p>
-          <p className="text-gray-500 text-xs mt-2"><AnimatedNumber value={metrics.totals.in} /> in + <AnimatedNumber value={metrics.totals.cacheWrite} /> cw + <AnimatedNumber value={metrics.totals.cacheRead} /> cr + <AnimatedNumber value={metrics.totals.out} /> out</p>
+          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={totalTokens} compact /></p>
+          <p className="text-gray-500 text-xs mt-2 font-mono">
+            In:<span className="text-blue-500"><AnimatedNumber value={metrics.totals.in} compact /></span> | 
+            CW:<span className="text-pink-500"><AnimatedNumber value={metrics.totals.cacheWrite} compact /></span> | 
+            CR:<span className="text-purple-500"><AnimatedNumber value={metrics.totals.cacheRead} compact /></span> | 
+            Out:<span className="text-amber-500"><AnimatedNumber value={metrics.totals.out} compact /></span>
+          </p>
         </div>
         <div className="glass-panel p-6 animate-fade-in flex flex-col items-center text-center" style={{ animationDelay: '100ms' }}>
           <h3 className="text-gray-400 text-sm font-medium flex items-center justify-center gap-1">
@@ -42,8 +47,8 @@ export const Metrics: React.FC<{ metrics: MetricsData; routeName: string }> = ({
               </span>
             </span>
           </h3>
-          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={totalSessions} /></p>
-          <p className="text-gray-500 text-xs mt-2">Each one used <AnimatedNumber value={avgSessionTokens} /> tokens average</p>
+          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={totalSessions} compact /></p>
+          <p className="text-gray-500 text-xs mt-2">Each one used <span className="text-secondary"><AnimatedNumber value={avgSessionTokens} compact /></span> tokens average</p>
         </div>
         <div className="glass-panel p-6 animate-fade-in flex flex-col items-center text-center" style={{ animationDelay: '200ms' }}>
           <h3 className="text-gray-400 text-sm font-medium flex items-center justify-center gap-1">
@@ -55,12 +60,12 @@ export const Metrics: React.FC<{ metrics: MetricsData; routeName: string }> = ({
               </span>
             </span>
           </h3>
-          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={metrics.totals.messagesSent} /></p>
-          <p className="text-gray-500 text-xs mt-2">Each one cost <AnimatedNumber value={avgMessageTokens} /> tokens average</p>
+          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={metrics.totals.messagesSent} compact /></p>
+          <p className="text-gray-500 text-xs mt-2">Each one cost <AnimatedNumber value={avgMessageTokens} compact /> tokens average</p>
         </div>
         <div className="glass-panel p-6 animate-fade-in flex flex-col items-center text-center" style={{ animationDelay: '300ms' }}>
           <h3 className="text-gray-400 text-sm font-medium flex items-center justify-center gap-1">
-            {routeName === 'All Agents' ? 'All Agents Wrote (Tokens)' : `${routeName.charAt(0).toUpperCase() + routeName.slice(1)} Wrote (Tokens)`}
+            {routeName === 'All Agents' ? 'Tokens Out' : `${routeName.charAt(0).toUpperCase() + routeName.slice(1)} Wrote (Tokens)`}
             <span className="relative group cursor-help text-xs bg-white/10 rounded-full w-4 h-4 flex items-center justify-center">
               ?
               <span className="absolute bottom-full mb-2 hidden group-hover:block w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg z-10 left-1/2 -translate-x-1/2 whitespace-normal">
@@ -68,8 +73,8 @@ export const Metrics: React.FC<{ metrics: MetricsData; routeName: string }> = ({
               </span>
             </span>
           </h3>
-          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={metrics.totals.out} /></p>
-          <p className="text-gray-500 text-xs mt-2"><AnimatedNumber value={wrotePercent} />% of total -- most usage is {mostUsageInsight}</p>
+          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={metrics.totals.out} compact /></p>
+          <p className="text-gray-500 text-xs mt-2"><span className="text-amber-500"><AnimatedNumber value={wrotePercent} />%</span> of total -- most usage is {mostUsageInsight}</p>
         </div>
       </div>
       <div className="text-center mt-2">
