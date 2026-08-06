@@ -155,6 +155,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Must stay >= 22.12: oxlint's native bindings declare
+      # `engines: ^20.19.0 || >=22.12.0`, and npm silently SKIPS an optional dependency
+      # whose engines don't match — leaving an empty node_modules/@oxlint and a lint step
+      # that dies on "Cannot find native binding". '22' resolves to the latest 22.x.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -164,9 +168,9 @@ jobs:
       - name: Install
         run: npm ci
 
-      # `npm run lint` is deliberately not here: oxlint's native binding fails to install
-      # (empty node_modules/@oxlint after a clean `npm ci`), so the step has never been run
-      # against this code and would gate CI on an unknown.
+      - name: Lint
+        run: npm run lint
+
       - name: Test & Collect Coverage
         run: npx vitest run --coverage
 
