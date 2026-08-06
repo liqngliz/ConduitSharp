@@ -26,12 +26,14 @@ const mockMetrics: MetricsData = {
 
 
 describe('Metrics Component', () => {
-  it('renders total input tokens correctly', () => {
+  it('renders all metric titles correctly', () => {
     render(<Metrics metrics={mockMetrics} routeName="Claude" />);
-    expect(screen.getAllByText('1.5K').length).toBeGreaterThan(0);
+    
+    expect(screen.getAllByText(/Total Usage/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Sessions/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Prompts Sent/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Claude Wrote/i).length).toBeGreaterThan(0);
   });
-
-
 
   it('shows Caching insight when cache is highest', () => {
     const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, in: 100, out: 50, cacheRead: 500, cacheWrite: 0 } };

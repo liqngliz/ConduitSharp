@@ -11,6 +11,8 @@
 @layer utilities {
   .glass-panel {
     @apply bg-surface/80 backdrop-blur-md border border-white/10 shadow-xl rounded-2xl;
+    transform: translateZ(0);
+    backface-visibility: hidden;
   }
   .glow-text {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary;

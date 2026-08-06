@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 
-export const AnimatedNumber: React.FC<{ value: number; durationMs?: number; compact?: boolean }> = ({ value, durationMs = 800, compact = false }) => {
+export const AnimatedNumber: React.FC<{ value: number; durationMs?: number; compact?: boolean; as?: 'span' | 'tspan' }> = ({ value, durationMs = 800, compact = false, as = 'span' }) => {
   const [displayValue, setDisplayValue] = useState(value);
   const currentDisplay = useRef(displayValue);
 
@@ -34,11 +34,12 @@ export const AnimatedNumber: React.FC<{ value: number; durationMs?: number; comp
     return () => window.cancelAnimationFrame(frameId);
   }, [value, durationMs]);
 
-  return (
-    <>
-      {compact
-        ? Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(displayValue)
-        : displayValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-    </>
-  );
+  const content = compact
+    ? Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(displayValue)
+    : displayValue.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+  if (as === 'tspan') {
+    return <tspan className="tabular-nums">{content}</tspan>;
+  }
+  return <span className="tabular-nums">{content}</span>;
 };

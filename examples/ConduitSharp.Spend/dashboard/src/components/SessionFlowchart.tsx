@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import type { MetricsData } from '../utils/parser';
-
-const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
+import { AnimatedNumber } from './AnimatedNumber';
 
 type SortOrder = 'latest' | 'oldest' | 'total' | 'in' | 'cw' | 'cr' | 'out';
 
@@ -23,8 +22,9 @@ export const Flowchart: React.FC<{
   prompts: FlowchartPrompt[];
   totals: { in: number; cw: number; cr: number; out: number };
   title: string;
+  headerTitle?: React.ReactNode;
   onPromptClick?: (sessionId: string) => void;
-}> = ({ prompts, totals, title, onPromptClick }) => {
+}> = ({ prompts, totals, title, headerTitle, onPromptClick }) => {
   const [sortOrder, setSortOrder] = useState<SortOrder>('latest');
 
   const totalTokens = totals.in + totals.out + totals.cr + totals.cw;
@@ -47,7 +47,7 @@ export const Flowchart: React.FC<{
     return 0;
   });
 
-  const nodeHeight = 145;
+  const nodeHeight = 125;
   const gap = 25;
 
   const midTargetHeight = 4 * (nodeHeight + gap) * 0.8;
@@ -102,8 +102,15 @@ export const Flowchart: React.FC<{
   };
 
   return (
-    <div className="w-full bg-gray-900/40 rounded-xl border border-white/5 animate-fade-in p-4 my-2 shadow-inner">
-      <div className="flex justify-end items-center mb-2">
+    <div className="w-full bg-gray-900/40 rounded-xl border border-white/5 animate-fade-in px-6 py-4 my-2 shadow-inner">
+      <div className="flex justify-between items-center mb-2">
+        <div>
+          {headerTitle && (
+            <h3 className="text-xl font-semibold text-white">
+              {headerTitle}
+            </h3>
+          )}
+        </div>
         <select 
           value={sortOrder} 
           onChange={(e) => setSortOrder(e.target.value as SortOrder)}
@@ -133,32 +140,40 @@ export const Flowchart: React.FC<{
           const crThick = getThickness(p.cacheRead);
           const outThick = getThickness(p.out);
 
+          const totalNodeThick = inThick + cwThick + crThick + outThick;
+          let currentPathY = y + (nodeHeight / 2) - (totalNodeThick / 2);
+
+          const yIn = currentPathY + inThick / 2; currentPathY += inThick;
+          const yCw = currentPathY + cwThick / 2; currentPathY += cwThick;
+          const yCr = currentPathY + crThick / 2; currentPathY += crThick;
+          const yOut = currentPathY + outThick / 2;
+
           return (
             <g key={`paths-left-${p.ts}-${p.total}`} style={{ mixBlendMode: 'screen' }}>
               {p.in > 0 && (
                 <path 
-                  d={createPath(340, y + 25, 440, midYIn + hIn / 2)} 
+                  d={createPath(340, yIn, 440, midYIn + hIn / 2)} 
                   fill="none" stroke="#3b82f6" strokeWidth={inThick} strokeOpacity="0.5"
                   style={{ transition: 'd 0.8s ease-in-out, stroke-opacity 0.8s' }} className="hover:stroke-opacity-100"
                 />
               )}
               {p.cacheWrite > 0 && (
                 <path 
-                  d={createPath(340, y + 42, 440, midYCw + hCw / 2)} 
+                  d={createPath(340, yCw, 440, midYCw + hCw / 2)} 
                   fill="none" stroke="#ec4899" strokeWidth={cwThick} strokeOpacity="0.5"
                   style={{ transition: 'd 0.8s ease-in-out, stroke-opacity 0.8s' }} className="hover:stroke-opacity-100"
                 />
               )}
               {p.cacheRead > 0 && (
                 <path 
-                  d={createPath(340, y + 55, 440, midYCr + hCr / 2)} 
+                  d={createPath(340, yCr, 440, midYCr + hCr / 2)} 
                   fill="none" stroke="#8b5cf6" strokeWidth={crThick} strokeOpacity="0.5"
                   style={{ transition: 'd 0.8s ease-in-out, stroke-opacity 0.8s' }} className="hover:stroke-opacity-100"
                 />
               )}
               {p.out > 0 && (
                 <path 
-                  d={createPath(340, y + 70, 440, midYOut + hOut / 2)} 
+                  d={createPath(340, yOut, 440, midYOut + hOut / 2)} 
                   fill="none" stroke="#f59e0b" strokeWidth={outThick} strokeOpacity="0.5"
                   style={{ transition: 'd 0.8s ease-in-out, stroke-opacity 0.8s' }} className="hover:stroke-opacity-100"
                 />
@@ -169,57 +184,77 @@ export const Flowchart: React.FC<{
 
         {/* Paths from Middle to Right */}
         <g style={{ mixBlendMode: 'screen' }}>
-          {hIn > 0 && (
-            <path d={createPath(560, midYIn + hIn / 2, 760, totalY + totalHeight * 0.2)} fill="none" stroke="#3b82f6" strokeWidth={getThickness(totals.in)} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />
-          )}
-          {hCw > 0 && (
-            <path d={createPath(560, midYCw + hCw / 2, 760, totalY + totalHeight * 0.4)} fill="none" stroke="#ec4899" strokeWidth={getThickness(totals.cw)} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />
-          )}
-          {hCr > 0 && (
-            <path d={createPath(560, midYCr + hCr / 2, 760, totalY + totalHeight * 0.6)} fill="none" stroke="#8b5cf6" strokeWidth={getThickness(totals.cr)} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />
-          )}
-          {hOut > 0 && (
-            <path d={createPath(560, midYOut + hOut / 2, 760, totalY + totalHeight * 0.8)} fill="none" stroke="#f59e0b" strokeWidth={getThickness(totals.out)} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />
-          )}
+          {(() => {
+            const tInThick = getThickness(totals.in);
+            const tCwThick = getThickness(totals.cw);
+            const tCrThick = getThickness(totals.cr);
+            const tOutThick = getThickness(totals.out);
+            const totalRightThick = tInThick + tCwThick + tCrThick + tOutThick;
+            let rightPathY = totalY + (totalHeight / 2) - (totalRightThick / 2);
+            
+            const rYIn = rightPathY + tInThick / 2; rightPathY += tInThick;
+            const rYCw = rightPathY + tCwThick / 2; rightPathY += tCwThick;
+            const rYCr = rightPathY + tCrThick / 2; rightPathY += tCrThick;
+            const rYOut = rightPathY + tOutThick / 2;
+
+            return (
+              <>
+                {hIn > 0 && <path d={createPath(560, midYIn + hIn / 2, 760, rYIn)} fill="none" stroke="#3b82f6" strokeWidth={tInThick} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />}
+                {hCw > 0 && <path d={createPath(560, midYCw + hCw / 2, 760, rYCw)} fill="none" stroke="#ec4899" strokeWidth={tCwThick} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />}
+                {hCr > 0 && <path d={createPath(560, midYCr + hCr / 2, 760, rYCr)} fill="none" stroke="#8b5cf6" strokeWidth={tCrThick} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />}
+                {hOut > 0 && <path d={createPath(560, midYOut + hOut / 2, 760, rYOut)} fill="none" stroke="#f59e0b" strokeWidth={tOutThick} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />}
+              </>
+            );
+          })()}
         </g>
 
         {/* Middle Nodes (IN, CW, CR, OUT) */}
         {hIn > 0 && (
           <g transform={`translate(440, ${midYIn})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
             <rect width="120" height={hIn} rx="6" fill="#1f2937" stroke="#3b82f6" strokeWidth="1" style={{ transition: 'height 0.8s ease-in-out' }} />
-            <text x="60" y={hIn / 2 - 4} fill="#9ca3af" fontSize="10" textAnchor="middle" fontWeight="bold">IN</text>
-            <text x="60" y={hIn / 2 + 12} fill="#f3f4f6" fontSize="14" textAnchor="middle" fontWeight="bold">{formatCompact(totals.in)}</text>
+            <g transform={`translate(0, ${hIn / 2})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+              <text x="60" y="-4" fill="#9ca3af" fontSize="10" textAnchor="middle" fontWeight="bold">IN</text>
+              <text x="60" y="12" fill="#f3f4f6" fontSize="14" textAnchor="middle" fontWeight="bold"><AnimatedNumber value={totals.in} compact as="tspan" /></text>
+            </g>
           </g>
         )}
         {hCw > 0 && (
           <g transform={`translate(440, ${midYCw})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
             <rect width="120" height={hCw} rx="6" fill="#1f2937" stroke="#ec4899" strokeWidth="1" style={{ transition: 'height 0.8s ease-in-out' }} />
-            <text x="60" y={hCw / 2 - 4} fill="#9ca3af" fontSize="10" textAnchor="middle" fontWeight="bold">CW</text>
-            <text x="60" y={hCw / 2 + 12} fill="#f3f4f6" fontSize="14" textAnchor="middle" fontWeight="bold">{formatCompact(totals.cw)}</text>
+            <g transform={`translate(0, ${hCw / 2})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+              <text x="60" y="-4" fill="#9ca3af" fontSize="10" textAnchor="middle" fontWeight="bold">CW</text>
+              <text x="60" y="12" fill="#f3f4f6" fontSize="14" textAnchor="middle" fontWeight="bold"><AnimatedNumber value={totals.cw} compact as="tspan" /></text>
+            </g>
           </g>
         )}
         {hCr > 0 && (
           <g transform={`translate(440, ${midYCr})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
             <rect width="120" height={hCr} rx="6" fill="#1f2937" stroke="#8b5cf6" strokeWidth="1" style={{ transition: 'height 0.8s ease-in-out' }} />
-            <text x="60" y={hCr / 2 - 4} fill="#9ca3af" fontSize="10" textAnchor="middle" fontWeight="bold">CR</text>
-            <text x="60" y={hCr / 2 + 12} fill="#f3f4f6" fontSize="14" textAnchor="middle" fontWeight="bold">{formatCompact(totals.cr)}</text>
+            <g transform={`translate(0, ${hCr / 2})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+              <text x="60" y="-4" fill="#9ca3af" fontSize="10" textAnchor="middle" fontWeight="bold">CR</text>
+              <text x="60" y="12" fill="#f3f4f6" fontSize="14" textAnchor="middle" fontWeight="bold"><AnimatedNumber value={totals.cr} compact as="tspan" /></text>
+            </g>
           </g>
         )}
         {hOut > 0 && (
           <g transform={`translate(440, ${midYOut})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
             <rect width="120" height={hOut} rx="6" fill="#1f2937" stroke="#f59e0b" strokeWidth="1" style={{ transition: 'height 0.8s ease-in-out' }} />
-            <text x="60" y={hOut / 2 - 4} fill="#9ca3af" fontSize="10" textAnchor="middle" fontWeight="bold">OUT</text>
-            <text x="60" y={hOut / 2 + 12} fill="#f3f4f6" fontSize="14" textAnchor="middle" fontWeight="bold">{formatCompact(totals.out)}</text>
+            <g transform={`translate(0, ${hOut / 2})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+              <text x="60" y="-4" fill="#9ca3af" fontSize="10" textAnchor="middle" fontWeight="bold">OUT</text>
+              <text x="60" y="12" fill="#f3f4f6" fontSize="14" textAnchor="middle" fontWeight="bold"><AnimatedNumber value={totals.out} compact as="tspan" /></text>
+            </g>
           </g>
         )}
 
         {/* Right Node (Total) */}
         <g transform={`translate(760, ${totalY})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
           <rect width="220" height={totalHeight} rx="12" fill="#1f2937" stroke="#06B6D4" strokeWidth="2" className="shadow-lg" style={{ transition: 'height 0.8s ease-in-out' }} />
-          <text x="110" y={totalHeight/2 - 10} fill="#9ca3af" fontSize="14" textAnchor="middle" fontWeight="600" letterSpacing="1">{title}</text>
-          <text x="110" y={totalHeight/2 + 20} fill="#f3f4f6" fontSize="28" textAnchor="middle" fontWeight="bold">
-            {formatCompact(totalTokens)}
-          </text>
+          <g transform={`translate(0, ${totalHeight/2})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+            <text x="110" y="-10" fill="#9ca3af" fontSize="14" textAnchor="middle" fontWeight="600" letterSpacing="1">{title}</text>
+            <text x="110" y="20" fill="#f3f4f6" fontSize="28" textAnchor="middle" fontWeight="bold">
+              <AnimatedNumber value={totalTokens} compact as="tspan" />
+            </text>
+          </g>
         </g>
 
         {/* Left Nodes (Prompts) */}
@@ -270,7 +305,7 @@ export const Flowchart: React.FC<{
                 {timeStr}
               </text>
               <text x={320 - 12} y="25" fill="#f3f4f6" fontSize="15" textAnchor="end" fontWeight="bold">
-                {formatCompact(p.total)}
+                <AnimatedNumber value={p.total} compact as="tspan" />
               </text>
               <text x="12" y="45" fill={promptColor} fontSize="14">
                 {promptText}
@@ -282,10 +317,10 @@ export const Flowchart: React.FC<{
                 {p.sessionId}{p.turnCount > 15 ? ' 🏃‍♂️' : ''}
               </text>
               <text x="12" y="105" fill="#9ca3af" fontSize="11" className="font-mono">
-                In:<tspan fill="#3b82f6">{formatCompact(p.in)}</tspan>|
-                CW:<tspan fill="#ec4899">{formatCompact(p.cacheWrite)}</tspan>|
-                CR:<tspan fill="#8b5cf6">{formatCompact(p.cacheRead)}</tspan>|
-                Out:<tspan fill="#f59e0b">{formatCompact(p.out)}</tspan>
+                In:<tspan fill="#3b82f6"><AnimatedNumber value={p.in} compact as="tspan" /></tspan>|
+                CW:<tspan fill="#ec4899"><AnimatedNumber value={p.cacheWrite} compact as="tspan" /></tspan>|
+                CR:<tspan fill="#8b5cf6"><AnimatedNumber value={p.cacheRead} compact as="tspan" /></tspan>|
+                Out:<tspan fill="#f59e0b"><AnimatedNumber value={p.out} compact as="tspan" /></tspan>
               </text>
 
               {onPromptClick && (

@@ -49,18 +49,16 @@ export const ActiveFlow: React.FC<{
     );
   }
 
-  // Node height is 145, gap is 25 in Flowchart
+  // Node height is 125, gap is 25 in Flowchart
   // We want to show ~4.5 prompts when collapsed.
-  // Height calculation: gap + 4 * (145 + 25) + (145 / 2) = 25 + 680 + 72.5 = 777.5
+  // Height calculation: gap + 4 * (125 + 25) + (125 / 2) = 25 + 600 + 62.5 = 687.5
   // But Flowchart has some padding in its container.
-  const collapsedHeight = 820; // roughly 4.5 nodes
+  const collapsedHeight = 730; // roughly 4.5 nodes
 
   const needsCollapse = prompts.length >= 5;
 
   return (
     <div className="space-y-4 mt-8 mb-8">
-      <h2 className="text-2xl font-bold glow-text">Active Flow</h2>
-      
       <div className="relative">
         <div 
           className="overflow-hidden transition-all duration-1000 ease-in-out relative"
@@ -74,6 +72,7 @@ export const ActiveFlow: React.FC<{
             prompts={prompts} 
             totals={totals} 
             title="ACTIVE FLOW BUDGET" 
+            headerTitle="Active Flow"
             onPromptClick={onSessionSelect}
           />
         </div>
