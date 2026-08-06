@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using ConduitSharp.Core.Pipeline;
 using ConduitSharp.Gateway;
 using ConduitSharp.Plugin.BodyCaptureToFile;
@@ -15,6 +17,7 @@ var dataDir = Environment.GetEnvironmentVariable("CONDUIT_SPEND_DATA")
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".conduit-spend");
 
 builder.Services.AddSingleton<ISpendStore>(new JsonlSpendStore(dataDir));
+builder.Services.AddSingleton<SpendBroadcaster>();
 builder.Services.AddSingleton<IPipelinePlugin, TokenSpendPlugin>();
 builder.Services.AddSingleton<IPipelinePlugin, BodyCaptureToFilePlugin>();
 
@@ -38,6 +41,51 @@ app.MapGet("/api/spend/{date}", (string date, ISpendStore store) =>
         return store.Read(start, start.AddDays(1).AddTicks(-1));
     }
     return Array.Empty<SpendRecord>();
+});
+
+app.MapGet("/api/spend/stream", async (HttpContext ctx, SpendBroadcaster broadcaster) =>
+{
+    ctx.Response.Headers.ContentType = "text/event-stream";
+    ctx.Response.Headers.CacheControl = "no-cache";
+    ctx.Response.Headers["X-Accel-Buffering"] = "no";
+
+    var jsonOptions = new JsonSerializerOptions
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    var id = broadcaster.Subscribe(out var reader);
+    try
+    {
+        await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+        while (!ctx.RequestAborted.IsCancellationRequested)
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted, timeout.Token);
+            SpendRecord record;
+            try
+            {
+                record = await reader.ReadAsync(linked.Token);
+            }
+            catch (OperationCanceledException) when (ctx.RequestAborted.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (OperationCanceledException)
+            {
+                await ctx.Response.WriteAsync(": keepalive\n\n", ctx.RequestAborted);
+                await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+                continue;
+            }
+
+            await ctx.Response.WriteAsync($"data: {JsonSerializer.Serialize(record, jsonOptions)}\n\n", ctx.RequestAborted);
+            await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+        }
+    }
+    finally
+    {
+        broadcaster.Unsubscribe(id);
+    }
 });
 
 app.MapGet("/info", () => Results.Text(

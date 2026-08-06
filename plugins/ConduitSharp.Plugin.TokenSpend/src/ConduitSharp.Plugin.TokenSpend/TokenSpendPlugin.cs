@@ -103,6 +103,8 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
             : WithUsage(record, body, config);
 
         store.Add(record);
+        var broadcaster = context.RequestServices.GetService(typeof(SpendBroadcaster)) as SpendBroadcaster;
+        broadcaster?.Publish(record);
     }
 
     /// <summary>
