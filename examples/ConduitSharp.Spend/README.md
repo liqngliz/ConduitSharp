@@ -1,4 +1,4 @@
-# ConduitSharp.Spend
+# Token Flow
 
 Track token spend across any AI agent, ships pre-configured with Anthropic and Codex and Local LLM routes.  
 
@@ -9,13 +9,13 @@ One command to launch: Docker run pull image, mount volume, start server. Zero i
 One command, no clone:
 
 ```bash
-docker run -d --restart unless-stopped --name conduit-spend \
+docker run -d --restart unless-stopped --name token-flow \
   -p 4000:4000 -v "$PWD/logs:/data" \
-  ghcr.io/liqngliz/conduit-spend
+  ghcr.io/liqngliz/token-flow
 ```
 
-Serves on `http://localhost:4000`. Spend rows and the wire log land in `./logs`. `GET /` prints
-the setup lines below.
+Serves the dashboard on `http://localhost:4000`. Spend rows and the wire log land in `./logs`.
+`GET /info` prints the setup lines below.
 
 On macOS and Windows a local model server on the host is reachable out of the box, on its default
 loopback binding, with no extra flags.
@@ -23,10 +23,10 @@ loopback binding, with no extra flags.
 ```bash
 # Follow the gateway's output. Startup errors, plugin registration and route
 # validation failures all show up here.
-docker logs -f conduit-spend
+docker logs -f token-flow
 
 # Stop and delete it.
-docker rm -f conduit-spend
+docker rm -f token-flow
 ```
 
 **On Linux** Add the host mapping, which Docker Desktop provides
@@ -52,7 +52,7 @@ Three routes ship in the image:
 To run different ones, pull the shipped config out, edit it, and mount it back:
 
 ```bash
-docker run --rm --entrypoint cat ghcr.io/liqngliz/conduit-spend \
+docker run --rm --entrypoint cat ghcr.io/liqngliz/token-flow \
   Configuration/routes.json > routes.json
 ```
 

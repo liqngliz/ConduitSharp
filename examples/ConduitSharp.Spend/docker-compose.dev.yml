@@ -7,15 +7,15 @@
 # changes still need --build.
 #
 # Its own project name, so it never recreates the container docker-compose.yml owns.
-name: conduit-spend-dev
+name: token-flow-dev
 
 services:
-  spend:
+  token-flow:
     build:
       context: ../..
       dockerfile: examples/ConduitSharp.Spend/Dockerfile
-    image: conduit-spend:dev
-    container_name: conduit-spend-dev
+    image: token-flow:dev
+    container_name: token-flow-dev
     ports:
       - "4000:4000"
     volumes:

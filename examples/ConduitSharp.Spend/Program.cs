@@ -90,7 +90,7 @@ app.MapGet("/api/spend/stream", async (HttpContext ctx, SpendBroadcaster broadca
 
 app.MapGet("/info", () => Results.Text(
     $"""
-     ConduitSharp spend gateway
+     Token Flow
 
        Claude Code   ANTHROPIC_BASE_URL=http://localhost:4000/llm/claude
        Codex         ~/.codex/config.toml -> base_url = "http://localhost:4000/llm/codex/backend-api/codex"

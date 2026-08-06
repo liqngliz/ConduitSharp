@@ -222,6 +222,21 @@ Drop-ins under [plugins/](plugins/), each with its own `src/` and `tests/` — c
 | [ConduitSharp.RateLimit.RedisProtocol](plugins/ConduitSharp.RateLimit.RedisProtocol) | `IRateLimitStore` seam | `ConduitSharp.RateLimit.RedisProtocol` | Swaps the in-memory `rate-limit` store for Redis/Valkey — shared quota across instances |
 | [ConduitSharp.RateLimit.SlidingWindow](plugins/ConduitSharp.RateLimit.SlidingWindow) | `IRateLimiter` seam | `ConduitSharp.RateLimit.SlidingWindow` | Swaps the fixed-window *algorithm* for a sliding log — refuses the 2x burst a fixed window allows across its boundary. The algorithm and the store are separate seams |
 
+## 🔀 Token Flow
+
+A gateway built on ConduitSharp that sits in front of your AI agents and records what every request
+costs in tokens, with a live dashboard. One command, no clone:
+
+```bash
+docker run -d --restart unless-stopped --name token-flow \
+  -p 4000:4000 -v "$PWD/logs:/data" \
+  ghcr.io/liqngliz/token-flow
+```
+
+Ships with Claude Code, Codex, and local OpenAI-compatible routes pre-configured. Dashboard on
+`http://localhost:4000`, one JSON row per request in `./logs`. See
+[examples/ConduitSharp.Spend](examples/ConduitSharp.Spend) for the setup lines each tool needs.
+
 ## Writing a custom plugin
 
 | Language | How |

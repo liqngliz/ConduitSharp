@@ -1,8 +1,8 @@
 # Optional convenience for anyone who prefers compose to `docker run`. Needs no clone: the image
 # is pulled, not built. To build from a checkout instead, use docker-compose.dev.yml.
 services:
-  spend:
-    image: ghcr.io/liqngliz/conduit-spend:latest
+  token-flow:
+    image: ghcr.io/liqngliz/token-flow:latest
     restart: unless-stopped
     ports:
       - "4000:4000"
