@@ -6,10 +6,14 @@ import userEvent from '@testing-library/user-event';
 beforeAll(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-08-04T12:00:00Z'));
+  global.EventSource = vi.fn().mockImplementation(() => ({
+    close: vi.fn(),
+  })) as any;
 });
 
 afterAll(() => {
   vi.useRealTimers();
+  delete (global as any).EventSource;
 });
 
 describe('Dashboard Component', () => {
@@ -42,7 +46,7 @@ describe('Dashboard Component', () => {
       expect(screen.getByText(/tokens visualized/i)).toBeInTheDocument();
     });
 
-    expect(screen.getAllByText('120')[0]).toBeInTheDocument(); // Total tokens (100 in + 20 out)
+    expect(screen.getAllByText('200')[0]).toBeInTheDocument(); // Total Usage is now 100 + (20*5)
     expect(screen.getAllByText('local')[0]).toBeInTheDocument(); // Route button
   });
 

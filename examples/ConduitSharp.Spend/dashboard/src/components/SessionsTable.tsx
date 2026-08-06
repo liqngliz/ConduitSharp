@@ -31,8 +31,8 @@ export const SessionsTable: React.FC<{ metrics: MetricsData }> = ({ metrics }) =
   const sessions = Object.entries(metrics.sessions).map(([id, data]) => ({
     id,
     name: data.sessionName || id,
-    read: data.in + data.cacheRead,
-    written: data.out + data.cacheWrite,
+    read: data.in + data.cacheWrite + data.cacheRead,
+    written: data.out,
     turns: data.turnCount,
     rawIn: data.in,
     rawCacheRead: data.cacheRead,
@@ -85,10 +85,10 @@ export const SessionsTable: React.FC<{ metrics: MetricsData }> = ({ metrics }) =
                   Session Name / ID {getSortIcon('name')}
                 </th>
                 <th className="p-4 text-sm font-semibold text-gray-400 text-right cursor-pointer hover:text-white transition-colors whitespace-nowrap" onClick={() => handleSort('read')}>
-                  Read {getSortIcon('read')}
+                  Input {getSortIcon('read')}
                 </th>
                 <th className="p-4 text-sm font-semibold text-gray-400 text-right cursor-pointer hover:text-white transition-colors whitespace-nowrap" onClick={() => handleSort('written')}>
-                  Write {getSortIcon('written')}
+                  Output {getSortIcon('written')}
                 </th>
                 <th className="p-4 text-sm font-semibold text-gray-400 text-right cursor-pointer hover:text-white transition-colors whitespace-nowrap" onClick={() => handleSort('total')}>
                   Tokens {getSortIcon('total')}
@@ -103,25 +103,27 @@ export const SessionsTable: React.FC<{ metrics: MetricsData }> = ({ metrics }) =
                       className={`border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer ${expandedSessionId === s.id ? 'bg-white/5' : ''}`}
                       onClick={() => toggleExpand(s.id)}
                     >
-                      <td className="p-4">
-                        <div className="font-medium text-gray-200">{s.name}</div>
-                        {s.name !== s.id && <div className="text-xs text-gray-500 font-mono mt-1">{s.id}</div>}
+                      <td className="p-4 max-w-[200px] sm:max-w-[300px]">
+                        <div className={`font-medium truncate ${s.name === s.id && s.turns > 15 ? 'text-primary font-bold' : 'text-gray-200'}`}>{s.name}{s.name === s.id && s.turns > 15 ? ' 🏃‍♂️' : ''}</div>
+                        {s.name !== s.id && <div className={`text-xs font-mono mt-1 truncate ${s.turns > 15 ? 'text-primary font-bold' : 'text-gray-500'}`}>{s.id}{s.turns > 15 ? ' 🏃‍♂️' : ''}</div>}
                       </td>
                       <td className="p-4 text-right">
-                        <div className="font-mono text-gray-300">{s.read.toLocaleString()}</div>
-                        <div className="text-[10px] text-gray-500 font-mono mt-1 flex flex-col items-end">
-                          <span>in:{s.rawIn.toLocaleString()}</span>
-                          <span>cr:{s.rawCacheRead.toLocaleString()}</span>
+                        <div className="font-mono text-gray-300">{s.read.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                        <div className="text-[10px] text-gray-500 font-mono mt-1 flex justify-end gap-1">
+                          <span>in:{s.rawIn.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          <span className="text-gray-600">|</span>
+                          <span>cw:{s.rawCacheWrite.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                          <span className="text-gray-600">|</span>
+                          <span>cr:{s.rawCacheRead.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                         </div>
                       </td>
                       <td className="p-4 text-right">
-                        <div className="font-mono text-gray-300">{s.written.toLocaleString()}</div>
-                        <div className="text-[10px] text-gray-500 font-mono mt-1 flex flex-col items-end">
-                          <span>cw:{s.rawCacheWrite.toLocaleString()}</span>
-                          <span>out:{s.rawOut.toLocaleString()}</span>
+                        <div className="font-mono text-gray-300">{s.written.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
+                        <div className="text-[10px] text-gray-500 font-mono mt-1 flex justify-end">
+                          <span>out:{s.rawOut.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                         </div>
                       </td>
-                      <td className="p-4 text-right font-mono text-secondary font-bold">{(s.read + s.written).toLocaleString()}</td>
+                      <td className="p-4 text-right font-mono text-secondary font-bold">{(s.read + s.written).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                     </tr>
                     {expandedSessionId === s.id && (
                       <tr className="bg-black/20 border-b border-white/5">

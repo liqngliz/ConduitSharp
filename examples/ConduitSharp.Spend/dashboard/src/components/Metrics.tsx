@@ -1,21 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
 import type { MetricsData } from '../utils/parser';
+import { AnimatedNumber } from './AnimatedNumber';
 
 export const Metrics: React.FC<{ metrics: MetricsData; routeName: string }> = ({ metrics, routeName }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isAtBottom, setIsAtBottom] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const checkScroll = () => {
-    if (scrollRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-      setIsAtBottom(scrollHeight <= clientHeight || scrollHeight - scrollTop - clientHeight < 10);
-    }
-  };
-
-  useEffect(() => {
-    checkScroll();
-  }, [isExpanded, metrics.topPrompts]);
   const totalTokens = metrics.totals.in + metrics.totals.out + metrics.totals.cacheRead + metrics.totals.cacheWrite;
   const totalSessions = Object.keys(metrics.sessions).length;
   const avgSessionTokens = totalSessions > 0 ? Math.round(totalTokens / totalSessions) : 0;
@@ -43,8 +29,8 @@ export const Metrics: React.FC<{ metrics: MetricsData; routeName: string }> = ({
               </span>
             </span>
           </h3>
-          <p className="text-3xl font-bold mt-2">{totalTokens.toLocaleString()}</p>
-          <p className="text-gray-500 text-xs mt-2">{metrics.totals.in.toLocaleString()} fresh + {metrics.totals.cacheRead.toLocaleString()} cr + {metrics.totals.cacheWrite.toLocaleString()} cw + {metrics.totals.out.toLocaleString()} written</p>
+          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={totalTokens} /></p>
+          <p className="text-gray-500 text-xs mt-2"><AnimatedNumber value={metrics.totals.in} /> in + <AnimatedNumber value={metrics.totals.cacheWrite} /> cw + <AnimatedNumber value={metrics.totals.cacheRead} /> cr + <AnimatedNumber value={metrics.totals.out} /> out</p>
         </div>
         <div className="glass-panel p-6 animate-fade-in flex flex-col items-center text-center" style={{ animationDelay: '100ms' }}>
           <h3 className="text-gray-400 text-sm font-medium flex items-center justify-center gap-1">
@@ -56,8 +42,8 @@ export const Metrics: React.FC<{ metrics: MetricsData; routeName: string }> = ({
               </span>
             </span>
           </h3>
-          <p className="text-3xl font-bold mt-2">{totalSessions}</p>
-          <p className="text-gray-500 text-xs mt-2">Each one used {avgSessionTokens.toLocaleString()} tokens average</p>
+          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={totalSessions} /></p>
+          <p className="text-gray-500 text-xs mt-2">Each one used <AnimatedNumber value={avgSessionTokens} /> tokens average</p>
         </div>
         <div className="glass-panel p-6 animate-fade-in flex flex-col items-center text-center" style={{ animationDelay: '200ms' }}>
           <h3 className="text-gray-400 text-sm font-medium flex items-center justify-center gap-1">
@@ -69,8 +55,8 @@ export const Metrics: React.FC<{ metrics: MetricsData; routeName: string }> = ({
               </span>
             </span>
           </h3>
-          <p className="text-3xl font-bold mt-2">{metrics.totals.messagesSent.toLocaleString()}</p>
-          <p className="text-gray-500 text-xs mt-2">Each one cost {avgMessageTokens.toLocaleString()} tokens average</p>
+          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={metrics.totals.messagesSent} /></p>
+          <p className="text-gray-500 text-xs mt-2">Each one cost <AnimatedNumber value={avgMessageTokens} /> tokens average</p>
         </div>
         <div className="glass-panel p-6 animate-fade-in flex flex-col items-center text-center" style={{ animationDelay: '300ms' }}>
           <h3 className="text-gray-400 text-sm font-medium flex items-center justify-center gap-1">
@@ -82,8 +68,8 @@ export const Metrics: React.FC<{ metrics: MetricsData; routeName: string }> = ({
               </span>
             </span>
           </h3>
-          <p className="text-3xl font-bold mt-2">{metrics.totals.out.toLocaleString()}</p>
-          <p className="text-gray-500 text-xs mt-2">{wrotePercent}% of total -- most usage is {mostUsageInsight}</p>
+          <p className="text-3xl font-bold mt-2"><AnimatedNumber value={metrics.totals.out} /></p>
+          <p className="text-gray-500 text-xs mt-2"><AnimatedNumber value={wrotePercent} />% of total -- most usage is {mostUsageInsight}</p>
         </div>
       </div>
       <div className="text-center mt-2">
@@ -96,53 +82,6 @@ export const Metrics: React.FC<{ metrics: MetricsData; routeName: string }> = ({
             </span>
           </span>
         </p>
-      </div>
-
-      <div className="glass-panel p-6 animate-slide-up relative" style={{ animationDelay: '400ms' }}>
-        <h3 className="text-xl font-semibold mb-4 flex justify-between items-center">
-          Most Expensive Prompts
-          {isExpanded && (
-            <button onClick={() => setIsExpanded(false)} className="text-sm text-gray-400 hover:text-white transition-colors">Collapse</button>
-          )}
-        </h3>
-        <div 
-          ref={scrollRef}
-          onScroll={checkScroll}
-          className={`pr-2 custom-scrollbar ${isExpanded ? 'overflow-y-auto max-h-[440px]' : 'overflow-hidden max-h-[280px]'}`}
-          style={!isAtBottom ? { 
-            maskImage: 'linear-gradient(to bottom, black 80%, transparent 100%)',
-            WebkitMaskImage: 'linear-gradient(to bottom, black 80%, transparent 100%)'
-          } : undefined}
-        >
-          <ul className={`space-y-3 ${!isExpanded ? 'pb-8' : ''}`}>
-            {metrics.topPrompts.length > 0 ? metrics.topPrompts.map((p, idx) => (
-              <li key={idx} className="bg-white/5 rounded-lg p-3 flex flex-col md:flex-row justify-between items-start md:items-center gap-2" data-testid={`top-prompt-${idx}`}>
-                <div className="flex flex-col w-full md:w-1/2 overflow-hidden">
-                  <span className="truncate text-gray-300" title={p.prompt}>{p.prompt}</span>
-                  <div className="text-xs text-gray-500 font-mono mt-1">session:{p.session} turn:{p.turn} model:{p.model}</div>
-                </div>
-                <div className="flex gap-4 text-xs font-mono w-full md:w-auto justify-between md:justify-end">
-                  <span className="text-gray-400">In: {p.in.toLocaleString()}</span>
-                  <span className="text-gray-400">CR: {p.cacheRead.toLocaleString()}</span>
-                  <span className="text-gray-400">CW: {p.cacheWrite.toLocaleString()}</span>
-                  <span className="text-gray-400">Out: {p.out.toLocaleString()}</span>
-                  <span className="text-secondary font-bold">Total: {p.totalTokens.toLocaleString()}</span>
-                  <span className="text-gray-500 ml-2">({Math.round((p.out / Math.max(1, p.totalTokens)) * 100)}% written)</span>
-                </div>
-              </li>
-            )) : <li className="text-gray-500">No prompts found</li>}
-          </ul>
-        </div>
-        {!isExpanded && metrics.topPrompts.length > 3 && (
-          <div className="absolute bottom-0 left-0 w-full flex justify-center pb-4 pointer-events-none">
-            <button 
-              onClick={() => setIsExpanded(true)}
-              className="pointer-events-auto bg-surface border border-white/10 hover:bg-white/20 text-gray-200 px-5 py-1.5 rounded-full text-sm font-medium transition-all shadow-lg"
-            >
-              See more
-            </button>
-          </div>
-        )}
       </div>
 
     </div>

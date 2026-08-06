@@ -4,6 +4,7 @@ import { Metrics } from './Metrics';
 import { Insights } from './Insights';
 import { Charts } from './Charts';
 import { SessionsTable } from './SessionsTable';
+import { WeightsControl } from './WeightsControl';
 
 export const Dashboard: React.FC = () => {
   const [records, setRecords] = useState<SpendRecord[]>([]);
@@ -11,6 +12,8 @@ export const Dashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeRoute, setActiveRoute] = useState<string>('all');
   const [routes, setRoutes] = useState<string[]>([]);
+  const [weightsConfig, setWeightsConfig] = useState<Record<string, any>>({});
+  const [useWeights, setUseWeights] = useState<boolean>(true);
 
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
@@ -35,9 +38,17 @@ export const Dashboard: React.FC = () => {
       })
       .then((results: SpendRecord[][]) => {
         const parsed = results.flat();
-        setRecords(parsed);
-        const uniqueRoutes = Array.from(new Set(parsed.map(r => r.route || 'unknown')));
-        setRoutes(uniqueRoutes);
+        setRecords(prev => {
+          const map = new Map();
+          for (const r of [...parsed, ...prev]) {
+            map.set(`${r.ts}-${r.session}-${r.turn}`, r);
+          }
+          return Array.from(map.values());
+        });
+        setRoutes(prev => {
+          const newRoutes = parsed.map(r => r.route || 'unknown');
+          return Array.from(new Set([...prev, ...newRoutes]));
+        });
         setLoading(false);
       })
       .catch(err => {
@@ -45,6 +56,36 @@ export const Dashboard: React.FC = () => {
         setError('Could not load logs from /api/spend.');
         setLoading(false);
       });
+  }, []);
+
+  useEffect(() => {
+    const eventSource = new EventSource('/api/spend/stream');
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const record = JSON.parse(event.data);
+        setRecords(prev => {
+          // Prevent exact duplicates if overlap with initial fetch
+          const key = `${record.ts}-${record.session}-${record.turn}`;
+          if (prev.some(r => `${r.ts}-${r.session}-${r.turn}` === key)) return prev;
+          return [...prev, record];
+        });
+        // Also ensure new routes are added to the route filter list
+        const routeName = record.route || 'unknown';
+        setRoutes(prev => prev.includes(routeName) ? prev : [...prev, routeName]);
+      } catch (err) {
+        console.error('Failed to parse incoming SSE record', err, event.data);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('SSE connection error:', err);
+      // EventSource automatically attempts to reconnect, so we don't need to manually recreate it
+    };
+
+    return () => {
+      eventSource.close();
+    };
   }, []);
 
   const filteredRecords = useMemo(() => {
@@ -56,8 +97,8 @@ export const Dashboard: React.FC = () => {
     });
   }, [records, activeRoute, startDate, endDate]);
 
-  const metrics = useMemo(() => computeMetrics(filteredRecords), [filteredRecords]);
-  const insights = useMemo(() => computeInsights(filteredRecords, metrics), [filteredRecords, metrics]);
+  const metrics = useMemo(() => computeMetrics(filteredRecords, useWeights, weightsConfig), [filteredRecords, useWeights, weightsConfig]);
+  const insights = useMemo(() => computeInsights(filteredRecords, metrics, useWeights, weightsConfig), [filteredRecords, metrics, useWeights, weightsConfig]);
 
   if (loading) return <div className="p-8 text-center animate-pulse">Loading logs...</div>;
   if (error) return <div className="p-8 text-center text-danger">{error}</div>;
@@ -117,9 +158,16 @@ export const Dashboard: React.FC = () => {
       </header>
       
       <Metrics metrics={metrics} routeName={activeRoute === 'all' ? 'All Agents' : activeRoute} />
-      <Insights insights={insights} />
+      <Insights insights={insights} topPrompts={metrics.topPrompts} sessions={metrics.sessions} />
       <Charts metrics={metrics} />
       <SessionsTable metrics={metrics} />
+      <WeightsControl 
+        models={Object.keys(metrics.modelBreakdown)}
+        weightsConfig={weightsConfig}
+        setWeightsConfig={setWeightsConfig}
+        useWeights={useWeights}
+        setUseWeights={setUseWeights}
+      />
     </div>
   );
 };

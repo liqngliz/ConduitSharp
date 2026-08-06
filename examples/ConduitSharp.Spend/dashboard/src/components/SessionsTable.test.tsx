@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import userEvent from '@testing-library/user-event';
 
 const mockMetrics: MetricsData = {
-  totals: { in: 1000, out: 500, cacheWrite: 0, cacheRead: 0, ms: 5000, messagesSent: 5, costEstimates: {} },
+  totals: { in: 1000, out: 500, cacheWrite: 0, cacheRead: 0, ms: 5000, messagesSent: 5 },
   sessions: {
     sess1: { turnCount: 10, in: 1000, cacheRead: 0, cacheWrite: 0, out: 500, sessionName: 'Session 1', route: 'claude', models: new Set(['claude-3-opus']), tools: 0, prompts: [] },
     sess2: { turnCount: 5, in: 200, cacheRead: 50, cacheWrite: 50, out: 100, sessionName: 'Test Session', route: 'gpt4', models: new Set(['gpt-4o']), tools: 0, prompts: [] }

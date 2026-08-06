@@ -11,7 +11,6 @@ const mockMetrics: MetricsData = {
     cacheRead: 0,
     ms: 5000,
     messagesSent: 5,
-    costEstimates: {},
   },
   sessions: {
     sess1: { turnCount: 1, in: 1000, cacheRead: 0, cacheWrite: 0, out: 500, sessionName: 'Test', route: 'claude', models: new Set(), tools: 0, prompts: [] }
@@ -37,11 +36,7 @@ describe('Metrics Component', () => {
     expect(screen.getByText('1,500')).toBeInTheDocument();
   });
 
-  it('renders top prompts', () => {
-    render(<Metrics metrics={mockMetrics} routeName="Claude" {...dummyProps} />);
-    expect(screen.getByText('Hello world')).toBeInTheDocument();
-    expect(screen.getByText('Total: 1,500')).toBeInTheDocument();
-  });
+
 
   it('shows Caching insight when cache is highest', () => {
     const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, in: 100, out: 50, cacheRead: 500, cacheWrite: 0 } };

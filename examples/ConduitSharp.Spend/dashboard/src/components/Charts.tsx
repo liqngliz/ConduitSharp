@@ -11,8 +11,10 @@ export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
   const dailyData = Object.entries(metrics.dailyUsage)
     .map(([date, counts]) => ({
       date,
-      Read: counts.in,
-      Written: counts.out,
+      In: counts.in,
+      CW: counts.cacheWrite,
+      CR: counts.cacheRead,
+      Out: counts.out,
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -20,9 +22,11 @@ export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
   const modelData = Object.entries(metrics.modelBreakdown)
     .map(([model, counts]) => ({
       model,
-      Read: counts.in,
-      Written: counts.out,
-      Total: counts.in + counts.out
+      In: counts.in,
+      CW: counts.cacheWrite,
+      CR: counts.cacheRead,
+      Out: counts.out,
+      Total: counts.in + counts.cacheWrite + counts.cacheRead + counts.out
     }))
     .filter(d => d.Total > 0)
     .sort((a, b) => b.Total - a.Total);
@@ -44,10 +48,13 @@ export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
                 <RechartsTooltip
                   contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
                   itemStyle={{ color: '#e5e7eb' }}
+                  formatter={(value: any) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 />
                 <Legend />
-                <Bar dataKey="Read" stackId="a" fill="#8b5cf6" name="Read (In + Cache)" />
-                <Bar dataKey="Written" stackId="a" fill="#3b82f6" name="Written (Out)" />
+                <Bar dataKey="In" stackId="a" fill="#3b82f6" name="In" />
+                <Bar dataKey="CW" stackId="a" fill="#ec4899" name="Cache Write" />
+                <Bar dataKey="CR" stackId="a" fill="#8b5cf6" name="Cache Read" />
+                <Bar dataKey="Out" stackId="a" fill="#f59e0b" name="Out" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -66,7 +73,7 @@ export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
                   cx="50%"
                   cy="50%"
                   outerRadius={100}
-                  label={({ name, percent }) => `${name} ${percent !== undefined ? (percent * 100).toFixed(0) : 0}%`}
+                  label={({ percent }) => `${percent !== undefined ? (percent * 100).toFixed(0) : 0}%`}
                 >
                   {modelData.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -75,6 +82,7 @@ export const Charts: React.FC<{ metrics: MetricsData }> = ({ metrics }) => {
                 <RechartsTooltip
                   contentStyle={{ backgroundColor: '#1f2937', borderColor: '#374151', color: '#fff' }}
                   itemStyle={{ color: '#e5e7eb' }}
+                  formatter={(value: any) => Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                 />
                 <Legend />
               </PieChart>

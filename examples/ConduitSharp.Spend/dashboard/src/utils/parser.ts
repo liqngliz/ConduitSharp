@@ -41,7 +41,6 @@ export interface MetricsData {
     cacheRead: number;
     ms: number;
     messagesSent: number;
-    costEstimates: { [model: string]: number };
   };
   sessions: Record<string, {
     turnCount: number;
@@ -53,17 +52,26 @@ export interface MetricsData {
     route: string;
     models: Set<string>;
     tools: number;
-    prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; out: number; total: number; ts: string; tools: number }[];
+    prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; out: number; total: number; ts: string; tools: number; hasToolCall: boolean }[];
   }>;
-  dailyUsage: Record<string, { in: number; out: number }>;
-  modelBreakdown: Record<string, { in: number; out: number }>;
+  dailyUsage: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
+  modelBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
   routeBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
   topPrompts: { prompt: string; in: number; cacheRead: number; cacheWrite: number; out: number; totalTokens: number; session: string; turn: number; model: string }[];
 }
 
-export function computeMetrics(records: SpendRecord[]): MetricsData {
+export interface TokenWeights {
+  in: number;
+  cw: number;
+  cr: number;
+  out: number;
+}
+
+export const DEFAULT_WEIGHTS: TokenWeights = { in: 1, cw: 1.25, cr: 0.1, out: 5 };
+
+export function computeMetrics(records: SpendRecord[], useWeights: boolean = false, weightsConfig: Record<string, TokenWeights> = {}): MetricsData {
   const metrics: MetricsData = {
-    totals: { in: 0, out: 0, cacheWrite: 0, cacheRead: 0, ms: 0, messagesSent: 0, costEstimates: {} },
+    totals: { in: 0, out: 0, cacheWrite: 0, cacheRead: 0, ms: 0, messagesSent: 0 },
     sessions: {},
     dailyUsage: {},
     modelBreakdown: {},
@@ -73,7 +81,21 @@ export function computeMetrics(records: SpendRecord[]): MetricsData {
 
   const promptsMap: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number; total: number; session: string; turn: number; model: string }> = {};
 
-  for (const record of records) {
+  for (const rawRecord of records) {
+    let record = rawRecord;
+    
+    // Apply token weights before any calculations
+    if (useWeights && record.model) {
+      const w = weightsConfig[record.model] || DEFAULT_WEIGHTS;
+      record = {
+        ...record,
+        in: record.in * (w.in ?? 1),
+        cacheWrite: record.cacheWrite * (w.cw ?? 1.25),
+        cacheRead: record.cacheRead * (w.cr ?? 0.1),
+        out: record.out * (w.out ?? 5)
+      };
+    }
+
     // Totals
     metrics.totals.in += record.in;
     metrics.totals.out += record.out;
@@ -123,21 +145,26 @@ export function computeMetrics(records: SpendRecord[]): MetricsData {
         cacheWrite: record.cacheWrite,
         out: record.out,
         total: record.in + record.out + record.cacheRead + record.cacheWrite,
-        tools: record.tools || 0
+        tools: record.tools || 0,
+        hasToolCall: false
       });
     }
 
     // Daily
     const day = record.ts.split('T')[0];
-    if (!metrics.dailyUsage[day]) metrics.dailyUsage[day] = { in: 0, out: 0 };
+    if (!metrics.dailyUsage[day]) metrics.dailyUsage[day] = { in: 0, cacheRead: 0, cacheWrite: 0, out: 0 };
     metrics.dailyUsage[day].in += record.in;
+    metrics.dailyUsage[day].cacheRead += record.cacheRead;
+    metrics.dailyUsage[day].cacheWrite += record.cacheWrite;
     metrics.dailyUsage[day].out += record.out;
 
     // Model
-    const model = record.model;
-    if (model && model.trim() !== '' && model.toLowerCase() !== 'unknown') {
-      if (!metrics.modelBreakdown[model]) metrics.modelBreakdown[model] = { in: 0, out: 0 };
+    const model = (record.model && record.model.trim() !== '') ? record.model : 'unknown';
+    if (model.toLowerCase() !== 'unknown') {
+      if (!metrics.modelBreakdown[model]) metrics.modelBreakdown[model] = { in: 0, cacheRead: 0, cacheWrite: 0, out: 0 };
       metrics.modelBreakdown[model].in += record.in;
+      metrics.modelBreakdown[model].cacheRead += record.cacheRead;
+      metrics.modelBreakdown[model].cacheWrite += record.cacheWrite;
       metrics.modelBreakdown[model].out += record.out;
     }
 
@@ -171,6 +198,21 @@ export function computeMetrics(records: SpendRecord[]): MetricsData {
     }
     sess.prompts.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
     
+    // Documented behavior for Codex and Claude:
+    // They emit the total cumulative tool count for every prompt. 
+    // To detect which specific prompt actually triggered a tool call, we start with a count of 0,
+    // move chronologically, and if a prompt has a higher tool count than the current tracked count,
+    // we flag that prompt as having a tool call and update our running count.
+    let currToolCount = 0;
+    for (const p of sess.prompts) {
+      if (p.tools > currToolCount) {
+        p.hasToolCall = true;
+        currToolCount = p.tools;
+      } else {
+        p.hasToolCall = false;
+      }
+    }
+
     const foldedPrompts: typeof sess.prompts = [];
     let pre: typeof sess.prompts[0] | null = null;
     let preOrigDate = 0;
@@ -194,6 +236,8 @@ export function computeMetrics(records: SpendRecord[]): MetricsData {
         pre.cacheWrite += cur.cacheWrite;
         pre.total += cur.total;
         pre.tools = Math.max(pre.tools, cur.tools);
+        pre.hasToolCall = pre.hasToolCall || cur.hasToolCall;
+        pre.ts = cur.ts;
         
         preOrigDate = curDate;
         preOrigTurn = cur.turn;
@@ -220,36 +264,127 @@ export interface InsightsData {
   marathonSessions: number;
   inputHeavy: number;
   toolHeavy: number;
-  routeDominance: { route: string; percent: number } | null;
+  globalToolPrompts: number;
+  globalChatPrompts: number;
+  avgToolTokens: number;
+  avgChatTokens: number;
+  avgVagueTokens: number;
+  avgNonVagueTokens: number;
+  avgMarathonPromptTokens: number;
+  avgNonMarathonPromptTokens: number;
+  avgInputHeavyTokens: number;
+  avgNonInputHeavyTokens: number;
+  modelDominance: { model: string; percent: number } | null;
 }
 
-export function computeInsights(records: SpendRecord[], metrics: MetricsData): InsightsData {
+export function computeInsights(records: SpendRecord[], metrics: MetricsData, useWeights: boolean = false, weightsConfig: Record<string, TokenWeights> = {}): InsightsData {
   let vaguePrompts = 0;
+  let vagueTokensSum = 0;
+  let nonVaguePromptsCount = 0;
+  let nonVagueTokensSum = 0;
+
   let inputHeavy = 0;
+  let inputHeavyTokensSum = 0;
+  let nonInputHeavyCount = 0;
+  let nonInputHeavyTokensSum = 0;
+
   let toolHeavy = 0;
 
-  for (const record of records) {
-    if (record.prompt && record.prompt.length < 30 && record.in > 1000) {
-      vaguePrompts++;
+  for (const rawRecord of records) {
+    let record = rawRecord;
+    
+    if (useWeights && record.model) {
+      const w = weightsConfig[record.model] || DEFAULT_WEIGHTS;
+      record = {
+        ...record,
+        in: record.in * (w.in ?? 1),
+        cacheWrite: record.cacheWrite * (w.cw ?? 1.25),
+        cacheRead: record.cacheRead * (w.cr ?? 0.1),
+        out: record.out * (w.out ?? 5)
+      };
     }
-    if (record.in > 5000 && record.out < 100) {
+
+    const totalIn = record.in + record.cacheWrite + record.cacheRead;
+    const total = totalIn + record.out;
+    
+    const isVague = record.prompt && record.prompt.length < 30 && totalIn > 1000;
+    if (isVague) {
+      vaguePrompts++;
+      vagueTokensSum += total;
+    } else {
+      nonVaguePromptsCount++;
+      nonVagueTokensSum += total;
+    }
+    
+    const isInputHeavy = totalIn > 5000 && record.out < 100;
+    if (isInputHeavy) {
       inputHeavy++;
+      inputHeavyTokensSum += total;
+    } else {
+      nonInputHeavyCount++;
+      nonInputHeavyTokensSum += total;
     }
   }
 
   let marathonSessions = 0;
+  let marathonPromptsCount = 0;
+  let marathonTokensSum = 0;
+  let nonMarathonPromptsCount = 0;
+  let nonMarathonTokensSum = 0;
+
+  let globalToolTokens = 0;
+  let globalToolPrompts = 0;
+  let globalChatTokens = 0;
+  let globalChatPrompts = 0;
+
   for (const sess of Object.values(metrics.sessions)) {
-    if (sess.turnCount > 15) marathonSessions++;
-    if (sess.tools > sess.turnCount * 3 && sess.turnCount > 0) toolHeavy++;
+    const isMarathon = sess.turnCount > 15;
+    if (isMarathon) marathonSessions++;
+    
+    let sessToolTokens = 0;
+    let sessChatTokens = 0;
+    
+    for (const p of sess.prompts) {
+      if (isMarathon) {
+        marathonPromptsCount++;
+        marathonTokensSum += p.total;
+      } else {
+        nonMarathonPromptsCount++;
+        nonMarathonTokensSum += p.total;
+      }
+
+      if (p.hasToolCall) {
+        sessToolTokens += p.total;
+        globalToolTokens += p.total;
+        globalToolPrompts++;
+      } else {
+        sessChatTokens += p.total;
+        globalChatTokens += p.total;
+        globalChatPrompts++;
+      }
+    }
+    
+    if (sessToolTokens > sessChatTokens && sessToolTokens > 0) {
+      toolHeavy++;
+    }
   }
 
-  let routeDominance: { route: string; percent: number } | null = null;
+  const avgToolTokens = globalToolPrompts > 0 ? Math.round(globalToolTokens / globalToolPrompts) : 0;
+  const avgChatTokens = globalChatPrompts > 0 ? Math.round(globalChatTokens / globalChatPrompts) : 0;
+  const avgVagueTokens = vaguePrompts > 0 ? Math.round(vagueTokensSum / vaguePrompts) : 0;
+  const avgNonVagueTokens = nonVaguePromptsCount > 0 ? Math.round(nonVagueTokensSum / nonVaguePromptsCount) : 0;
+  const avgInputHeavyTokens = inputHeavy > 0 ? Math.round(inputHeavyTokensSum / inputHeavy) : 0;
+  const avgNonInputHeavyTokens = nonInputHeavyCount > 0 ? Math.round(nonInputHeavyTokensSum / nonInputHeavyCount) : 0;
+  const avgMarathonPromptTokens = marathonPromptsCount > 0 ? Math.round(marathonTokensSum / marathonPromptsCount) : 0;
+  const avgNonMarathonPromptTokens = nonMarathonPromptsCount > 0 ? Math.round(nonMarathonTokensSum / nonMarathonPromptsCount) : 0;
+
+  let modelDominance: { model: string; percent: number } | null = null;
   const totalTokens = metrics.totals.in + metrics.totals.out + metrics.totals.cacheRead + metrics.totals.cacheWrite;
   if (totalTokens > 0) {
-    for (const [route, counts] of Object.entries(metrics.routeBreakdown)) {
+    for (const [model, counts] of Object.entries(metrics.modelBreakdown)) {
       const pct = (counts.in + counts.out + counts.cacheRead + counts.cacheWrite) / totalTokens;
       if (pct > 0.6) {
-        routeDominance = { route, percent: Math.round(pct * 100) };
+        modelDominance = { model, percent: Math.round(pct * 100) };
         break;
       }
     }
@@ -260,6 +395,16 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData): I
     marathonSessions,
     inputHeavy,
     toolHeavy,
-    routeDominance,
+    globalToolPrompts,
+    globalChatPrompts,
+    avgToolTokens,
+    avgChatTokens,
+    avgVagueTokens,
+    avgNonVagueTokens,
+    avgMarathonPromptTokens,
+    avgNonMarathonPromptTokens,
+    avgInputHeavyTokens,
+    avgNonInputHeavyTokens,
+    modelDominance,
   };
 }

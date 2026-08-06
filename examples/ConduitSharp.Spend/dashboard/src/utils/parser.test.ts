@@ -72,18 +72,56 @@ describe('Insights Computation', () => {
     const insights = computeInsights(records, metrics);
     expect(insights.vaguePrompts).toBe(1); // Length 5 (< 30) and in 6000 (> 1000)
     expect(insights.inputHeavy).toBe(1); // in 6000 (> 5000), out 50 (< 100)
-    expect(insights.routeDominance).toEqual({ route: "local", percent: 100 });
+    expect(insights.modelDominance).toEqual({ model: "m", percent: 100 });
   });
 
-  it('detects marathon sessions and tool heavy sessions', () => {
+  it('detects model dominance', () => {
     const records: SpendRecord[] = [
-      { ts: "2026-08-01T10:00:00Z", route: "local", model: "m", servedModel: "m", caller: "a", in: 100, out: 50, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 16, tools: 50, ms: 1000, streamed: true },
+      { ts: "2026-08-01T10:00:00Z", route: "local", model: "m", servedModel: "m", caller: "a", in: 1000, out: 0, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 1, tools: 0, ms: 100, streamed: true },
+      { ts: '2026-08-03T10:00:00', route: '', model: 'claude-3', servedModel: 'claude-3', caller: 'x', in: 100, out: 0, cacheWrite: 0, cacheRead: 0, session: 's3', turn: 0, tools: 0, ms: 100, streamed: true }
+    ];
+    const metrics = computeMetrics(records);
+    const insights = computeInsights(records, metrics);
+    // m is ~91% of tokens
+    expect(insights.modelDominance).toEqual({ model: "m", percent: 91 });
+  });
+
+  it('detects marathon sessions', () => {
+    const records: SpendRecord[] = [
+      { ts: "2026-08-01T10:00:00Z", route: "local", model: "m", servedModel: "m", caller: "a", in: 100, out: 50, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 16, tools: 0, ms: 1000, streamed: true },
       { ts: '2026-08-03T10:00:00', route: '', model: 'claude-3', servedModel: 'claude-3', caller: 'x', in: 0, out: 0, cacheWrite: 0, cacheRead: 0, session: 's3', turn: 0, tools: 0, ms: 100, streamed: true }
     ];
     const metrics = computeMetrics(records);
     const insights = computeInsights(records, metrics);
     expect(insights.marathonSessions).toBe(1); // Turn 16 > 15
-    expect(insights.toolHeavy).toBe(1); // Tools 50 > 16 * 3
+  });
+
+  it('detects tool heavy sessions based on token ratio and computes averages', () => {
+    const records: SpendRecord[] = [
+      // sess1: Tool Heavy (tool tokens > chat tokens)
+      { ts: "2026-08-01T10:00:00Z", route: "local", model: "m", servedModel: "m", caller: "a", in: 50, out: 10, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 1, tools: 0, ms: 1000, streamed: true, prompt: "chat" }, // 60 total
+      { ts: "2026-08-01T10:05:00Z", route: "local", model: "m", servedModel: "m", caller: "a", in: 100, out: 20, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 2, tools: 1, ms: 1000, streamed: true, prompt: "tool1" }, // 120 total, has tool
+      
+      // sess2: Not Tool Heavy (chat tokens > tool tokens)
+      { ts: "2026-08-02T10:00:00Z", route: "local", model: "m", servedModel: "m", caller: "b", in: 200, out: 50, cacheWrite: 0, cacheRead: 0, session: "sess2", turn: 1, tools: 0, ms: 1000, streamed: true, prompt: "chat" }, // 250 total
+      { ts: "2026-08-02T10:05:00Z", route: "local", model: "m", servedModel: "m", caller: "b", in: 10, out: 10, cacheWrite: 0, cacheRead: 0, session: "sess2", turn: 2, tools: 1, ms: 1000, streamed: true, prompt: "tool1" } // 20 total, has tool
+    ];
+    
+    // We expect:
+    // sess1 chat tokens = 60
+    // sess1 tool tokens = 120 (ratio > 1, so toolHeavy++)
+    // sess2 chat tokens = 250
+    // sess2 tool tokens = 20 (ratio < 1)
+    
+    // avgToolTokens = (120 + 20) / 2 = 70
+    // avgChatTokens = (60 + 250) / 2 = 155
+    
+    const metrics = computeMetrics(records);
+    const insights = computeInsights(records, metrics);
+    
+    expect(insights.toolHeavy).toBe(1);
+    expect(insights.avgToolTokens).toBe(70);
+    expect(insights.avgChatTokens).toBe(155);
   });
 
   it('correctly parses and aggregates prompt details including tools', () => {
@@ -104,5 +142,54 @@ describe('Insights Computation', () => {
     expect(p.cacheRead).toBe(0);
     expect(p.cacheWrite).toBe(0);
     expect(p.tools).toBe(14);
+  });
+});
+
+describe('Token Weights', () => {
+  const records: SpendRecord[] = [
+    { ts: "2026-08-01T10:00:00Z", route: "local", model: "modelA", servedModel: "modelA", caller: "a", in: 100, out: 50, cacheWrite: 10, cacheRead: 5, session: "sess1", turn: 1, tools: 0, ms: 1000, streamed: true, prompt: "test" },
+    { ts: "2026-08-01T10:05:00Z", route: "local", model: "modelB", servedModel: "modelB", caller: "a", in: 200, out: 20, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 2, tools: 0, ms: 1500, streamed: true, prompt: "test 2" }
+  ];
+
+  it('useWeights=false yields raw totals', () => {
+    const rawMetrics = computeMetrics(records);
+    const configuredMetrics = computeMetrics(records, false, { "modelA": { in: 5, cw: 5, cr: 5, out: 5 } });
+    
+    expect(rawMetrics.totals).toEqual(configuredMetrics.totals);
+  });
+
+  it('useWeights=true with no config uses requested defaults', () => {
+    const defaultMetrics = computeMetrics(records, true, {});
+    // records: 
+    // modelA: 100 in, 50 out, 10 cw, 5 cr
+    // modelB: 200 in, 20 out, 0 cw, 0 cr
+    // in = 1 * 300 = 300
+    // out = 5 * 70 = 350
+    // cw = 1.25 * 10 = 12.5
+    // cr = 0.1 * 5 = 0.5
+    expect(defaultMetrics.totals.in).toBe(300);
+    expect(defaultMetrics.totals.out).toBe(350);
+    expect(defaultMetrics.totals.cacheWrite).toBe(12.5);
+    expect(defaultMetrics.totals.cacheRead).toBe(0.5);
+  });
+
+  it('multiplies tokens by model-specific weights when useWeights=true', () => {
+    const weightsConfig = {
+      "modelA": { in: 2, cw: 1, cr: 1, out: 5 }, // 100*2=200 in, 50*5=250 out, 10 cw, 5 cr = 465
+      "modelB": { in: 1, cw: 1, cr: 1, out: 1 }  // 200 in, 20 out = 220
+    };
+    
+    const metrics = computeMetrics(records, true, weightsConfig);
+    
+    // Total should be modelA + modelB = (200 + 200) = 400 in, (250 + 20) = 270 out
+    expect(metrics.totals.in).toBe(400);
+    expect(metrics.totals.out).toBe(270);
+    expect(metrics.totals.cacheWrite).toBe(10);
+    expect(metrics.totals.cacheRead).toBe(5);
+
+    // Session total should reflect weighted sum
+    expect(metrics.sessions["sess1"].in).toBe(400);
+    expect(metrics.sessions["sess1"].out).toBe(270);
+    expect(metrics.sessions["sess1"].prompts[0].total).toBe(465); // modelA total
   });
 });
