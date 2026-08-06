@@ -129,7 +129,16 @@ export const SessionsTable: React.FC<{ metrics: MetricsData; focusedSession?: st
             </thead>
             <tbody>
               {filteredSessions.length > 0 ? (
-                filteredSessions.map((s) => (
+                filteredSessions.map((s) => {
+                  const isMarathon = s.name === s.id && s.turns > 15;
+                  const isTool = s.session.isToolHeavy;
+                  const nameColor = isTool ? 'text-success font-bold' : (isMarathon ? 'text-primary font-bold' : 'text-gray-200');
+                  const prefix = isTool ? '🔧 ' : '';
+                  const suffix = isMarathon ? ' 🏃‍♂️' : '';
+                  const subColor = s.turns > 15 ? 'text-primary font-bold' : 'text-gray-500';
+                  const subSuffix = s.turns > 15 ? ' 🏃‍♂️' : '';
+
+                  return (
                   <React.Fragment key={s.id}>
                     <tr 
                       id={`session-row-${s.id}`}
@@ -137,8 +146,8 @@ export const SessionsTable: React.FC<{ metrics: MetricsData; focusedSession?: st
                       onClick={() => toggleExpand(s.id)}
                     >
                       <td className="p-4 max-w-[200px] sm:max-w-[300px]">
-                        <div className={`font-medium truncate ${s.name === s.id && s.turns > 15 ? 'text-primary font-bold' : 'text-gray-200'}`}>{s.name}{s.name === s.id && s.turns > 15 ? ' 🏃‍♂️' : ''}</div>
-                        {s.name !== s.id && <div className={`text-xs font-mono mt-1 truncate ${s.turns > 15 ? 'text-primary font-bold' : 'text-gray-500'}`}>{s.id}{s.turns > 15 ? ' 🏃‍♂️' : ''}</div>}
+                        <div className={`font-medium truncate ${nameColor}`}>{prefix}{s.name}{suffix}</div>
+                        {s.name !== s.id && <div className={`text-xs font-mono mt-1 truncate ${subColor}`}>{s.id}{subSuffix}</div>}
                       </td>
                       <td className="p-4 text-gray-400 text-xs">
                         {s.lastActive > 0 ? new Date(s.lastActive).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Unknown'}
@@ -163,16 +172,17 @@ export const SessionsTable: React.FC<{ metrics: MetricsData; focusedSession?: st
                     </tr>
                     {expandedSessionId === s.id && (
                       <tr className="bg-black/20 border-b border-white/5">
-                        <td colSpan={4} className="p-0">
+                        <td colSpan={5} className="p-0">
                           <SessionFlowchart session={metrics.sessions[s.id]} sessionId={s.id} />
                         </td>
                       </tr>
                     )}
                   </React.Fragment>
-                ))
+                  );
+                })
               ) : (
                 <tr>
-                  <td colSpan={4} className="p-6 text-center text-gray-500">
+                  <td colSpan={5} className="p-6 text-center text-gray-500">
                     No sessions match your search.
                   </td>
                 </tr>

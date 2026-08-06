@@ -25,7 +25,7 @@ export function parseJsonl(content: string): SpendRecord[] {
     .map((line) => {
       try {
         return JSON.parse(line) as SpendRecord;
-      } catch (e) {
+      } catch {
         console.error('Failed to parse line:', line);
         return null;
       }
@@ -52,6 +52,7 @@ export interface MetricsData {
     route: string;
     models: Set<string>;
     tools: number;
+    isToolHeavy?: boolean;
     prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; out: number; total: number; ts: string; tools: number; hasToolCall: boolean }[];
   }>;
   dailyUsage: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
@@ -121,6 +122,7 @@ export function computeMetrics(records: SpendRecord[], useWeights: boolean = fal
           route: record.route,
           models: new Set(),
           tools: 0,
+          isToolHeavy: false,
           prompts: [],
         };
       }
@@ -266,6 +268,18 @@ export function computeMetrics(records: SpendRecord[], useWeights: boolean = fal
       }
     }
     sess.prompts = foldedPrompts.filter(p => p.total > 0);
+    
+    // Calculate if session is tool heavy
+    let sessToolTokens = 0;
+    let sessChatTokens = 0;
+    for (const p of sess.prompts) {
+      if (p.hasToolCall) {
+        sessToolTokens += p.total;
+      } else {
+        sessChatTokens += p.total;
+      }
+    }
+    sess.isToolHeavy = sessToolTokens > sessChatTokens && sessToolTokens > 0;
   }
 
   metrics.topPrompts = Object.entries(promptsMap)
