@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import type { InsightsData, MetricsData } from '../utils/parser';
 import { AnimatedNumber } from './AnimatedNumber';
 
@@ -6,7 +6,7 @@ const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'c
 
 export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsData['topPrompts']; sessions: MetricsData['sessions']; onSessionSelect?: (sessionId: string) => void }> = ({ insights, topPrompts, sessions, onSessionSelect }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+
   return (
     <div className="space-y-6 mt-8">
       <h2 className="text-2xl font-bold glow-text">AI Insights</h2>
@@ -45,7 +45,7 @@ export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsDat
       </div>
 
       {insights.modelDominance && (
-        <div className="glass-panel p-4 border-primary/50 animate-fade-in" data-testid="insight-dominance">
+        <div className="glass-panel px-6 py-4 border-primary/50 animate-fade-in" data-testid="insight-dominance">
           <p className="text-sm">
             <span className="font-bold text-primary">Model Dominance Detected:</span> The <span className="font-mono text-secondary">{insights.modelDominance.model}</span> model is consuming {insights.modelDominance.percent}% of total tokens.
           </p>
@@ -60,7 +60,6 @@ export const Insights: React.FC<{ insights: InsightsData; topPrompts: MetricsDat
           )}
         </h3>
         <div 
-          ref={scrollRef}
           className={`pr-2 ${!isExpanded ? 'overflow-hidden max-h-[280px] custom-scrollbar' : ''}`}
           style={!isExpanded ? { 
             maskImage: 'linear-gradient(to bottom, black 80%, transparent 100%)',
