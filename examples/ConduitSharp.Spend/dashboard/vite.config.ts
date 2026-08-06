@@ -7,6 +7,13 @@ export default defineConfig(() => {
 
   return {
     plugins: [react()],
+    // `npm run dev` serves on 5173 but the spend API and the SSE stream live on the
+    // gateway's port. Without this the dashboard 404s on every /api call in dev.
+    server: {
+      proxy: {
+        '/api': { target: 'http://localhost:4000', changeOrigin: true },
+      },
+    },
     resolve: {
       alias: isProfile ? {
         'react-dom/client': 'react-dom/profiling',
