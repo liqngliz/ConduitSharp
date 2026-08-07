@@ -5,8 +5,26 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>ConduitSharp.Spend</RootNamespace>
-    <IsPackable>false</IsPackable>
+
+    <!--
+      Ships as `dotnet tool install -g ConduitSharp.TokenFlow`, the same shape ConduitSharp.Host
+      uses for the gateway itself. .NET 10 packs tools from Publish rather than Build, so the
+      dashboard's wwwroot rides along without an explicit item (it would 404 on .NET 8/9).
+      Versioned on the tokenflow-v* tag, not the library's Version, so CI passes -p:Version.
+    -->
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>token-flow</ToolCommandName>
+    <PackageId>ConduitSharp.TokenFlow</PackageId>
+    <Description>Live token spend dashboard and LLM gateway. Point an AI SDK at it and watch what every call spends.</Description>
+    <PackageTags>llm;tokens;claude;openai;gateway;dashboard;observability;dotnet-tool</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ConduitSharp.Gateway.AspNetCore\ConduitSharp.Gateway.AspNetCore.csproj" />
@@ -15,7 +33,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Configuration\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Web SDK globs every **/*.json as Content, which drags the dashboard's package-lock.json
+         and coverage-final.json into the package as content/ (~340 KB). Nothing consumes content/
+         from a tool package. -->
+    <Content Remove="dashboard\**" />
+
+    <!-- CopyToPublishDirectory is explicit: publish output is what both the image and the
+         tool package are built from, and it does not always follow CopyToOutputDirectory.
+         Pack="false" because the app reads these from tools/net10.0/any/Configuration/ instead. -->
+    <Content Update="Configuration\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
   </ItemGroup>
 
 </Project>

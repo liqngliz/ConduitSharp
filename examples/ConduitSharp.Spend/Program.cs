@@ -5,7 +5,17 @@ using ConduitSharp.Gateway;
 using ConduitSharp.Plugin.BodyCaptureToFile;
 using ConduitSharp.Plugin.TokenSpend;
 
-var builder = WebApplication.CreateBuilder(args);
+// Content root is the install directory, not the working directory. As a `dotnet tool` the
+// process starts wherever the user happened to be, and cwd would leave appsettings.json
+// unreadable, wwwroot unserved, and Gateway:RoutesPath resolving against a random folder.
+// WebRootPath is explicit: setting ContentRootPath alone does not re-derive it, and the dashboard
+// then 404s in the image.
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+    WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot"),
+});
 
 builder.Configuration.AddJsonFile(
     Path.Combine(builder.Environment.ContentRootPath, "Configuration", "appsettings.json"),
@@ -13,15 +23,36 @@ builder.Configuration.AddJsonFile(
     reloadOnChange: false);
 builder.Configuration.AddEnvironmentVariables();
 
+// The image sets ASPNETCORE_URLS; a `dotnet tool` install sets nothing, and Kestrel's own default
+// is :5000 — which every doc, the README, and the /info text below contradict. ASPNETCORE_URLS and
+// --urls still win, they populate this same key before the check runs.
+if (string.IsNullOrEmpty(builder.Configuration["Urls"]))
+    builder.WebHost.UseUrls("http://localhost:5050");
+
 var dataDir = Environment.GetEnvironmentVariable("CONDUIT_SPEND_DATA")
     ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".conduit-spend");
+
+// Export the resolved value so routes.json can write the wire log beside the spend rows with
+// one portable string, `%CONDUIT_SPEND_DATA%/conduit-wire.jsonl`. Unset natively, /data in the
+// image, and the JsonlSpendStore constructor below creates whichever it resolves to.
+Environment.SetEnvironmentVariable("CONDUIT_SPEND_DATA", dataDir);
 
 builder.Services.AddSingleton<ISpendStore>(new JsonlSpendStore(dataDir));
 builder.Services.AddSingleton<SpendBroadcaster>();
 builder.Services.AddSingleton<IPipelinePlugin, TokenSpendPlugin>();
 builder.Services.AddSingleton<IPipelinePlugin, BodyCaptureToFilePlugin>();
 
-builder.AddConduitSharpGateway(options => options.EnablePluginDirectoryScan = false);
+builder.AddConduitSharpGateway(options =>
+{
+    options.EnablePluginDirectoryScan = false;
+
+    // The gateway reads RoutesPath with File.ReadAllText, which resolves against the working
+    // directory. Root a relative value at the install directory instead. Gateway__RoutesPath
+    // still wins, it just gets rooted too.
+    var configured = builder.Configuration["Gateway:RoutesPath"];
+    if (!string.IsNullOrEmpty(configured) && !Path.IsPathRooted(configured))
+        options.RoutesPath = Path.Combine(AppContext.BaseDirectory, configured);
+});
 
 var app = builder.Build();
 
