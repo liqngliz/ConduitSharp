@@ -1,74 +1,50 @@
 # Token Flow dashboard
 
-The React front end for [Token Flow](../README.md). Reads spend rows the gateway writes and
-renders them live.
+React UI for [Token Flow](../README.md). Reads/renders gateway spend rows live. Build goes to `../wwwroot` (gitignored, Docker builds it).
 
-Build output goes to `../wwwroot`, which the gateway serves with `app.UseStaticFiles()`.
-`wwwroot` is gitignored; the Docker image builds it in a node stage.
+## Run
 
-## Develop
-
-The dashboard needs the gateway running for data. Start it first:
-
+Gateway first:
 ```bash
-cd .. && dotnet run          # http://localhost:4000
+cd .. && dotnet run          # localhost:5050
 ```
-
-Then:
-
+Dashboard:
 ```bash
-npm install
-npm run dev                  # http://localhost:5173
+npm install && npm run dev   # localhost:5173
 ```
-
-`vite.config.ts` proxies `/api` to `localhost:4000`, so the fetch and the SSE stream both reach
-the gateway.
+`vite.config.ts` proxies `/api` to 5050.
 
 ## Scripts
 
 | script | does |
-| :--- | :--- |
-| `npm run dev` | Vite dev server on 5173, `/api` proxied to 4000 |
-| `npm run build` | `tsc -b` then `vite build` into `../wwwroot` |
-| `npm run build:profile` | Same, aliased to `react-dom/profiling` so React DevTools can record renders |
-| `npm test` | vitest, 7 files |
-| `npm run lint` | oxlint |
+|---|---|
+| `npm run dev` | dev server, `/api` proxy |
+| `npm run build` | tsc -> vite -> `../wwwroot` |
+| `npm run build:profile` | build with React DevTools profiling |
+| `npm test` | vitest |
+| `npm run lint` | oxlint (requires Node >= 22.12 or silent install fail) |
 
-**Node 22.12 or newer.** oxlint's native bindings declare `engines: ^20.19.0 || >=22.12.0`, and
-npm silently skips an optional dependency whose engines don't match, leaving `npm run lint` to
-die on "Cannot find native binding".
-
-## Data it reads
+## API
 
 | endpoint | returns |
-| :--- | :--- |
-| `GET /api/spend` | dates that have rows |
-| `GET /api/spend/{date}` | that day's rows |
-| `GET /api/spend/stream` | SSE, one event per row as it lands |
+|---|---|
+| `GET /api/spend` | dates with rows |
+| `GET /api/spend/{date}` | rows for date |
+| `GET /api/spend/stream` | SSE row stream |
 
-A row is one turn: timestamp, session id, turn number, model, route, the four token classes
-(input, output, cache-write, cache-read), tool count, and the prompt's first line.
-`ConduitSharp.Plugin.TokenSpend` writes them.
+Row = 1 turn. TS, session, turn, model, route, input/out/CW/CR tokens, tool count, prompt snippet. Written by `ConduitSharp.Plugin.TokenSpend`.
 
-## Layout
+## Code
 
-`Dashboard.tsx` owns every piece of state: the row list, the SSE subscription, the date range,
-the route filter, and the focused session. Everything below it is presentational and memoized.
+`Dashboard.tsx` owns all state, SSE, filters. Everything else presentational + memoized.
 
-| file | renders |
-| :--- | :--- |
-| `Metrics.tsx` | totals per token class, and which class dominates |
-| `ActiveFlow.tsx` + `SessionFlowchart.tsx` | Sankey of the live session, per-turn |
-| `Insights.tsx` | most expensive prompt sequences, per-session ranking |
-| `Charts.tsx` | Tokens per Day, Tokens by Model |
-| `SessionsTable.tsx` | every session, sortable, click-to-focus |
-| `WeightsControl.tsx` | per-model token weights, toggleable |
-| `AnimatedNumber.tsx` | counts a value up by mutating `textContent` from a rAF loop |
-| `utils/parser.ts` | `computeMetrics` and `computeInsights`, all the arithmetic |
+- `Metrics.tsx`: Totals, dominant class
+- `ActiveFlow.tsx` / `SessionFlowchart.tsx`: Live Sankey
+- `Insights.tsx`: Expensive/vague prompt ranking
+- `Charts.tsx`: Time/Model charts
+- `SessionsTable.tsx`: Sortable list
+- `WeightsControl.tsx`: Token normalization (not dollars)
+- `AnimatedNumber.tsx`: rAF direct DOM mutate (skips React)
+- `utils/parser.ts`: Arithmetic
 
-Weighting is **normalized token weighting, not dollars.** Cache reads cost less than fresh input,
-output costs more, and the weights make those comparable. No price is claimed.
-
-`AnimatedNumber` writes the DOM node directly instead of calling `setState` per frame. At 60fps
-with an SSE feed, per-frame state would re-render the tree ~60 times a second. Incoming SSE rows
-are batched on a 250ms trailing timer for the same reason.
+**Perf notes**: SSE coalesced at 250ms. `AnimatedNumber` mutates DOM directly. Components `React.memo`'d. Zero state thrash on 60fps stream.
