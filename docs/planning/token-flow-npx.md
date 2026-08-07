@@ -7,12 +7,12 @@ Status: built, unpublished. Package at [npm/tokenflow/](../../npm/tokenflow/), p
 ## Why
 
 The tool path needs the .NET 10 SDK. TokenFlow's user proxies Claude Code or Codex traffic, so
-they have Node and often no .NET SDK. `npx tokenflow` reaches them with no other prerequisite.
+they have Node and often no .NET SDK. `npx @liqngliz/tokenflow` reaches them with no other prerequisite.
 
 ## Shape
 
-npm package carries the app as framework-dependent DLLs. `postinstall` fetches the ASP.NET Core
-**runtime** (not the SDK) into the package directory. `bin` spawns that runtime against the DLL.
+npm package carries the app as framework-dependent DLLs. The `bin` launcher fetches the ASP.NET Core
+**runtime** (not the SDK) on first run, then spawns it against the DLL.
 
 ```
 npm/tokenflow/
@@ -56,14 +56,14 @@ present, the no-.NET run is Linux). A `macos-14` matrix job closes it.
 
 Without it, a framework-dependent publish emits an apphost next to the DLLs (77 KB ELF when built
 on Linux CI). It has no working invocation inside the npm package: an apphost resolves its
-framework from `DOTNET_ROOT` or a system-wide install, and the bundled runtime sits in
-`<pkg>/.dotnet`, on neither. A user who runs `./ConduitSharp.Spend` instead of the npm bin gets
+framework from `DOTNET_ROOT` or a system-wide install, and the bootstrapped runtime sits in
+`~/.tokenflow/dotnet`, on neither. A user who runs `./ConduitSharp.Spend` instead of the npm bin gets
 `You must install .NET` on Linux and `cannot execute binary file` on macOS, where the ELF is not
 even the host format.
 
-Do not move it into `ConduitSharp.Spend.csproj`. `tokenflow-binaries` publishes
-`--self-contained -p:PublishSingleFile=true`, which requires the apphost; a project-level property
-would break that job.
+Moving it into `ConduitSharp.Spend.csproj` is now possible and would also cover the Dockerfile.
+Blocked until 2026-08-09 by `tokenflow-binaries`, whose `--self-contained -p:PublishSingleFile=true`
+requires the apphost; that job is deleted. Left on the command line, one flag either way.
 
 `Dockerfile:30` publishes the same framework-dependent shape and runs
 `ENTRYPOINT ["dotnet", "ConduitSharp.Spend.dll"]`, so it carries the same dead apphost. Same
@@ -72,44 +72,43 @@ one-flag fix, not required for npx.
 ## Prerequisites
 
 One left, manual, blocks the first release: npm cannot configure a trusted publisher for a package
-that does not exist, so `tokenflow` needs one `npm login && npm publish` before OIDC can take over.
+that does not exist, so `@liqngliz/tokenflow` needs one `npm publish` before OIDC can take over.
 Steps and the field values: [docs/RELEASE.md](../RELEASE.md).
 
-## Name: `tokenflow`
+## Name: `@liqngliz/tokenflow` on npm, `tokenflow` everywhere else
 
-`token-flow` is taken on npm (checked 2026-08-08). `tokenflow` is free, and nothing had shipped
-under `token-flow` yet: no `tokenflow-v*` tag, no `ConduitSharp.TokenFlow` on nuget.org, no
-`ghcr.io/liqngliz/token-flow`. So every channel uses `tokenflow` and there is no second bin entry
-to maintain.
+Unscoped `tokenflow` is unavailable. npm's similarity guard strips punctuation, so it reads as
+`token-flow`, which exists, and the publish 403s with `Package name too similar to existing
+package`. A registry lookup returns 404 for the name and does not predict this; only the publish
+does. Scoping is npm's own suggested remedy and removes the squat risk on the scope.
 
 | channel | name |
 | :--- | :--- |
-| npm package + bin | `tokenflow` |
+| npm package | `@liqngliz/tokenflow` |
+| npm bin | `tokenflow` (npx matches a scoped package against its post-scope segment, so `npx @liqngliz/tokenflow` needs no `--package`) |
 | `dotnet tool` command | `tokenflow` (`ToolCommandName`) |
 | image | `ghcr.io/liqngliz/tokenflow` |
-| NuGet package id | `ConduitSharp.TokenFlow` (unchanged) |
-| tag prefix, workflow file | `tokenflow-v*`, `tokenflow.yml` (unchanged) |
+| NuGet package id | `ConduitSharp.TokenFlow` |
+| tag prefix, workflow file | `tokenflow-v*`, `tokenflow.yml` |
 
-`TokenFlow` is the product name too, one word everywhere: `<title>`, `/info`, headings. The
-verification above predates the rename and ran under the bin name `token-flow`; nothing about the
-runtime bootstrap depends on it.
+`TokenFlow` is the product name, one word: `<title>`, `/info`, headings.
 
 ## First-run cost
 
 46.6 MB over the wire, 114 MB on disk, ~1 minute. Later runs are instant.
 
-**Fetch the runtime from `bin/tokenflow.js` on first run, not from `postinstall`.** npm hides
+**Fetch the runtime from `tokenflow.js` on first run, not from `postinstall`.** npm hides
 lifecycle-script output unless the user passes `--foreground-scripts`, so a `postinstall` download
 is a silent minute that reads as a hang (verified: the progress lines are invisible under both
 `npm i -g` and `npx`). Fetching from the bin puts the output on the user's terminal and survives
 `--ignore-scripts`.
 
-Idempotent either way: skip when `<pkg>/.dotnet/dotnet` already exists.
+Idempotent either way: skip when `~/.tokenflow/dotnet/dotnet` already exists.
 
 ## Platform handling
 
 `process.platform === 'win32'` selects `dotnet-install.ps1` over `dotnet-install.sh`, and
-`.dotnet/dotnet.exe` over `.dotnet/dotnet`. That is the entire platform matrix. One portable
+`dotnet.exe` over `dotnet`. That is the entire platform matrix. One portable
 publish covers every RID, so no `process.arch` detection, no per-platform assets, no checksums
 (the Microsoft script verifies its own payload).
 
@@ -122,8 +121,18 @@ Fixing that means `rcodesign sign` (Rust `apple-codesign`, runs on Linux) as the
 `tar`, plus a `linux-arm64` RID, plus `SHA256SUMS`, plus a 5-platform test matrix. The runtime
 bootstrap above needs none of it.
 
-Independent of npx, the `osx-arm64` tarball is broken today for exactly this reason and still needs
-that signing step if it is meant to work.
+**`tokenflow-binaries` was deleted entirely, 2026-08-09.** Every surviving RID also fought a
+platform defender, and none of them added reach over the three channels that already exist.
+
+| RID | defender | user cost |
+| :--- | :--- | :--- |
+| `win-x64` | SmartScreen, unsigned + zero reputation | "Windows protected your PC", More info → Run anyway |
+| `osx-x64` | Gatekeeper, only when the download carries `com.apple.quarantine` | `xattr -dr com.apple.quarantine` (curl + `tar xz` sets no quarantine; Safari + Archive Utility does) |
+| `osx-arm64` | kernel, unsigned arm64 Mach-O | `zsh: killed`, no click-through |
+| `linux-x64` | none | none |
+
+Buying out of the Windows warning = an OV cert (reputation accrues over weeks) or EV (immediate,
+hardware token, ~$300+/yr). Restoring any of it means the signing step above.
 
 ## Out of scope
 

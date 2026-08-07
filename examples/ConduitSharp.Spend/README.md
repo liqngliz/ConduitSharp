@@ -8,7 +8,7 @@ One command, no clone. Pick whichever runtime you already have.
 
 ```bash
 # Node, no .NET needed. First run fetches the .NET 10 runtime (~46 MB) into ~/.tokenflow
-npx tokenflow
+npx @liqngliz/tokenflow
 
 # .NET 10 SDK
 dotnet tool install -g ConduitSharp.TokenFlow && tokenflow

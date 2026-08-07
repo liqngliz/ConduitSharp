@@ -35,15 +35,26 @@ git push origin tokenflow-vX.Y.Z
 | `dashboard` | gate only: vitest with coverage, then `npm run build`. A frontend type error stops the release |
 | `tool` | `ConduitSharp.TokenFlow` on nuget.org, version = tag minus `tokenflow-v`. `dotnet tool install -g` / `dnx` |
 | `image` | `ghcr.io/liqngliz/tokenflow` at `:X.Y.Z`, `:X.Y`, `:latest`, linux/amd64 + linux/arm64 |
-| `npm` | `tokenflow` on npmjs.com, version = tag minus `tokenflow-v`. `npx tokenflow` |
-| `tokenflow-binaries` | `conduitsharp-spend-<tag>-<rid>.{tar.gz,zip}` on the GitHub Release, for win-x64, linux-x64, osx-x64, osx-arm64 |
+| `npm` | `@liqngliz/tokenflow` on npmjs.com, version = tag minus `tokenflow-v`. `npx @liqngliz/tokenflow` |
 
-**Before the first `tool` release:** nuget.org Trusted Publishing is per-package AND per-workflow.
-Add a policy for `ConduitSharp.TokenFlow` / `liqngliz/ConduitSharp` / `tokenflow.yml`. The
-`release.yml` policy does not cover it, and the push fails without one.
+No native binaries. `npx` covers Node, `dotnet tool` covers the SDK, the image covers everything
+else, and an unsigned tarball costs a SmartScreen click-through on Windows and a
+`xattr -dr com.apple.quarantine` on macOS for a fourth redundant path.
 
-**Before the first `npm` release:** npm has no way to configure a trusted publisher for a package
-that does not exist, so `tokenflow` needs one manual publish first.
+### One-time setup, both done 2026-08-09
+
+nuget.org Trusted Publishing is per-package AND per-workflow, and the `release.yml` policy does not
+cover the tool. Policy: `ConduitSharp.TokenFlow` / `liqngliz/ConduitSharp` / `tokenflow.yml`.
+
+npm cannot configure a trusted publisher for a package that does not exist, so
+`@liqngliz/tokenflow@0.0.0` was published manually to claim the name. **`0.0.0` is burned, the first
+tag must be `tokenflow-v0.0.1` or higher.**
+
+Unscoped `tokenflow` is unavailable: npm's similarity guard strips punctuation, so it collides with
+the existing `token-flow` and rejects the publish with a 403. A name-availability lookup does not
+catch this, only the publish does.
+
+Repeat procedure, for a new package:
 
 ```bash
 cd examples/ConduitSharp.Spend/dashboard && npm ci && npm run build && cd -
@@ -51,7 +62,7 @@ dotnet publish examples/ConduitSharp.Spend -c Release -p:UseAppHost=false -o npm
 cd npm/tokenflow && npm login && npm publish --access public
 ```
 
-Then npmjs.com → Packages → tokenflow → Settings → Trusted publishing → GitHub Actions:
+Then npmjs.com → Packages → @liqngliz/tokenflow → Settings → Trusted publishing → GitHub Actions:
 
 | field | value |
 | :--- | :--- |
@@ -68,9 +79,6 @@ ship 10.x.
 
 Optional after that: package **Settings → Publishing access → require 2FA and disallow tokens**,
 which kills the bootstrap credential and leaves OIDC working.
-
-**`osx-arm64` is unsigned and does not run on Apple Silicon.** No signing step exists in the job.
-Fix and caveats: [docs/planning/token-flow-npx.md](planning/token-flow-npx.md).
 
 ## Re-run a workflow without a new tag
 

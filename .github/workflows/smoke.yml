@@ -1,0 +1,44 @@
+name: Smoke
+
+# Every push and PR that touches what the gateway actually runs. Doc-only pushes skip,
+# the job costs a full image build. Separate from tokenflow.yml because that workflow's
+# `image` job would push :latest on every commit if it shared a push trigger.
+#
+# The two path lists are duplicated because GitHub Actions does not support YAML anchors.
+on:
+  push:
+    branches: [ '**' ]
+    paths:
+      - 'examples/ConduitSharp.Spend/**'
+      - 'src/**'
+      - 'plugins/**'
+      - 'Directory.Build.props'
+      - '.github/workflows/smoke.yml'
+  pull_request:
+    paths:
+      - 'examples/ConduitSharp.Spend/**'
+      - 'src/**'
+      - 'plugins/**'
+      - 'Directory.Build.props'
+      - '.github/workflows/smoke.yml'
+  workflow_dispatch:
+
+# A second push to the same branch cancels the first. The image build is the expensive part.
+concurrency:
+  group: smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Builds tokenflow:smoke from the Dockerfile itself, runs it on 5091 against a stub
+      # upstream on 5092, asserts /info, the dashboard bundle, both routes, the wire log,
+      # and the spend JSONL. Exit code = number of failed checks, and the script's EXIT
+      # trap removes the container and both temp dirs, so there is nothing to clean up
+      # or to collect afterwards — a failing check prints its own diagnosis to stdout.
+      - name: Run smoke test
+        run: ./examples/ConduitSharp.Spend/smoke.sh

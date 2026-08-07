@@ -1,5 +1,5 @@
 {
-  "name": "tokenflow",
+  "name": "@liqngliz/tokenflow",
   "version": "0.0.0",
   "description": "Live token spend dashboard and LLM gateway. Point Claude Code or Codex at it and watch what every call costs.",
   "bin": { "tokenflow": "tokenflow.js" },

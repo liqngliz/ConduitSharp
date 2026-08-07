@@ -160,13 +160,13 @@ jobs:
   # npx — the install for someone with Node and no .NET SDK, which is most of
   # TokenFlow's audience (they proxy Claude Code or Codex). The package carries
   # framework-dependent DLLs; npm/tokenflow/tokenflow.js fetches Microsoft's signed
-  # runtime on first run. -p:UseAppHost=false stays on the publish command: an
-  # apphost here has no working invocation and tokenflow-binaries below needs one.
+  # runtime on first run. -p:UseAppHost=false because an apphost resolves its framework
+  # from DOTNET_ROOT or a system install, and the bootstrapped runtime is in neither.
   #
   # Auth is npm Trusted Publishing (OIDC), no NPM_TOKEN. One-time setup, blocks the
   # first release: npm cannot configure a trusted publisher for a package that does
-  # not exist, so `tokenflow` must be published once manually, then wired at
-  # npmjs.com → tokenflow → Settings → Trusted publishing with liqngliz /
+  # not exist, so `@liqngliz/tokenflow` must be published once manually, then wired at
+  # npmjs.com → @liqngliz/tokenflow → Settings → Trusted publishing with liqngliz /
   # ConduitSharp / tokenflow.yml (case-sensitive). A mismatch reports as a 404,
   # not as a config error (npm/cli#9088).
   # ---------------------------------------------------------------------------
@@ -209,105 +209,3 @@ jobs:
         run: |
           npm version "${GITHUB_REF_NAME#tokenflow-v}" --no-git-tag-version
           npm publish --access public
-
-  # ---------------------------------------------------------------------------
-  # Native binaries — the fallback for a host with no .NET SDK and no Docker.
-  # Self-contained; the dashboard is built first and rides along in wwwroot.
-  #
-  # osx-arm64 is published unsigned, and an unsigned arm64 Mach-O is SIGKILLed on
-  # Apple Silicon. PublishSingleFile also writes the bundle after the SDK signs the
-  # apphost, staling the signature (dotnet/sdk#34917). Fix is `rcodesign sign` as the
-  # last step before tar. The planned npx wrapper does not depend on these assets —
-  # it bootstraps Microsoft's signed runtime instead (docs/planning/token-flow-npx.md).
-  # ---------------------------------------------------------------------------
-  tokenflow-binaries:
-    needs: dashboard
-    if: startsWith(github.ref, 'refs/tags/')  # nothing to attach a release to on workflow_dispatch
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Build Dashboard
-        run: |
-          cd examples/ConduitSharp.Spend/dashboard
-          npm ci
-          npm run build
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Publish win-x64
-        run: |
-          dotnet publish examples/ConduitSharp.Spend \
-            -c Release \
-            -r win-x64 \
-            --self-contained true \
-            -p:PublishSingleFile=true \
-            -o publish/spend-win-x64
-
-      - name: Package win-x64
-        run: |
-          cd publish/spend-win-x64
-          zip -r ../../conduitsharp-spend-${{ github.ref_name }}-win-x64.zip .
-
-      - name: Publish linux-x64
-        run: |
-          dotnet publish examples/ConduitSharp.Spend \
-            -c Release \
-            -r linux-x64 \
-            --self-contained true \
-            -p:PublishSingleFile=true \
-            -o publish/spend-linux-x64
-
-      - name: Package linux-x64
-        run: |
-          chmod +x publish/spend-linux-x64/ConduitSharp.Spend
-          tar czf conduitsharp-spend-${{ github.ref_name }}-linux-x64.tar.gz \
-            -C publish/spend-linux-x64 .
-
-      - name: Publish osx-x64
-        run: |
-          dotnet publish examples/ConduitSharp.Spend \
-            -c Release \
-            -r osx-x64 \
-            --self-contained true \
-            -p:PublishSingleFile=true \
-            -o publish/spend-osx-x64
-
-      - name: Package osx-x64
-        run: |
-          chmod +x publish/spend-osx-x64/ConduitSharp.Spend
-          tar czf conduitsharp-spend-${{ github.ref_name }}-osx-x64.tar.gz \
-            -C publish/spend-osx-x64 .
-
-      - name: Publish osx-arm64
-        run: |
-          dotnet publish examples/ConduitSharp.Spend \
-            -c Release \
-            -r osx-arm64 \
-            --self-contained true \
-            -p:PublishSingleFile=true \
-            -o publish/spend-osx-arm64
-
-      - name: Package osx-arm64
-        run: |
-          chmod +x publish/spend-osx-arm64/ConduitSharp.Spend
-          tar czf conduitsharp-spend-${{ github.ref_name }}-osx-arm64.tar.gz \
-            -C publish/spend-osx-arm64 .
-
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            conduitsharp-spend-${{ github.ref_name }}-win-x64.zip
-            conduitsharp-spend-${{ github.ref_name }}-linux-x64.tar.gz
-            conduitsharp-spend-${{ github.ref_name }}-osx-x64.tar.gz
-            conduitsharp-spend-${{ github.ref_name }}-osx-arm64.tar.gz
