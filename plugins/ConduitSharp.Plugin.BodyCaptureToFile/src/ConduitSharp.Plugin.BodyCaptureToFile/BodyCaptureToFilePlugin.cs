@@ -86,7 +86,10 @@ public sealed class BodyCaptureToFilePlugin : IPipelinePlugin, IDisposable
                 var path = pathProp.GetString();
                 if (!string.IsNullOrWhiteSpace(path))
                 {
-                    _logPath = path;
+                    // %VAR% expands on every platform, so one routes.json can name a directory
+                    // that differs per deployment ("%CONDUIT_SPEND_DATA%/wire.jsonl"). An
+                    // unset variable is left literal, which then fails loudly on first write.
+                    _logPath = Environment.ExpandEnvironmentVariables(path);
                 }
             }
             if (config.TryGetProperty("maxSize", out _))
