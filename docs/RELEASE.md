@@ -19,7 +19,7 @@ git push origin main --tags
 Publishes `ghcr.io/liqngliz/conduitsharp`, the win-x64 and linux-x64 archives on a GitHub Release,
 and every `ConduitSharp.*` package to nuget.org.
 
-## Token Flow: image and native binaries
+## Token Flow: tool, image, native binaries
 
 Workflow: [.github/workflows/tokenflow.yml](../.github/workflows/tokenflow.yml)
 
@@ -33,11 +33,16 @@ git push origin tokenflow-vX.Y.Z
 | job | output |
 | :--- | :--- |
 | `dashboard` | gate only: vitest with coverage, then `npm run build`. A frontend type error stops the release |
+| `tool` | `ConduitSharp.TokenFlow` on nuget.org, version = tag minus `tokenflow-v`. `dotnet tool install -g` / `dnx` |
 | `image` | `ghcr.io/liqngliz/token-flow` at `:X.Y.Z`, `:X.Y`, `:latest`, linux/amd64 + linux/arm64 |
 | `tokenflow-binaries` | `conduitsharp-spend-<tag>-<rid>.{tar.gz,zip}` on the GitHub Release, for win-x64, linux-x64, osx-x64, osx-arm64 |
 
-`live.sh` resolves the newest `tokenflow-v*` release and downloads the archive matching the host
-RID, so the asset name must keep the `<tag>-<rid>` shape.
+**Before the first `tool` release:** nuget.org Trusted Publishing is per-package AND per-workflow.
+Add a policy for `ConduitSharp.TokenFlow` / `liqngliz/ConduitSharp` / `tokenflow.yml`. The
+`release.yml` policy does not cover it, and the push fails without one.
+
+The `<tag>-<rid>` asset name is load-bearing for the planned npx wrapper
+([docs/planning/token-flow-npx.md](planning/token-flow-npx.md)).
 
 ## Re-run a workflow without a new tag
 

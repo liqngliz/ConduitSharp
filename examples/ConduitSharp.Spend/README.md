@@ -1,21 +1,30 @@
 # Token Flow
 
-Track token spend across any AI agent, ships pre-configured with Anthropic and Codex and Local LLM routes.  
-
-One command to launch: Docker run pull image, mount volume, start server. Zero install.
+Track token spend across any AI agent, ships pre-configured with Anthropic and Codex and Local LLM routes.
 
 ## Run
 
-One command, no clone:
+One command, no clone. Pick whichever runtime you already have.
 
 ```bash
+# .NET 10 SDK
+dotnet tool install -g ConduitSharp.TokenFlow && token-flow
+dnx ConduitSharp.TokenFlow          # no install, .NET 10 SDK only
+
+# Docker
 docker run -d --restart unless-stopped --name token-flow \
   -p 5050:5050 -v "$PWD/logs:/data" \
   ghcr.io/liqngliz/token-flow
 ```
 
-Serves the dashboard on `http://localhost:5050`. Spend rows and the wire log land in `./logs`.
-`GET /info` prints the setup lines below.
+Serves the dashboard on `http://localhost:5050`. `GET /info` prints the setup lines below.
+
+| | spend rows + wire log | override |
+| :--- | :--- | :--- |
+| tool | `~/.conduit-spend/` | `CONDUIT_SPEND_DATA` |
+| image | `./logs` (the mount) | remount `/data` |
+
+Port: `--urls http://localhost:PORT` for the tool, `-p PORT:5050` for the image.
 
 On macOS and Windows a local model server on the host is reachable out of the box, on its default
 loopback binding, with no extra flags.
