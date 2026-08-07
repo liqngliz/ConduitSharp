@@ -159,8 +159,12 @@ jobs:
   # ---------------------------------------------------------------------------
   # Native binaries — the fallback for a host with no .NET SDK and no Docker.
   # Self-contained; the dashboard is built first and rides along in wwwroot.
-  # The <tag>-<rid> asset name is load-bearing, a planned npx wrapper resolves
-  # assets by that shape (docs/planning/token-flow-npx.md).
+  #
+  # osx-arm64 is published unsigned, and an unsigned arm64 Mach-O is SIGKILLed on
+  # Apple Silicon. PublishSingleFile also writes the bundle after the SDK signs the
+  # apphost, staling the signature (dotnet/sdk#34917). Fix is `rcodesign sign` as the
+  # last step before tar. The planned npx wrapper does not depend on these assets —
+  # it bootstraps Microsoft's signed runtime instead (docs/planning/token-flow-npx.md).
   # ---------------------------------------------------------------------------
   tokenflow-binaries:
     needs: dashboard

@@ -9,64 +9,107 @@ they have Node and often no .NET SDK. `npx token-flow` reaches them with no othe
 
 ## Shape
 
-Single npm package. `postinstall` downloads the self-contained binary for the host RID off the
-GitHub Release. npx runs lifecycle scripts by default.
+npm package carries the app as framework-dependent DLLs. `postinstall` fetches the ASP.NET Core
+**runtime** (not the SDK) into the package directory. `bin` spawns that runtime against the DLL.
 
 ```
 npm/token-flow/
   package.json        bin: {"token-flow": "bin/token-flow.js"}, scripts.postinstall
-  install.js          RID detect -> download -> checksum -> chmod
-  bin/token-flow.js   spawn binary, forward argv + exit code
+  install.js          dotnet-install.{sh,ps1} --runtime aspnetcore --channel 10.0
+                      --install-dir <pkg>/.dotnet --no-path
+  bin/token-flow.js   spawn(<pkg>/.dotnet/dotnet, [app/ConduitSharp.Spend.dll, ...argv])
+  app/                dotnet publish -o app -p:UseAppHost=false
 ```
 
-Alternative: `optionalDependencies`, one published package per platform (esbuild, biome, Tailwind
-standalone use this). No install-time network, survives `--ignore-scripts`, costs 5 published
-packages per release instead of 1. Move to it only if `--ignore-scripts` users complain.
+No apphost is ever executed. The binary that runs is Microsoft's `dotnet` muxer, shipped signed and
+notarized (`Developer ID Application: Microsoft Corporation (UBF8T346G9)`), which is what removes
+the macOS signing problem rather than solving it.
 
-## Prerequisites, in dependency order
+## Verified 2026-08-08
 
-| # | item | blocks because |
+Built the real package (`package.json` + `install.js` + `bin/token-flow.js` + `publish -o app
+-p:UseAppHost=false`), `npm pack`, ran it two ways.
+
+**A. macOS arm64**, `env -i` (no PATH, no `DOTNET_ROOT`), cwd `/tmp`, isolated runtime.
+**B. `node:22` container, aarch64**, `dotnet` not on PATH, no dotnet directories, host SDK not
+mounted. `npx --yes --package=<tgz> -- token-flow`.
+
+| | |
+| :--- | :--- |
+| npm tarball | 1.26 MB (3.1 MB unpacked, 468 KB of it wwwroot) |
+| runtime | 10.0.10, 46.6 MB download, 114 MB on disk, no sudo, no PATH edit |
+| `GET /` | 200, `<title>Token Flow</title>`, both runs |
+| `GET /info`, `GET /api/spend` | correct |
+| plugins | `token-spend` + `body-capture-file` registered |
+| errors | 0 |
+
+Not covered: macOS with no .NET installed anywhere. A is macOS but has an SDK present; B has no
+.NET but is Linux. Needs a clean Mac to close.
+
+## `UseAppHost=false` goes on the publish command, not the csproj
+
+Without it, a framework-dependent publish emits an apphost next to the DLLs (77 KB ELF when built
+on Linux CI). It has no working invocation inside the npm package: an apphost resolves its
+framework from `DOTNET_ROOT` or a system-wide install, and the bundled runtime sits in
+`<pkg>/.dotnet`, on neither. A user who runs `./ConduitSharp.Spend` instead of the npm bin gets
+`You must install .NET` on Linux and `cannot execute binary file` on macOS, where the ELF is not
+even the host format.
+
+Do not move it into `ConduitSharp.Spend.csproj`. `tokenflow-binaries` publishes
+`--self-contained -p:PublishSingleFile=true`, which requires the apphost; a project-level property
+would break that job.
+
+`Dockerfile:30` publishes the same framework-dependent shape and runs
+`ENTRYPOINT ["dotnet", "ConduitSharp.Spend.dll"]`, so it carries the same dead apphost. Same
+one-flag fix, not required for npx.
+
+## Prerequisites
+
+| # | item | note |
 | :--- | :--- | :--- |
-| 1 | `osx-arm64` ad-hoc signing in `tokenflow-binaries` | Unsigned arm64 Mach-O = `zsh: killed` on Apple Silicon. `PublishSingleFile` writes the bundle after the SDK signs the apphost, staling the signature ([dotnet/sdk#34917](https://github.com/dotnet/sdk/issues/34917)). Fix = `rcodesign sign` (Rust `apple-codesign`, runs on Linux) last, before `tar`. Untested for today's tarballs too |
-| 2 | `linux-arm64` in the RID matrix | Image already ships `linux/arm64`. Graviton / Pi would 404 |
-| 3 | `SHA256SUMS` as a release asset | `install.js` must verify. An unverified binary onto PATH is the `curl \| bash` failure mode |
-| 4 | The name `token-flow` on npm | Unverified. Fallback `@liqngliz/token-flow`, also kills the squat risk |
-| 5 | `NPM_TOKEN` secret, or npm Trusted Publishing (OIDC) | Prefer OIDC: matches how nuget.org is already wired, stores no long-lived secret |
+| 1 | The name `token-flow` on npm | Unverified. Fallback `@liqngliz/token-flow`, also kills the squat risk |
+| 2 | `NPM_TOKEN` secret, or npm Trusted Publishing (OIDC) | Prefer OIDC: matches how nuget.org is already wired, stores no long-lived secret |
 
-## RID detection
+## First-run cost
 
-`process.platform` + `process.arch`, never `uname`. `uname` is where the deleted `live.sh` failed:
-Git Bash reports `mingw64_nt-10.0-x64`, matching nothing.
+46.6 MB over the wire, 114 MB on disk, ~1 minute. Later runs are instant.
 
-| platform / arch | RID | asset |
-| :--- | :--- | :--- |
-| `darwin` / `arm64` | `osx-arm64` | `.tar.gz` |
-| `darwin` / `x64` | `osx-x64` | `.tar.gz` |
-| `linux` / `x64` | `linux-x64` | `.tar.gz` |
-| `linux` / `arm64` | `linux-arm64` | `.tar.gz` (blocked on #2) |
-| `win32` / `x64` | `win-x64` | `.zip`, separate extract path |
+**Fetch the runtime from `bin/token-flow.js` on first run, not from `postinstall`.** npm hides
+lifecycle-script output unless the user passes `--foreground-scripts`, so a `postinstall` download
+is a silent minute that reads as a hang (verified: the progress lines are invisible under both
+`npm i -g` and `npx`). Fetching from the bin puts the output on the user's terminal and survives
+`--ignore-scripts`.
 
-Anything else exits with the `docker run` line, not a 404.
+Idempotent either way: skip when `<pkg>/.dotnet/dotnet` already exists.
 
-## Version pinning
+## Platform handling
 
-npm version = source of truth. `install.js` fetches
-`conduitsharp-spend-tokenflow-v${pkg.version}-<rid>.<ext>` directly: no GitHub API call, no
-"latest" resolution, no rate limit, no fallback guess. `npx token-flow@1.2.0` means that exact
-binary. `tokenflow.yml` publishes npm in the same tag-gated job that uploads the assets, version
-from `${GITHUB_REF_NAME#tokenflow-v}`.
+`process.platform === 'win32'` selects `dotnet-install.ps1` over `dotnet-install.sh`, and
+`.dotnet/dotnet.exe` over `.dotnet/dotnet`. That is the entire platform matrix. One portable
+publish covers every RID, so no `process.arch` detection, no per-platform assets, no checksums
+(the Microsoft script verifies its own payload).
+
+## Rejected: download the native binary from the GitHub Release
+
+The `<tag>-<rid>` tarballs are self-contained single-file apphosts. On Apple Silicon an unsigned
+arm64 Mach-O is SIGKILLed by the kernel, and `PublishSingleFile` writes the bundle after the SDK
+signs the apphost, staling the signature ([dotnet/sdk#34917](https://github.com/dotnet/sdk/issues/34917)).
+Fixing that means `rcodesign sign` (Rust `apple-codesign`, runs on Linux) as the last step before
+`tar`, plus a `linux-arm64` RID, plus `SHA256SUMS`, plus a 5-platform test matrix. The runtime
+bootstrap above needs none of it.
+
+Independent of npx, the `osx-arm64` tarball is broken today for exactly this reason and still needs
+that signing step if it is meant to work.
 
 ## Effort
 
 | piece | size |
 | :--- | :--- |
-| `install.js` + `bin/token-flow.js` + `package.json` | ~120 lines |
-| `rcodesign` step, `linux-arm64` RID, `SHA256SUMS` in `tokenflow.yml` | ~40 lines YAML |
-| npm publish step + OIDC setup | ~15 lines + one-time npm config |
-| Testing 5 platforms | the real cost. CI covers linux-x64 and win-x64; macOS arm64 needs a `macos-14` runner or a manual check |
+| `install.js` + `bin/token-flow.js` + `package.json` | ~60 lines |
+| npm publish step in `tokenflow.yml`, version from `${GITHUB_REF_NAME#tokenflow-v}` | ~15 lines + one-time npm config |
+| Testing | macOS arm64 + linux-x64 + win-x64 |
 
-~1 day, mostly prerequisite #1 and cross-platform testing, against ~1 hour for the `dotnet tool`
-path. Worth building once someone without the .NET SDK asks.
+~2 hours, against ~1 hour for the `dotnet tool` path and ~1 day for the native-binary shape.
 
 ## Out of scope
 

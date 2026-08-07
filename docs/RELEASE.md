@@ -41,8 +41,8 @@ git push origin tokenflow-vX.Y.Z
 Add a policy for `ConduitSharp.TokenFlow` / `liqngliz/ConduitSharp` / `tokenflow.yml`. The
 `release.yml` policy does not cover it, and the push fails without one.
 
-The `<tag>-<rid>` asset name is load-bearing for the planned npx wrapper
-([docs/planning/token-flow-npx.md](planning/token-flow-npx.md)).
+**`osx-arm64` is unsigned and does not run on Apple Silicon.** No signing step exists in the job.
+Fix and caveats: [docs/planning/token-flow-npx.md](planning/token-flow-npx.md).
 
 ## Re-run a workflow without a new tag
 
