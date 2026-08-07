@@ -5,7 +5,7 @@ services:
     image: ghcr.io/liqngliz/token-flow:latest
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "5050:5050"
     volumes:
       - ./logs:/data
       # Your own routes, pulled out of the image and edited. See the README.

@@ -10,11 +10,11 @@ One command, no clone:
 
 ```bash
 docker run -d --restart unless-stopped --name token-flow \
-  -p 4000:4000 -v "$PWD/logs:/data" \
+  -p 5050:5050 -v "$PWD/logs:/data" \
   ghcr.io/liqngliz/token-flow
 ```
 
-Serves the dashboard on `http://localhost:4000`. Spend rows and the wire log land in `./logs`.
+Serves the dashboard on `http://localhost:5050`. Spend rows and the wire log land in `./logs`.
 `GET /info` prints the setup lines below.
 
 On macOS and Windows a local model server on the host is reachable out of the box, on its default
@@ -70,7 +70,7 @@ File: `~/.claude/settings.json`
 ```json
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "http://localhost:4000/llm/claude"
+    "ANTHROPIC_BASE_URL": "http://localhost:5050/llm/claude"
   }
 }
 ```
@@ -91,7 +91,7 @@ model_provider = "conduit"
 
 [model_providers.conduit]
 name     = "ConduitSharp"
-base_url = "http://localhost:4000/llm/codex/backend-api/codex"
+base_url = "http://localhost:5050/llm/codex/backend-api/codex"
 wire_api = "responses"
 ```
 
@@ -104,7 +104,7 @@ that environment variable instead.
 ### LM Studio
 
 ```bash
-OPENAI_BASE_URL=http://localhost:4000/llm/local/v1
+OPENAI_BASE_URL=http://localhost:5050/llm/local/v1
 ```
 
 The `local` route points at `host.docker.internal:1234`, LM Studio's default port on the host. For

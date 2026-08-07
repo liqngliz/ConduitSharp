@@ -224,12 +224,12 @@ costs in tokens, with a live dashboard. One command, no clone:
 
 ```bash
 docker run -d --restart unless-stopped --name token-flow \
-  -p 4000:4000 -v "$PWD/logs:/data" \
+  -p 5050:5050 -v "$PWD/logs:/data" \
   ghcr.io/liqngliz/token-flow
 ```
 
 Ships with Claude Code, Codex, and local OpenAI-compatible routes pre-configured. Dashboard on
-`http://localhost:4000`, one JSON row per request in `./logs`. See
+`http://localhost:5050`, one JSON row per request in `./logs`. See
 [examples/ConduitSharp.Spend](examples/ConduitSharp.Spend) for the setup lines each tool needs.
 
 ## Writing a custom plugin

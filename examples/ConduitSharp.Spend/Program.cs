@@ -92,9 +92,9 @@ app.MapGet("/info", () => Results.Text(
     $"""
      Token Flow
 
-       Claude Code   ANTHROPIC_BASE_URL=http://localhost:4000/llm/claude
-       Codex         ~/.codex/config.toml -> base_url = "http://localhost:4000/llm/codex/backend-api/codex"
-       LM Studio     OPENAI_BASE_URL=http://localhost:4000/llm/local/v1
+       Claude Code   ANTHROPIC_BASE_URL=http://localhost:5050/llm/claude
+       Codex         ~/.codex/config.toml -> base_url = "http://localhost:5050/llm/codex/backend-api/codex"
+       LM Studio     OPENAI_BASE_URL=http://localhost:5050/llm/local/v1
 
      spend rows   {dataDir}/spend-<utc-date>.jsonl   (mounted at ./logs)
      wire log     wherever logPath in routes.json points (/data in the image)

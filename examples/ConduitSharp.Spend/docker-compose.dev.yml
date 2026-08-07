@@ -17,7 +17,7 @@ services:
     image: token-flow:dev
     container_name: token-flow-dev
     ports:
-      - "4000:4000"
+      - "5050:5050"
     volumes:
       - ./logs:/data
       - ./Configuration:/app/Configuration:ro

@@ -11,7 +11,7 @@ export default defineConfig(() => {
     // gateway's port. Without this the dashboard 404s on every /api call in dev.
     server: {
       proxy: {
-        '/api': { target: 'http://localhost:4000', changeOrigin: true },
+        '/api': { target: 'http://localhost:5050', changeOrigin: true },
       },
     },
     resolve: {

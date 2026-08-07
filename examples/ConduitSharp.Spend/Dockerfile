@@ -39,13 +39,13 @@ COPY --from=build /app/publish .
 # outputs land in the one mounted volume.
 COPY examples/ConduitSharp.Spend/Configuration/routes.json ./Configuration/routes.json
 
-ENV ASPNETCORE_URLS=http://+:4000
+ENV ASPNETCORE_URLS=http://+:5050
 ENV CONDUIT_SPEND_DATA=/data
 
 # Routes are baked in so the image runs with no arguments. Override either by mounting a file
 # over ./Configuration/routes.json, or by pointing Gateway__RoutesPath at one you mount elsewhere.
 ENV Gateway__RoutesPath=Configuration/routes.json
 VOLUME /data
-EXPOSE 4000
+EXPOSE 5050
 
 ENTRYPOINT ["dotnet", "ConduitSharp.Spend.dll"]
