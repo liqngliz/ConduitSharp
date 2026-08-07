@@ -1,4 +1,4 @@
-# Token Flow
+# TokenFlow
 
 Track token spend across any AI agent, ships pre-configured with Anthropic and Codex and Local LLM routes.
 
@@ -163,7 +163,7 @@ container.
 | check | asserts |
 | :--- | :--- |
 | `/info` | 200, names `/llm/claude` and `/llm/codex` |
-| `/` | `<title>Token Flow</title>`, `/assets/*.js` 200 and > 10 KB |
+| `/` | `<title>TokenFlow</title>`, `/assets/*.js` 200 and > 10 KB |
 | claude call | `POST /llm/claude/v1/messages` 200 |
 | codex call | `POST /llm/codex/backend-api/codex/responses` 200 |
 | logs | `conduit-wire.jsonl` and `spend-<today>.jsonl` non-empty, container log free of `error`/`fail` |

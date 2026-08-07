@@ -140,7 +140,7 @@ jobs:
         run: make test-e2e-mtls
 
   # ---------------------------------------------------------------------------
-  # Token Flow dashboard — its own job rather than steps bolted onto build-and-test,
+  # TokenFlow dashboard — its own job rather than steps bolted onto build-and-test,
   # so a broken React component and a broken .NET build are told apart at a glance and
   # neither blocks the other's feedback. Independent of the .NET jobs, so no `needs`.
   # ---------------------------------------------------------------------------

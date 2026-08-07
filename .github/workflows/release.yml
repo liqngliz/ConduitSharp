@@ -128,7 +128,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # Token Flow (the spend gateway image) is NOT built here. It ships on its own
+  # TokenFlow (the spend gateway image) is NOT built here. It ships on its own
   # `tokenflow-v*` tag from .github/workflows/tokenflow.yml, so a dashboard fix goes out
   # without cutting NuGet packages and binaries.
 

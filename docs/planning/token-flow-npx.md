@@ -1,10 +1,10 @@
-# Token Flow: npx wrapper
+# TokenFlow: npx wrapper
 
 Status: planned, not built. `dotnet tool install -g ConduitSharp.TokenFlow` ships today.
 
 ## Why
 
-The tool path needs the .NET 10 SDK. Token Flow's user proxies Claude Code or Codex traffic, so
+The tool path needs the .NET 10 SDK. TokenFlow's user proxies Claude Code or Codex traffic, so
 they have Node and often no .NET SDK. `npx tokenflow` reaches them with no other prerequisite.
 
 ## Shape
@@ -38,7 +38,7 @@ mounted. `npx --yes --package=<tgz> -- token-flow`.
 | :--- | :--- |
 | npm tarball | 1.26 MB (3.1 MB unpacked, 468 KB of it wwwroot) |
 | runtime | 10.0.10, 46.6 MB download, 114 MB on disk, no sudo, no PATH edit |
-| `GET /` | 200, `<title>Token Flow</title>`, both runs |
+| `GET /` | 200, `<title>TokenFlow</title>`, both runs |
 | `GET /info`, `GET /api/spend` | correct |
 | plugins | `token-spend` + `body-capture-file` registered |
 | errors | 0 |
@@ -84,7 +84,7 @@ to maintain.
 | NuGet package id | `ConduitSharp.TokenFlow` (unchanged) |
 | tag prefix, workflow file | `tokenflow-v*`, `tokenflow.yml` (unchanged) |
 
-"Token Flow" as two words stays the product name in `<title>`, `/info`, and headings. The
+`TokenFlow` is the product name too, one word everywhere: `<title>`, `/info`, headings. The
 verification above predates the rename and ran under the bin name `token-flow`; nothing about the
 runtime bootstrap depends on it.
 

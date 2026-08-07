@@ -1,6 +1,6 @@
-name: Token Flow
+name: TokenFlow
 
-# Token Flow ships on its own tag, not the library's `v*`. A dashboard fix goes out without
+# TokenFlow ships on its own tag, not the library's `v*`. A dashboard fix goes out without
 # cutting NuGet packages and binaries, and the image version says nothing about the gateway
 # library version it happens to embed.
 on:

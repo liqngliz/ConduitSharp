@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Token Flow smoke test. Runs the image on a throwaway port against a stub upstream,
+# TokenFlow smoke test. Runs the image on a throwaway port against a stub upstream,
 # so no Anthropic or ChatGPT credential is involved and no live gateway is disturbed.
 #
 #   ./smoke.sh                       build if needed, run every check
@@ -81,7 +81,7 @@ docker run -d --name "$NAME" -p "$PORT:5050" \
 B=http://localhost:$PORT
 for _ in $(seq 60); do curl -sf "$B/info" >/dev/null 2>&1 && break; sleep 0.5; done
 
-echo "Token Flow smoke — image $IMAGE, port $PORT, data $DATA"
+echo "TokenFlow smoke — image $IMAGE, port $PORT, data $DATA"
 
 # ── 1. /info ──────────────────────────────────────────────────────────────────
 INFO=$(curl -sf "$B/info")
@@ -91,7 +91,7 @@ have "/info names the codex route"   "$(printf '%s' "$INFO" | grep -F '/llm/code
 
 # ── 2. dashboard ──────────────────────────────────────────────────────────────
 HTML=$(curl -sf "$B/")
-have "/ serves the dashboard html"   "$(printf '%s' "$HTML" | grep -F '<title>Token Flow</title>')"
+have "/ serves the dashboard html"   "$(printf '%s' "$HTML" | grep -F '<title>TokenFlow</title>')"
 JS=$(printf '%s' "$HTML" | grep -o 'src="[^"]*\.js"' | head -1 | sed 's/src="//;s/"//')
 if [ -n "$JS" ] && [ "$(curl -so /dev/null -w '%{http_code}' "$B$JS")" = 200 ] &&
    [ "$(curl -sf "$B$JS" | wc -c)" -gt 10000 ]; then

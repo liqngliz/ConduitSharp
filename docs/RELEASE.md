@@ -1,6 +1,6 @@
 # Releasing
 
-Two independent pipelines. The library ships on `v*`, Token Flow ships on `tokenflow-v*`.
+Two independent pipelines. The library ships on `v*`, TokenFlow ships on `tokenflow-v*`.
 
 ## Library: NuGet packages, binaries, gateway image
 
@@ -19,7 +19,7 @@ git push origin main --tags
 Publishes `ghcr.io/liqngliz/conduitsharp`, the win-x64 and linux-x64 archives on a GitHub Release,
 and every `ConduitSharp.*` package to nuget.org.
 
-## Token Flow: tool, image, native binaries
+## TokenFlow: tool, image, native binaries
 
 Workflow: [.github/workflows/tokenflow.yml](../.github/workflows/tokenflow.yml)
 

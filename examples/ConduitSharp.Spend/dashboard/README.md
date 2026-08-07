@@ -1,6 +1,6 @@
-# Token Flow dashboard
+# TokenFlow dashboard
 
-React UI for [Token Flow](../README.md). Reads/renders gateway spend rows live. Build goes to `../wwwroot` (gitignored, Docker builds it).
+React UI for [TokenFlow](../README.md). Reads/renders gateway spend rows live. Build goes to `../wwwroot` (gitignored, Docker builds it).
 
 ## Run
 

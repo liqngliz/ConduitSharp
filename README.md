@@ -217,7 +217,7 @@ Drop-ins under [plugins/](plugins/), each with its own `src/` and `tests/`. Copy
 | [ConduitSharp.RateLimit.RedisProtocol](plugins/ConduitSharp.RateLimit.RedisProtocol) | `IRateLimitStore` seam | `ConduitSharp.RateLimit.RedisProtocol` | Swaps the in-memory `rate-limit` store for Redis/Valkey: shared quota across instances |
 | [ConduitSharp.RateLimit.SlidingWindow](plugins/ConduitSharp.RateLimit.SlidingWindow) | `IRateLimiter` seam | `ConduitSharp.RateLimit.SlidingWindow` | Swaps the fixed-window *algorithm* for a sliding log; refuses the 2x burst a fixed window allows across its boundary. The algorithm and the store are separate seams |
 
-## 🔀 Token Flow
+## 🔀 TokenFlow
 
 A gateway built on ConduitSharp that sits in front of your AI agents and records what every request
 costs in tokens, with a live dashboard. One command, no clone:
