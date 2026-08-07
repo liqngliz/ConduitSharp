@@ -5,7 +5,7 @@ Status: planned, not built. `dotnet tool install -g ConduitSharp.TokenFlow` ship
 ## Why
 
 The tool path needs the .NET 10 SDK. Token Flow's user proxies Claude Code or Codex traffic, so
-they have Node and often no .NET SDK. `npx token-flow` reaches them with no other prerequisite.
+they have Node and often no .NET SDK. `npx tokenflow` reaches them with no other prerequisite.
 
 ## Shape
 
@@ -14,7 +14,7 @@ npm package carries the app as framework-dependent DLLs. `postinstall` fetches t
 
 ```
 npm/token-flow/
-  package.json        bin: {"token-flow": "bin/token-flow.js"}, scripts.postinstall
+  package.json        bin: {"tokenflow": ..., "token-flow": ...}
   install.js          dotnet-install.{sh,ps1} --runtime aspnetcore --channel 10.0
                       --install-dir <pkg>/.dotnet --no-path
   bin/token-flow.js   spawn(<pkg>/.dotnet/dotnet, [app/ConduitSharp.Spend.dll, ...argv])
@@ -67,8 +67,20 @@ one-flag fix, not required for npx.
 
 | # | item | note |
 | :--- | :--- | :--- |
-| 1 | The name `token-flow` on npm | Unverified. Fallback `@liqngliz/token-flow`, also kills the squat risk |
-| 2 | `NPM_TOKEN` secret, or npm Trusted Publishing (OIDC) | Prefer OIDC: matches how nuget.org is already wired, stores no long-lived secret |
+| 1 | `NPM_TOKEN` secret, or npm Trusted Publishing (OIDC) | Prefer OIDC: matches how nuget.org is already wired, stores no long-lived secret |
+
+## Name: `tokenflow`
+
+`token-flow` is taken on npm (checked 2026-08-08). `tokenflow` is free, so `npx tokenflow`.
+
+Two bin entries, both pointing at the same file:
+
+```json
+"bin": { "tokenflow": "bin/token-flow.js", "token-flow": "bin/token-flow.js" }
+```
+
+`token-flow` is the `dotnet tool` command name and what every doc says. A bin matching the package
+name always wins npx resolution, so shipping both means neither spelling is wrong.
 
 ## First-run cost
 
