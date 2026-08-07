@@ -99,10 +99,68 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   # ---------------------------------------------------------------------------
-  # Native binaries — the no-Docker install. live.sh resolves the newest
-  # tokenflow-v* release and pulls the archive matching the host RID, so the
-  # <tag>-<rid> asset name is load-bearing. Self-contained, so no .NET runtime on
-  # the host; the dashboard is built first and rides along in wwwroot.
+  # dotnet tool — the one-command install for anyone with the .NET 10 SDK:
+  #   dotnet tool install -g ConduitSharp.TokenFlow && token-flow
+  #   dnx ConduitSharp.TokenFlow                      (no install)
+  #
+  # Packed here rather than in release.yml's loop, which would pin the tool to the
+  # library's Directory.Build.props version. -p:Version comes off the tag instead.
+  # A tool package runs through the `dotnet` muxer, so it needs no apphost and no
+  # macOS code signature, unlike the tarballs below.
+  #
+  # One-time setup, blocks the first release: nuget.org Trusted Publishing is
+  # per-package AND per-workflow. Add a policy for ConduitSharp.TokenFlow /
+  # liqngliz/ConduitSharp / tokenflow.yml — the release.yml policy does not cover it.
+  # ---------------------------------------------------------------------------
+  tool:
+    needs: dashboard
+    if: startsWith(github.ref, 'refs/tags/')  # no version to pack on workflow_dispatch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read    # a permissions block zeroes everything unlisted — checkout needs this back
+      id-token: write   # required to request the OIDC token
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # .NET 10 packs tools from Publish, so wwwroot has to exist before pack or the
+      # dashboard ships as a 404 (dotnet/docs#47916).
+      - name: Build Dashboard
+        run: |
+          cd examples/ConduitSharp.Spend/dashboard
+          npm ci
+          npm run build
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pack
+        run: |
+          dotnet pack examples/ConduitSharp.Spend -c Release -o nupkg \
+            -p:Version="${GITHUB_REF_NAME#tokenflow-v}"
+
+      - name: NuGet login (OIDC → short-lived API key)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push nupkg/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
+            --skip-duplicate
+
+  # ---------------------------------------------------------------------------
+  # Native binaries — the fallback for a host with no .NET SDK and no Docker.
+  # Self-contained; the dashboard is built first and rides along in wwwroot.
+  # The <tag>-<rid> asset name is load-bearing, a planned npx wrapper resolves
+  # assets by that shape (docs/planning/token-flow-npx.md).
   # ---------------------------------------------------------------------------
   tokenflow-binaries:
     needs: dashboard
