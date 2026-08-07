@@ -148,6 +148,39 @@ block in your `routes.json`, change `id`, the `path`, and the `PathRemovePrefix`
 project's tool at the new prefix. Per-repo `.envrc` under direnv makes the base URL set itself when
 you `cd` in.
 
+## Smoke test
+
+```bash
+./smoke.sh                       # builds token-flow:smoke if missing
+IMAGE=token-flow:nc ./smoke.sh   # reuse an image
+PORT=5091 MOCK_PORT=5092 ./smoke.sh
+```
+
+Runs the image on port 5091 against a stub upstream on 5092, so no Anthropic or ChatGPT credential
+is used and port 5050 is left alone. Data dir is a `mktemp -d`, removed on exit along with the
+container.
+
+| check | asserts |
+| :--- | :--- |
+| `/info` | 200, names `/llm/claude` and `/llm/codex` |
+| `/` | `<title>Token Flow</title>`, `/assets/*.js` 200 and > 10 KB |
+| claude call | `POST /llm/claude/v1/messages` 200 |
+| codex call | `POST /llm/codex/backend-api/codex/responses` 200 |
+| logs | `conduit-wire.jsonl` and `spend-<today>.jsonl` non-empty, container log free of `error`/`fail` |
+| live rows | claude in=1200 cw=56 cr=7800 out=340; codex in=500 cw=90 cr=1600 out=410 |
+| synthetic rows | 4 rows written to `spend-<yesterday>.jsonl`, model `test-model`, both routes, returned by `/api/spend/<day>` with totals in=5600 cw=550 cr=3900 out=2390 |
+
+Codex `in` is 500 not 2100 because `subtractInputFields` takes `cached_tokens` off the input count.
+The two files are different days so the synthetic writes never interleave with the live writer's
+background channel.
+
+Routes come from `Configuration/routes.json` with only the two upstream addresses `sed`-swapped, so
+a plugin-config change is covered without editing the script. Exit code = number of failed checks.
+
+Not covered: SSE (`/api/spend/stream`), the `local` route, and DOM rendering. The dashboard is
+checked at its data path (`/api/spend`, `/api/spend/{date}`) and by the bundle being served, not by
+a headless browser.
+
 ## Known limits
 
 **Codex polls `/models` every three minutes** with an empty GET, so most rows in the spend file
