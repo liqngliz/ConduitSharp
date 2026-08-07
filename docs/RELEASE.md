@@ -34,7 +34,7 @@ git push origin tokenflow-vX.Y.Z
 | :--- | :--- |
 | `dashboard` | gate only: vitest with coverage, then `npm run build`. A frontend type error stops the release |
 | `tool` | `ConduitSharp.TokenFlow` on nuget.org, version = tag minus `tokenflow-v`. `dotnet tool install -g` / `dnx` |
-| `image` | `ghcr.io/liqngliz/token-flow` at `:X.Y.Z`, `:X.Y`, `:latest`, linux/amd64 + linux/arm64 |
+| `image` | `ghcr.io/liqngliz/tokenflow` at `:X.Y.Z`, `:X.Y`, `:latest`, linux/amd64 + linux/arm64 |
 | `tokenflow-binaries` | `conduitsharp-spend-<tag>-<rid>.{tar.gz,zip}` on the GitHub Release, for win-x64, linux-x64, osx-x64, osx-arm64 |
 
 **Before the first `tool` release:** nuget.org Trusted Publishing is per-package AND per-workflow.

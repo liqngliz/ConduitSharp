@@ -8,13 +8,13 @@ One command, no clone. Pick whichever runtime you already have.
 
 ```bash
 # .NET 10 SDK
-dotnet tool install -g ConduitSharp.TokenFlow && token-flow
+dotnet tool install -g ConduitSharp.TokenFlow && tokenflow
 dnx ConduitSharp.TokenFlow          # no install, .NET 10 SDK only
 
 # Docker
-docker run -d --restart unless-stopped --name token-flow \
+docker run -d --restart unless-stopped --name tokenflow \
   -p 5050:5050 -v "$PWD/logs:/data" \
-  ghcr.io/liqngliz/token-flow
+  ghcr.io/liqngliz/tokenflow
 ```
 
 Serves the dashboard on `http://localhost:5050`. `GET /info` prints the setup lines below.
@@ -32,10 +32,10 @@ loopback binding, with no extra flags.
 ```bash
 # Follow the gateway's output. Startup errors, plugin registration and route
 # validation failures all show up here.
-docker logs -f token-flow
+docker logs -f tokenflow
 
 # Stop and delete it.
-docker rm -f token-flow
+docker rm -f tokenflow
 ```
 
 **On Linux** Add the host mapping, which Docker Desktop provides
@@ -61,7 +61,7 @@ Three routes ship in the image:
 To run different ones, pull the shipped config out, edit it, and mount it back:
 
 ```bash
-docker run --rm --entrypoint cat ghcr.io/liqngliz/token-flow \
+docker run --rm --entrypoint cat ghcr.io/liqngliz/tokenflow \
   Configuration/routes.json > routes.json
 ```
 
@@ -151,8 +151,8 @@ you `cd` in.
 ## Smoke test
 
 ```bash
-./smoke.sh                       # builds token-flow:smoke if missing
-IMAGE=token-flow:nc ./smoke.sh   # reuse an image
+./smoke.sh                       # builds tokenflow:smoke if missing
+IMAGE=tokenflow:nc ./smoke.sh    # reuse an image
 PORT=5091 MOCK_PORT=5092 ./smoke.sh
 ```
 

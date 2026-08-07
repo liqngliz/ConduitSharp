@@ -223,12 +223,12 @@ A gateway built on ConduitSharp that sits in front of your AI agents and records
 costs in tokens, with a live dashboard. One command, no clone:
 
 ```bash
-dotnet tool install -g ConduitSharp.TokenFlow && token-flow   # .NET 10 SDK
+dotnet tool install -g ConduitSharp.TokenFlow && tokenflow   # .NET 10 SDK
 dnx ConduitSharp.TokenFlow                                    # .NET 10 SDK, no install
 
-docker run -d --restart unless-stopped --name token-flow \
+docker run -d --restart unless-stopped --name tokenflow \
   -p 5050:5050 -v "$PWD/logs:/data" \
-  ghcr.io/liqngliz/token-flow
+  ghcr.io/liqngliz/tokenflow
 ```
 
 Ships with Claude Code, Codex, and local OpenAI-compatible routes pre-configured. Dashboard on

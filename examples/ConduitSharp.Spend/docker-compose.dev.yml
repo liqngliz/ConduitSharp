@@ -7,15 +7,15 @@
 # changes still need --build.
 #
 # Its own project name, so it never recreates the container docker-compose.yml owns.
-name: token-flow-dev
+name: tokenflow-dev
 
 services:
-  token-flow:
+  tokenflow:
     build:
       context: ../..
       dockerfile: examples/ConduitSharp.Spend/Dockerfile
-    image: token-flow:dev
-    container_name: token-flow-dev
+    image: tokenflow:dev
+    container_name: tokenflow-dev
     ports:
       - "5050:5050"
     volumes:

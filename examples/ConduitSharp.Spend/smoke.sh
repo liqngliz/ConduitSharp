@@ -3,7 +3,7 @@
 # so no Anthropic or ChatGPT credential is involved and no live gateway is disturbed.
 #
 #   ./smoke.sh                       build if needed, run every check
-#   IMAGE=token-flow:nc ./smoke.sh   reuse an image you already built
+#   IMAGE=tokenflow:nc ./smoke.sh    reuse an image you already built
 #   PORT=5091 MOCK_PORT=5092         override if those are taken
 #
 # Checks: /info, dashboard html + js bundle, one claude call, one codex call,
@@ -12,10 +12,10 @@ set -uo pipefail
 
 cd "$(dirname "$0")/../.."
 
-IMAGE=${IMAGE:-token-flow:smoke}
+IMAGE=${IMAGE:-tokenflow:smoke}
 PORT=${PORT:-5091}
 MOCK_PORT=${MOCK_PORT:-5092}
-NAME=token-flow-smoke
+NAME=tokenflow-smoke
 DATA=$(mktemp -d)
 TMP=$(mktemp -d)
 FAILS=0

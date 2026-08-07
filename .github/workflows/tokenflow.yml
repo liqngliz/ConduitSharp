@@ -12,7 +12,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/token-flow
+  IMAGE_NAME: ${{ github.repository_owner }}/tokenflow
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ jobs:
           path: examples/ConduitSharp.Spend/dashboard/coverage
 
   # ---------------------------------------------------------------------------
-  # Image — the whole install. `docker run ghcr.io/<owner>/token-flow` is a working
+  # Image — the whole install. `docker run ghcr.io/<owner>/tokenflow` is a working
   # gateway and dashboard with no clone. Built for both arches so the manifest actually
   # offers arm64 (Apple Silicon, Graviton) rather than silently amd64-only.
   # ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # dotnet tool — the one-command install for anyone with the .NET 10 SDK:
-  #   dotnet tool install -g ConduitSharp.TokenFlow && token-flow
+  #   dotnet tool install -g ConduitSharp.TokenFlow && tokenflow
   #   dnx ConduitSharp.TokenFlow                      (no install)
   #
   # Packed here rather than in release.yml's loop, which would pin the tool to the

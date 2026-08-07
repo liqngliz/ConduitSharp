@@ -13,11 +13,11 @@ npm package carries the app as framework-dependent DLLs. `postinstall` fetches t
 **runtime** (not the SDK) into the package directory. `bin` spawns that runtime against the DLL.
 
 ```
-npm/token-flow/
-  package.json        bin: {"tokenflow": ..., "token-flow": ...}
+npm/tokenflow/
+  package.json        bin: {"tokenflow": "bin/tokenflow.js"}
   install.js          dotnet-install.{sh,ps1} --runtime aspnetcore --channel 10.0
                       --install-dir <pkg>/.dotnet --no-path
-  bin/token-flow.js   spawn(<pkg>/.dotnet/dotnet, [app/ConduitSharp.Spend.dll, ...argv])
+  bin/tokenflow.js    spawn(<pkg>/.dotnet/dotnet, [app/ConduitSharp.Spend.dll, ...argv])
   app/                dotnet publish -o app -p:UseAppHost=false
 ```
 
@@ -27,7 +27,7 @@ the macOS signing problem rather than solving it.
 
 ## Verified 2026-08-08
 
-Built the real package (`package.json` + `install.js` + `bin/token-flow.js` + `publish -o app
+Built the real package (`package.json` + `install.js` + `bin/tokenflow.js` + `publish -o app
 -p:UseAppHost=false`), `npm pack`, ran it two ways.
 
 **A. macOS arm64**, `env -i` (no PATH, no `DOTNET_ROOT`), cwd `/tmp`, isolated runtime.
@@ -71,22 +71,28 @@ one-flag fix, not required for npx.
 
 ## Name: `tokenflow`
 
-`token-flow` is taken on npm (checked 2026-08-08). `tokenflow` is free, so `npx tokenflow`.
+`token-flow` is taken on npm (checked 2026-08-08). `tokenflow` is free, and nothing had shipped
+under `token-flow` yet: no `tokenflow-v*` tag, no `ConduitSharp.TokenFlow` on nuget.org, no
+`ghcr.io/liqngliz/token-flow`. So every channel uses `tokenflow` and there is no second bin entry
+to maintain.
 
-Two bin entries, both pointing at the same file:
+| channel | name |
+| :--- | :--- |
+| npm package + bin | `tokenflow` |
+| `dotnet tool` command | `tokenflow` (`ToolCommandName`) |
+| image | `ghcr.io/liqngliz/tokenflow` |
+| NuGet package id | `ConduitSharp.TokenFlow` (unchanged) |
+| tag prefix, workflow file | `tokenflow-v*`, `tokenflow.yml` (unchanged) |
 
-```json
-"bin": { "tokenflow": "bin/token-flow.js", "token-flow": "bin/token-flow.js" }
-```
-
-`token-flow` is the `dotnet tool` command name and what every doc says. A bin matching the package
-name always wins npx resolution, so shipping both means neither spelling is wrong.
+"Token Flow" as two words stays the product name in `<title>`, `/info`, and headings. The
+verification above predates the rename and ran under the bin name `token-flow`; nothing about the
+runtime bootstrap depends on it.
 
 ## First-run cost
 
 46.6 MB over the wire, 114 MB on disk, ~1 minute. Later runs are instant.
 
-**Fetch the runtime from `bin/token-flow.js` on first run, not from `postinstall`.** npm hides
+**Fetch the runtime from `bin/tokenflow.js` on first run, not from `postinstall`.** npm hides
 lifecycle-script output unless the user passes `--foreground-scripts`, so a `postinstall` download
 is a silent minute that reads as a hang (verified: the progress lines are invisible under both
 `npm i -g` and `npx`). Fetching from the bin puts the output on the user's terminal and survives
@@ -117,7 +123,7 @@ that signing step if it is meant to work.
 
 | piece | size |
 | :--- | :--- |
-| `install.js` + `bin/token-flow.js` + `package.json` | ~60 lines |
+| `install.js` + `bin/tokenflow.js` + `package.json` | ~60 lines |
 | npm publish step in `tokenflow.yml`, version from `${GITHUB_REF_NAME#tokenflow-v}` | ~15 lines + one-time npm config |
 | Testing | macOS arm64 + linux-x64 + win-x64 |
 

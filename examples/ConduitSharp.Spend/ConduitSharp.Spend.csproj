@@ -14,7 +14,7 @@
     -->
     <IsPackable>true</IsPackable>
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>token-flow</ToolCommandName>
+    <ToolCommandName>tokenflow</ToolCommandName>
     <PackageId>ConduitSharp.TokenFlow</PackageId>
     <Description>Live token spend dashboard and LLM gateway. Point an AI SDK at it and watch what every call spends.</Description>
     <PackageTags>llm;tokens;claude;openai;gateway;dashboard;observability;dotnet-tool</PackageTags>
