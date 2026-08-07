@@ -53,7 +53,7 @@ export interface MetricsData {
     models: Set<string>;
     tools: number;
     isToolHeavy?: boolean;
-    prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; out: number; total: number; ts: string; tools: number; hasToolCall: boolean }[];
+    prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; out: number; total: number; ts: string; firstTs?: string; tools: number; hasToolCall: boolean }[];
   }>;
   dailyUsage: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
   modelBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
@@ -140,6 +140,7 @@ export function computeMetrics(records: SpendRecord[], useWeights: boolean = fal
       sess.prompts.push({
         prompt: record.prompt || '',
         ts: record.ts,
+        firstTs: record.ts,
         turn: record.turn,
         model: record.model || 'Unknown',
         in: record.in,

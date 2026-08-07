@@ -7,6 +7,7 @@ type SortOrder = 'latest' | 'oldest' | 'total' | 'in' | 'cw' | 'cr' | 'out';
 
 export interface FlowchartPrompt {
   ts: string;
+  firstTs?: string;
   total: number;
   prompt: string;
   in: number;
@@ -151,7 +152,7 @@ export const Flowchart: React.FC<{
           const yOut = currentPathY + outThick / 2;
 
           return (
-            <g key={`paths-left-${p.sessionId}-${p.ts}`} style={{ mixBlendMode: 'screen' }}>
+            <g key={`paths-left-${p.sessionId}-${p.firstTs}`} style={{ mixBlendMode: 'screen' }}>
               {p.in > 0 && (
                 <path 
                   d={createPath(340, yIn, 440, midYIn + hIn / 2)} 
@@ -301,7 +302,7 @@ export const Flowchart: React.FC<{
 
           return (
             <g 
-              key={`node-${p.sessionId}-${p.ts}`} 
+              key={`node-${p.sessionId}-${p.firstTs || p.ts}`} 
               transform={`translate(20, ${y})`}
               style={{ transition: 'transform 0.8s ease-in-out' }}
             >
