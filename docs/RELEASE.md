@@ -19,7 +19,7 @@ git push origin main --tags
 Publishes `ghcr.io/liqngliz/conduitsharp`, the win-x64 and linux-x64 archives on a GitHub Release,
 and every `ConduitSharp.*` package to nuget.org.
 
-## Token Flow: gateway + dashboard image
+## Token Flow: image and native binaries
 
 Workflow: [.github/workflows/tokenflow.yml](../.github/workflows/tokenflow.yml)
 
@@ -30,7 +30,14 @@ git tag tokenflow-vX.Y.Z
 git push origin tokenflow-vX.Y.Z
 ```
 
-Publishes `ghcr.io/liqngliz/token-flow` at `:X.Y.Z`, `:X.Y`, and `:latest`.
+| job | output |
+| :--- | :--- |
+| `dashboard` | gate only: vitest with coverage, then `npm run build`. A frontend type error stops the release |
+| `image` | `ghcr.io/liqngliz/token-flow` at `:X.Y.Z`, `:X.Y`, `:latest`, linux/amd64 + linux/arm64 |
+| `tokenflow-binaries` | `conduitsharp-spend-<tag>-<rid>.{tar.gz,zip}` on the GitHub Release, for win-x64, linux-x64, osx-x64, osx-arm64 |
+
+`live.sh` resolves the newest `tokenflow-v*` release and downloads the archive matching the host
+RID, so the asset name must keep the `<tag>-<rid>` shape.
 
 ## Re-run a workflow without a new tag
 
@@ -38,7 +45,7 @@ Publishes `ghcr.io/liqngliz/token-flow` at `:X.Y.Z`, `:X.Y`, and `:latest`.
 gh workflow run tokenflow.yml --ref main
 ```
 
-Produces `:latest` only, no version tags.
+Produces `:latest` only, no version tags. The binaries job is tag-gated and skips.
 
 ## Watch a run
 
