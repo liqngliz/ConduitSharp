@@ -34,13 +34,14 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# One routes file, written for the container: the local route uses host.docker.internal because
-# 127.0.0.1 inside a container is the container, and the wire log writes under /data so both
-# outputs land in the one mounted volume.
-COPY examples/ConduitSharp.Spend/Configuration/routes.json ./Configuration/routes.json
-
 ENV ASPNETCORE_URLS=http://+:5050
 ENV CONDUIT_SPEND_DATA=/data
+
+# routes.json ships host-shaped, since a `dotnet tool` install is the common case. One line has
+# to differ here: 127.0.0.1 inside a container is the container, so the local-model route needs
+# the Docker host alias. The wire log needs no edit, %CONDUIT_SPEND_DATA% resolves to /data above.
+RUN sed -i 's#http://127\.0\.0\.1:1234#http://host.docker.internal:1234#' Configuration/routes.json \
+ && grep -q host.docker.internal Configuration/routes.json
 
 # Routes are baked in so the image runs with no arguments. Override either by mounting a file
 # over ./Configuration/routes.json, or by pointing Gateway__RoutesPath at one you mount elsewhere.
