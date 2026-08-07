@@ -48,9 +48,22 @@ the macOS signing problem rather than solving it.
 | plugins | `token-spend` + `body-capture-file` | same |
 | errors | 0 | 0 |
 
-The container run is what proves no .NET is needed: `dotnet` not on PATH, no dotnet directories,
-host SDK not mounted. Not covered: macOS with no .NET installed anywhere (the Mac runs have an SDK
-present, the no-.NET run is Linux). A `macos-14` matrix job closes it.
+Both runs are now `npm/tokenflow/smoke.sh`, wired into `smoke.yml` on every push. `CLEAN=1` asserts
+`dotnet` absent from PATH, `DOTNET_ROOT` unset, no install dir, `dotnet --info` non-zero, all of it
+**before** npx runs, since the launcher creates `~/.tokenflow` itself and would otherwise make the
+check pass for the wrong reason.
+
+| leg | runner | CLEAN | proves |
+| :--- | :--- | :--- | :--- |
+| Linux | `ubuntu-latest` in `container: node:22` | 1 | the runtime is fetched, not found |
+| macOS | `macos-14` | 0 | `dotnet-install.sh` on arm64 |
+| Windows | `windows-latest` | 0 | `dotnet-install.ps1`, the separate code path |
+
+Only the container leg can assert absence: every GitHub-hosted runner ships a .NET 10 SDK, and
+macOS runners cannot run containers. It stays SDK-free because `npx-build` publishes the DLLs in a
+separate job and the matrix downloads them as an artifact. Still not covered: macOS and Windows
+with no .NET anywhere. `tokenflow.js` only stats `~/.tokenflow/dotnet/dotnet`, never PATH or
+`DOTNET_ROOT`, so a preinstalled SDK cannot turn those two green for the wrong reason.
 
 ## `UseAppHost=false` goes on the publish command, not the csproj
 

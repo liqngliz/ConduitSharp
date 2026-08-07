@@ -42,3 +42,96 @@ jobs:
       # or to collect afterwards — a failing check prints its own diagnosis to stdout.
       - name: Run smoke test
         run: ./examples/ConduitSharp.Spend/smoke.sh
+
+  # ---------------------------------------------------------------------------
+  # npx: packs the working tree and runs the tarball, so a break fails here rather
+  # than after publish. The image job above covers none of this: npx ships bare DLLs
+  # and never goes through the Dockerfile.
+  #
+  # Linux runs inside node:22, which has no .NET at all, and sets CLEAN=1 so the script
+  # asserts that absence BEFORE the launcher runs. That is the only leg that can prove
+  # the launcher bootstraps its own runtime instead of finding one: every GitHub-hosted
+  # runner ships a .NET 10 SDK, and macOS runners cannot run containers.
+  #
+  # macOS is here because dotnet-install.sh on arm64 and Windows because dotnet-install.ps1
+  # is a separate code path that no other job touches.
+  # ---------------------------------------------------------------------------
+  # Built once, in its own job, for two reasons: the matrix would otherwise repeat an
+  # identical build three times, and installing the SDK inside node:22 to build there
+  # would destroy the very absence the CLEAN leg asserts. Output is portable
+  # framework-dependent DLLs, so one build serves all three OSes.
+  npx-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build Dashboard
+        run: |
+          cd examples/ConduitSharp.Spend/dashboard
+          npm ci
+          npm run build
+
+      - name: Publish app into the package
+        run: |
+          dotnet publish examples/ConduitSharp.Spend -c Release \
+            -p:UseAppHost=false -o npm/tokenflow/app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npx-app
+          path: npm/tokenflow/app
+
+  npx:
+    needs: npx-build
+    strategy:
+      fail-fast: false          # a Windows-only break should not hide the macOS result
+      matrix:
+        include:
+          - os: ubuntu-latest
+            container: node:22
+            clean: '1'
+          - os: macos-14
+            container: ''
+            clean: '0'
+          - os: windows-latest
+            container: ''
+            clean: '0'
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash             # Windows runners default to pwsh; the script is bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # node:22 already carries Node 22. Running setup-node there would download a second
+      # copy for nothing.
+      - uses: actions/setup-node@v4
+        if: matrix.container == ''
+        with:
+          node-version: '22'
+
+      # No SDK on any leg. The Linux container must stay .NET-free for CLEAN=1 to mean
+      # anything, and the other two prove the launcher works without one being invoked.
+      - uses: actions/download-artifact@v4
+        with:
+          name: npx-app
+          path: npm/tokenflow/app
+
+      # No cache on ~/.tokenflow. Restoring it would pre-create the directory the CLEAN
+      # leg asserts is absent, and would skip the 46 MB download that is under test.
+      - name: Run npx smoke
+        env:
+          CLEAN: ${{ matrix.clean }}
+          PORT: '5095'
+        run: ./npm/tokenflow/smoke.sh
