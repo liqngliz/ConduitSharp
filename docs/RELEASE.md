@@ -35,11 +35,39 @@ git push origin tokenflow-vX.Y.Z
 | `dashboard` | gate only: vitest with coverage, then `npm run build`. A frontend type error stops the release |
 | `tool` | `ConduitSharp.TokenFlow` on nuget.org, version = tag minus `tokenflow-v`. `dotnet tool install -g` / `dnx` |
 | `image` | `ghcr.io/liqngliz/tokenflow` at `:X.Y.Z`, `:X.Y`, `:latest`, linux/amd64 + linux/arm64 |
+| `npm` | `tokenflow` on npmjs.com, version = tag minus `tokenflow-v`. `npx tokenflow` |
 | `tokenflow-binaries` | `conduitsharp-spend-<tag>-<rid>.{tar.gz,zip}` on the GitHub Release, for win-x64, linux-x64, osx-x64, osx-arm64 |
 
 **Before the first `tool` release:** nuget.org Trusted Publishing is per-package AND per-workflow.
 Add a policy for `ConduitSharp.TokenFlow` / `liqngliz/ConduitSharp` / `tokenflow.yml`. The
 `release.yml` policy does not cover it, and the push fails without one.
+
+**Before the first `npm` release:** npm has no way to configure a trusted publisher for a package
+that does not exist, so `tokenflow` needs one manual publish first.
+
+```bash
+cd examples/ConduitSharp.Spend/dashboard && npm ci && npm run build && cd -
+dotnet publish examples/ConduitSharp.Spend -c Release -p:UseAppHost=false -o npm/tokenflow/app
+cd npm/tokenflow && npm login && npm publish --access public
+```
+
+Then npmjs.com → Packages → tokenflow → Settings → Trusted publishing → GitHub Actions:
+
+| field | value |
+| :--- | :--- |
+| organization or user | `liqngliz` |
+| repository | `ConduitSharp` |
+| workflow filename | `tokenflow.yml` (filename only, `.yml` required) |
+| environment | blank |
+| allowed actions | `npm publish` |
+
+Case-sensitive, unvalidated on save. A mismatch surfaces at publish time as a 404, not a config
+error ([npm/cli#9088](https://github.com/npm/cli/issues/9088)). `package.json` `repository.url` must
+match the GitHub repo exactly. Requires npm CLI >= 11.5.1, which the job installs because runners
+ship 10.x.
+
+Optional after that: package **Settings → Publishing access → require 2FA and disallow tokens**,
+which kills the bootstrap credential and leaves OIDC working.
 
 **`osx-arm64` is unsigned and does not run on Apple Silicon.** No signing step exists in the job.
 Fix and caveats: [docs/planning/token-flow-npx.md](planning/token-flow-npx.md).

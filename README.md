@@ -223,6 +223,7 @@ A gateway built on ConduitSharp that sits in front of your AI agents and records
 costs in tokens, with a live dashboard. One command, no clone:
 
 ```bash
+npx tokenflow                                                # Node, no .NET
 dotnet tool install -g ConduitSharp.TokenFlow && tokenflow   # .NET 10 SDK
 dnx ConduitSharp.TokenFlow                                    # .NET 10 SDK, no install
 

@@ -7,6 +7,9 @@ Track token spend across any AI agent, ships pre-configured with Anthropic and C
 One command, no clone. Pick whichever runtime you already have.
 
 ```bash
+# Node, no .NET needed. First run fetches the .NET 10 runtime (~46 MB) into ~/.tokenflow
+npx tokenflow
+
 # .NET 10 SDK
 dotnet tool install -g ConduitSharp.TokenFlow && tokenflow
 dnx ConduitSharp.TokenFlow          # no install, .NET 10 SDK only

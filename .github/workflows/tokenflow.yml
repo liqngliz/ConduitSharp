@@ -157,6 +157,60 @@ jobs:
             --skip-duplicate
 
   # ---------------------------------------------------------------------------
+  # npx — the install for someone with Node and no .NET SDK, which is most of
+  # TokenFlow's audience (they proxy Claude Code or Codex). The package carries
+  # framework-dependent DLLs; npm/tokenflow/tokenflow.js fetches Microsoft's signed
+  # runtime on first run. -p:UseAppHost=false stays on the publish command: an
+  # apphost here has no working invocation and tokenflow-binaries below needs one.
+  #
+  # Auth is npm Trusted Publishing (OIDC), no NPM_TOKEN. One-time setup, blocks the
+  # first release: npm cannot configure a trusted publisher for a package that does
+  # not exist, so `tokenflow` must be published once manually, then wired at
+  # npmjs.com → tokenflow → Settings → Trusted publishing with liqngliz /
+  # ConduitSharp / tokenflow.yml (case-sensitive). A mismatch reports as a 404,
+  # not as a config error (npm/cli#9088).
+  # ---------------------------------------------------------------------------
+  npm:
+    needs: dashboard
+    if: startsWith(github.ref, 'refs/tags/')  # no version to publish on workflow_dispatch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # required for the OIDC token npm publish exchanges
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+
+      # Runners ship npm 10.x; trusted publishing needs 11.5.1+.
+      - name: Upgrade npm
+        run: npm i -g npm@latest
+
+      - name: Build Dashboard
+        run: |
+          cd examples/ConduitSharp.Spend/dashboard
+          npm ci
+          npm run build
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish app into the package
+        run: |
+          dotnet publish examples/ConduitSharp.Spend -c Release \
+            -p:UseAppHost=false -o npm/tokenflow/app
+
+      - name: Publish to npm
+        working-directory: npm/tokenflow
+        run: |
+          npm version "${GITHUB_REF_NAME#tokenflow-v}" --no-git-tag-version
+          npm publish --access public
+
+  # ---------------------------------------------------------------------------
   # Native binaries — the fallback for a host with no .NET SDK and no Docker.
   # Self-contained; the dashboard is built first and rides along in wwwroot.
   #

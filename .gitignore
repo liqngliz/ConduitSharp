@@ -62,3 +62,7 @@ coverage/
 examples/ConduitSharp.Spend/wwwroot/
 examples/ConduitSharp.Spend/logs/*
 !examples/ConduitSharp.Spend/logs/.gitkeep
+
+# npx wrapper: app/ is `dotnet publish` output, built by CI and by the local publish step
+npm/tokenflow/app/
+npm/tokenflow/*.tgz

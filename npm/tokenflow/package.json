@@ -1,0 +1,13 @@
+{
+  "name": "tokenflow",
+  "version": "0.0.0",
+  "description": "Live token spend dashboard and LLM gateway. Point Claude Code or Codex at it and watch what every call costs.",
+  "bin": { "tokenflow": "tokenflow.js" },
+  "files": ["tokenflow.js", "app"],
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/liqngliz/ConduitSharp.git" },
+  "homepage": "https://github.com/liqngliz/ConduitSharp/tree/main/examples/ConduitSharp.Spend#readme",
+  "bugs": { "url": "https://github.com/liqngliz/ConduitSharp/issues" },
+  "keywords": ["llm", "tokens", "claude", "codex", "gateway", "proxy", "dashboard", "observability"],
+  "engines": { "node": ">=18" }
+}
