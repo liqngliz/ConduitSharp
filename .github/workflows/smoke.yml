@@ -12,6 +12,7 @@ on:
       - 'examples/ConduitSharp.Spend/**'
       - 'src/**'
       - 'plugins/**'
+      - 'npm/tokenflow/**'
       - 'Directory.Build.props'
       - '.github/workflows/smoke.yml'
   pull_request:
@@ -19,6 +20,7 @@ on:
       - 'examples/ConduitSharp.Spend/**'
       - 'src/**'
       - 'plugins/**'
+      - 'npm/tokenflow/**'
       - 'Directory.Build.props'
       - '.github/workflows/smoke.yml'
   workflow_dispatch:
