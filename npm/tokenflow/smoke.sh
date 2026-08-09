@@ -13,6 +13,7 @@
 set -uo pipefail
 
 cd "$(dirname "$0")"
+PKGDIR=$PWD
 
 PORT=${PORT:-5095}
 FAILS=0
@@ -34,6 +35,14 @@ cleanup() {
       taskkill //F //IM dotnet.exe >/dev/null 2>&1
     fi
     kill "$APP_PID" 2>/dev/null
+    wait "$APP_PID" 2>/dev/null   # reap quietly, else bash prints "Terminated: 15"
+  fi
+  # tokenflow.js spawns dotnet as a child, so killing the launcher leaves the server up and
+  # holding the port for the next run. Scoped to $PORT, which the guard above proved was
+  # free when this run started.
+  if [ "${OS:-}" != "Windows_NT" ]; then
+    LEFT=$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null)
+    [ -n "$LEFT" ] && kill $LEFT 2>/dev/null
   fi
   # The launcher log is the only diagnosis a CI failure gets; nobody can re-run the runner.
   if [ "$FAILS" -gt 0 ]; then
@@ -76,6 +85,7 @@ fi
 [ -f app/ConduitSharp.Spend.dll ] || { bad "app/ missing, run dotnet publish -o app first"; exit 1; }
 TGZ=$(npm pack --silent 2>/dev/null | tail -1)
 [ -f "$TGZ" ] && ok "packed $TGZ ($(du -h "$TGZ" | cut -f1))" || { bad "npm pack produced nothing"; exit 1; }
+TGZ_ABS="$PWD/$TGZ"
 
 # ── run ───────────────────────────────────────────────────────────────────────
 # A busy port fails as "dashboard not served" five checks later, against someone else's
@@ -87,13 +97,20 @@ for HOST in 127.0.0.1 '[::1]'; do
     && { bad "port $PORT already answering on $HOST"; exit 1; }
 done
 
-# windows-latest produced a zero-byte launcher log twice, so npx there is failing or
-# stalling before tokenflow.js prints anything. Verbose npm puts the reason in the log.
+# Verbose npm, so a shim that exits without running the bin says why in the log.
 [ "${OS:-}" = "Windows_NT" ] && export npm_config_loglevel=verbose
 
-CONDUIT_SPEND_DATA="$DATA" npx --yes --package="./$TGZ" -- \
+# Run from $DATA, not the package dir. Inside it, npm exec saw the cwd project already
+# satisfying @liqngliz/tokenflow@0.0.0, installed nothing ("reify moves {}"), found no
+# .bin shim, and exited 0 without ever starting the launcher. Windows only: POSIX resolves
+# the shebang file directly. A neutral cwd is also how a real user invokes this.
+# cd rather than a subshell: a subshell would make $! the subshell's pid, and killing that
+# leaves npx and the server running.
+cd "$DATA"
+CONDUIT_SPEND_DATA="$DATA" npx --yes --package="$TGZ_ABS" -- \
   tokenflow --urls "http://localhost:$PORT" > "$DATA/out.log" 2>&1 &
 APP_PID=$!
+cd "$PKGDIR"
 
 # Windows gets 420s: the npx shim, unpacking, and dotnet-install.ps1 together ran past the
 # old 120s ceiling on windows-latest, so every check failed against a server still starting.
