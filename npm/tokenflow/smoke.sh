@@ -20,6 +20,7 @@ DATA=$(mktemp -d)
 RUNTIME="$HOME/.tokenflow/dotnet"
 # tokenflow.js picks dotnet.exe on win32. Bash on a Windows runner sees the same path.
 MUXER="$RUNTIME/dotnet"; [ "${OS:-}" = "Windows_NT" ] && MUXER="$RUNTIME/dotnet.exe"
+LOGDIR=$(npm config get cache 2>/dev/null)/_logs
 
 ok()  { printf '  \033[32mok\033[0m    %s\n' "$1"; }
 bad() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAILS=$((FAILS+1)); }
@@ -35,8 +36,23 @@ cleanup() {
     kill "$APP_PID" 2>/dev/null
   fi
   # The launcher log is the only diagnosis a CI failure gets; nobody can re-run the runner.
-  [ "$FAILS" -gt 0 ] && [ -f "$DATA/out.log" ] && {
-    echo; echo "--- launcher log, last 40 lines ---"; tail -40 "$DATA/out.log"; }
+  if [ "$FAILS" -gt 0 ]; then
+    echo; echo "--- launcher log, last 40 lines ---"
+    [ -f "$DATA/out.log" ] && tail -40 "$DATA/out.log"
+    echo "--- npx process ---"
+    if [ -n "${APP_PID:-}" ] && kill -0 "$APP_PID" 2>/dev/null; then
+      echo "pid $APP_PID still alive at teardown"
+    else
+      echo "pid ${APP_PID:-none} already gone, npx exited before the deadline"
+    fi
+    # npm writes its own log even when the shim produces nothing on stdout, which is the
+    # only remaining place a silent Windows failure can be recorded. LOGDIR is resolved at
+    # startup: calling `npm config get cache` here would write a log of its own and become
+    # the newest one, hiding the npx run behind a dump of that lookup.
+    echo "--- newest npm log in $LOGDIR ---"
+    NEWEST=$(ls -t "$LOGDIR"/*.log 2>/dev/null | head -1)
+    [ -n "$NEWEST" ] && tail -40 "$NEWEST" || echo "none"
+  fi
   rm -rf "$DATA" ./*.tgz
 }
 trap cleanup EXIT
@@ -63,9 +79,17 @@ TGZ=$(npm pack --silent 2>/dev/null | tail -1)
 
 # ── run ───────────────────────────────────────────────────────────────────────
 # A busy port fails as "dashboard not served" five checks later, against someone else's
-# server. Catch it here instead.
-curl -sf --connect-timeout 2 --max-time 3 -o /dev/null "http://localhost:$PORT/" \
-  && { bad "port $PORT already serving something"; exit 1; }
+# server. No -f here: any answer at all means the port is taken, and a squatter replying
+# 404 is exactly what slipped past this check before, leaving Kestrel to fail its bind.
+# Both families, because `localhost` resolves to ::1 first.
+for HOST in 127.0.0.1 '[::1]'; do
+  curl -s --connect-timeout 2 --max-time 3 -o /dev/null "http://$HOST:$PORT/" \
+    && { bad "port $PORT already answering on $HOST"; exit 1; }
+done
+
+# windows-latest produced a zero-byte launcher log twice, so npx there is failing or
+# stalling before tokenflow.js prints anything. Verbose npm puts the reason in the log.
+[ "${OS:-}" = "Windows_NT" ] && export npm_config_loglevel=verbose
 
 CONDUIT_SPEND_DATA="$DATA" npx --yes --package="./$TGZ" -- \
   tokenflow --urls "http://localhost:$PORT" > "$DATA/out.log" 2>&1 &
