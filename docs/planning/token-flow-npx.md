@@ -59,6 +59,11 @@ check pass for the wrong reason.
 | macOS | `macos-14` | 0 | `dotnet-install.sh` on arm64 |
 | Windows | `windows-latest` | 0 | `dotnet-install.ps1`, the separate code path |
 
+The smoke runs npx from a scratch dir with an absolute tarball path. From inside
+`npm/tokenflow/`, npm exec sees the cwd project already satisfying `@liqngliz/tokenflow@0.0.0`,
+installs nothing, finds no `.bin` shim, and exits 0 without starting the launcher: green on POSIX
+(shebang resolves directly), silent no-op on Windows.
+
 Only the container leg can assert absence: every GitHub-hosted runner ships a .NET 10 SDK, and
 macOS runners cannot run containers. It stays SDK-free because `npx-build` publishes the DLLs in a
 separate job and the matrix downloads them as an artifact. Still not covered: macOS and Windows
