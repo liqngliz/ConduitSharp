@@ -25,6 +25,12 @@ public sealed record SpendRecord
     /// <summary>Salted hash of the caller's API key or JWT claim. Never the raw credential.</summary>
     [JsonPropertyName("caller")] public string Caller { get; init; } = "";
 
+    /// <summary>W3C trace id of the request, or the connection-scoped <c>TraceIdentifier</c> when no
+    /// tracer is listening. Same value and same fallback the wire log writes, so a row joins to the
+    /// bodies it was counted from and to its spans. Timestamp plus route cannot: two concurrent calls
+    /// on one route share both.</summary>
+    [JsonPropertyName("trace")] public string TraceId { get; init; } = "";
+
     [JsonPropertyName("in")] public long InputTokens { get; init; }
     [JsonPropertyName("out")] public long OutputTokens { get; init; }
     [JsonPropertyName("cacheWrite")] public long CacheWriteTokens { get; init; }

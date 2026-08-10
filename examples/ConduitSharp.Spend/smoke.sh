@@ -69,8 +69,10 @@ sed -e "s#https://api.anthropic.com#http://host.docker.internal:$MOCK_PORT#" \
     -e "s#https://chatgpt.com#http://host.docker.internal:$MOCK_PORT#" \
     examples/ConduitSharp.Spend/Configuration/routes.json > "$TMP/routes.json"
 
-docker image inspect "$IMAGE" >/dev/null 2>&1 || \
-  docker build -f examples/ConduitSharp.Spend/Dockerfile -t "$IMAGE" . || exit 1
+# Always build. Skipping when the tag exists made the smoke pass against an image from a
+# previous session, reporting green on code that was never compiled. Docker's layer cache
+# makes an unchanged rebuild a few seconds.
+docker build -q -f examples/ConduitSharp.Spend/Dockerfile -t "$IMAGE" . >/dev/null || exit 1
 
 docker rm -f "$NAME" >/dev/null 2>&1
 docker run -d --name "$NAME" -p "$PORT:5050" \
@@ -139,6 +141,21 @@ for route, w in want.items():
         print(f"  \033[31mFAIL\033[0m  live {route} counts {got} != {w}"); sys.exit(1)
     print(f"  \033[32mok\033[0m    live {route} row: in={got['inp']} cw={got['cw']} "
           f"cr={got['cr']} out={got['out']} model={r['model']}")
+PY
+
+# Every spend row's trace id resolves in the wire log. That join is the only way to get from
+# a cost row to the bodies it was counted from; ts+route are shared by concurrent calls.
+python3 - "$DATA/spend-$TODAY.jsonl" "$DATA/conduit-wire.jsonl" <<'PY' || FAILS=$((FAILS+1))
+import json, sys
+rows  = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
+wire  = {json.loads(l).get("traceId") for l in open(sys.argv[2]) if l.strip()}
+blank = [r for r in rows if not r.get("trace")]
+if blank:
+    print(f"  \033[31mFAIL\033[0m  {len(blank)} spend row(s) with no trace id"); sys.exit(1)
+missing = [r["trace"] for r in rows if r["trace"] not in wire]
+if missing:
+    print(f"  \033[31mFAIL\033[0m  trace {missing[0]} absent from the wire log"); sys.exit(1)
+print(f"  \033[32mok\033[0m    {len(rows)} spend row(s) join to the wire log by trace")
 PY
 
 # ── 5. synthetic rows ─────────────────────────────────────────────────────────

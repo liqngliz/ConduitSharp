@@ -88,6 +88,9 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
             Route = context.Items.TryGetValue("ConduitSharp.RouteId", out var r) && r is string id ? id : "",
             Model = facts.Model,
             Caller = store.HashCaller(ResolveClientKey(context, config)),
+            // Same expression BodyCaptureToFilePlugin uses, fallback included, so the two files
+            // carry an identical id for one request whether or not a tracer is listening.
+            TraceId = Activity.Current?.TraceId.ToString() ?? context.TraceIdentifier,
             SessionId = facts.SessionId,
             TurnIndex = facts.TurnIndex,
             ToolUseCount = facts.ToolUseCount,

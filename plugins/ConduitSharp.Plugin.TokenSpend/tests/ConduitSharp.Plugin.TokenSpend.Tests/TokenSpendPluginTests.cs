@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
@@ -609,6 +610,35 @@ public sealed class TokenSpendPluginTests
             """));
 
         Assert.Equal(0, Assert.Single(store.Rows).InputTokens);
+    }
+
+    /// <summary>The trace id is the only key that joins a spend row to the wire-log entry it was
+    /// counted from: timestamp and route are both shared by concurrent calls. Covers the fallback
+    /// too, since the id has to exist when no tracer is listening.</summary>
+    [Fact]
+    public async Task Row_CarriesTheTraceId_AndFallsBackToTraceIdentifier()
+    {
+        using var source = new ActivitySource("test.tokenspend");
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == "test.tokenspend",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var (traced, _, tracedStore) = NewContext();
+        using (var activity = source.StartActivity("request"))
+        {
+            await new TokenSpendPlugin().ExecuteAsync(traced, Config(OpenAi),
+                Forward("""{"usage":{"prompt_tokens":1,"completion_tokens":1}}"""));
+            Assert.Equal(activity!.TraceId.ToString(), Assert.Single(tracedStore.Rows).TraceId);
+        }
+
+        var (plain, _, plainStore) = NewContext();
+        plain.TraceIdentifier = "0HN7:00000001";
+        await new TokenSpendPlugin().ExecuteAsync(plain, Config(OpenAi),
+            Forward("""{"usage":{"prompt_tokens":1,"completion_tokens":1}}"""));
+        Assert.Equal("0HN7:00000001", Assert.Single(plainStore.Rows).TraceId);
     }
 
     [Fact]
