@@ -63,13 +63,13 @@
           "enabled": true,
           "config": {
             "request": {
-              "maxSize": 262144
+              "maxSize": 3145728
             },
             "response": {
               "maxSize": 262144
             },
             "logPath": "%CONDUIT_SPEND_DATA%/conduit-wire.jsonl",
-            "maxFileBytes": 134217728,
+            "maxFileBytes": 1073741824,
             "decompress": true
           }
         },
@@ -127,13 +127,13 @@
           "enabled": true,
           "config": {
             "request": {
-              "maxSize": 262144
+              "maxSize": 3145728
             },
             "response": {
               "maxSize": 262144
             },
             "logPath": "%CONDUIT_SPEND_DATA%/conduit-wire.jsonl",
-            "maxFileBytes": 134217728
+            "maxFileBytes": 1073741824
           }
         },
         {
@@ -210,13 +210,13 @@
           "enabled": true,
           "config": {
             "request": {
-              "maxSize": 262144
+              "maxSize": 3145728
             },
             "response": {
               "maxSize": 262144
             },
             "logPath": "%CONDUIT_SPEND_DATA%/conduit-wire.jsonl",
-            "maxFileBytes": 134217728
+            "maxFileBytes": 1073741824
           }
         },
         {
