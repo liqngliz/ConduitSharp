@@ -9,6 +9,7 @@ const mockMetrics: MetricsData = {
     out: 500,
     cacheWrite: 0,
     cacheRead: 0,
+    think: 0,
     ms: 5000,
     messagesSent: 5,
   },
@@ -39,6 +40,17 @@ describe('Metrics Component', () => {
     const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, in: 100, out: 50, cacheRead: 500, cacheWrite: 0 } };
     render(<Metrics metrics={metrics} routeName="Claude" />);
     expect(screen.getByText(/Most usage: Caching/)).toBeInTheDocument();
+  });
+
+  it('hides the thinking row when no route reported reasoning tokens', () => {
+    render(<Metrics metrics={mockMetrics} routeName="Claude" />);
+    expect(screen.queryByTestId('metric-think')).toBeNull();
+  });
+
+  it('shows thinking against Out, not against the total', () => {
+    const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, out: 500, think: 125 } };
+    render(<Metrics metrics={metrics} routeName="Claude" />);
+    expect(screen.getByTestId('metric-think')).toHaveTextContent('25% of Out');
   });
 
   it('shows Writing output insight when output is highest', () => {

@@ -8,6 +8,7 @@ export interface SpendRecord {
   out: number;
   cacheWrite: number;
   cacheRead: number;
+  think?: number;
   session: string;
   turn: number;
   tools: number;
@@ -40,6 +41,7 @@ export interface MetricsData {
     out: number;
     cacheWrite: number;
     cacheRead: number;
+    think: number;
     ms: number;
     messagesSent: number;
   };
@@ -73,7 +75,7 @@ export const DEFAULT_WEIGHTS: TokenWeights = { in: 1, cw: 1.25, cr: 0.1, out: 5 
 
 export function computeMetrics(records: SpendRecord[], config: InsightsConfig = DEFAULT_INSIGHTS_CONFIG, useWeights: boolean = false, weightsConfig: Record<string, TokenWeights> = {}): MetricsData {
   const metrics: MetricsData = {
-    totals: { in: 0, out: 0, cacheWrite: 0, cacheRead: 0, ms: 0, messagesSent: 0 },
+    totals: { in: 0, out: 0, cacheWrite: 0, cacheRead: 0, think: 0, ms: 0, messagesSent: 0 },
     sessions: {},
     dailyUsage: {},
     modelBreakdown: {},
@@ -94,7 +96,9 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
         in: record.in * (w.in ?? 1),
         cacheWrite: record.cacheWrite * (w.cw ?? 1.25),
         cacheRead: record.cacheRead * (w.cr ?? 0.1),
-        out: record.out * (w.out ?? 5)
+        out: record.out * (w.out ?? 5),
+        // think is billed inside out, so it carries out's weight or it stops being a subset
+        think: (record.think ?? 0) * (w.out ?? 5)
       };
     }
 
@@ -103,6 +107,7 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
     metrics.totals.out += record.out;
     metrics.totals.cacheWrite += record.cacheWrite;
     metrics.totals.cacheRead += record.cacheRead;
+    metrics.totals.think += record.think ?? 0;
     metrics.totals.ms += record.ms;
     
     // Only count messages that actually consumed tokens

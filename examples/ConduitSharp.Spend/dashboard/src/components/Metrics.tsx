@@ -1,5 +1,6 @@
 import React from 'react';
 import type { MetricsData } from '../utils/parser';
+import { Brain } from 'lucide-react';
 import { AnimatedNumber } from './AnimatedNumber';
 
 export const Metrics = React.memo(({ metrics, routeName }: { metrics: MetricsData; routeName: string }) => {
@@ -13,6 +14,8 @@ export const Metrics = React.memo(({ metrics, routeName }: { metrics: MetricsDat
   const avgMessageCw = totalPromptsSent > 0 ? Math.round(metrics.totals.cacheWrite / totalPromptsSent) : 0;
   const avgMessageCr = totalPromptsSent > 0 ? Math.round(metrics.totals.cacheRead / totalPromptsSent) : 0;
   const wrotePercent = totalTokens > 0 ? Math.round((metrics.totals.out / totalTokens) * 100) : 0;
+  // Reasoning is billed inside Out, so it is shown against Out and never added to the total.
+  const thinkPercent = metrics.totals.out > 0 ? Math.round((metrics.totals.think / metrics.totals.out) * 100) : 0;
 
   let mostUsageInsight = "Reading context";
   const cacheTokens = metrics.totals.cacheRead + metrics.totals.cacheWrite;
@@ -47,6 +50,13 @@ export const Metrics = React.memo(({ metrics, routeName }: { metrics: MetricsDat
               <span className="text-gray-600">|</span>
               Out: <span className="text-amber-500"><AnimatedNumber value={metrics.totals.out} compact /></span>
             </span>
+            {metrics.totals.think > 0 && (
+              <span className="flex items-center gap-1" data-testid="metric-think">
+                <Brain size={12} className="text-emerald-400" />
+                Think: <span className="text-emerald-400"><AnimatedNumber value={metrics.totals.think} compact /></span>
+                <span className="text-gray-500">({thinkPercent}% of Out)</span>
+              </span>
+            )}
           </div>
         </div>
         <div className="glass-panel p-6 animate-fade-in flex flex-col items-center text-center h-full" style={{ animationDelay: '100ms' }}>

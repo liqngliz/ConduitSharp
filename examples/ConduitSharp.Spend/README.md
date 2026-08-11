@@ -132,9 +132,14 @@ cat logs/spend-$(date -u +%F).jsonl
 
 ```json
 {"ts":"2026-08-01T21:31:41Z","route":"local","model":"qwen-2.5","caller":"6200a49014e7…",
- "in":40,"out":110,"cacheWrite":0,"cacheRead":0,"session":"9916b6fc15f66f36",
+ "in":40,"out":110,"cacheWrite":0,"cacheRead":0,"think":0,"session":"9916b6fc15f66f36",
  "turn":3,"tools":0,"ms":24,"streamed":false,"prompt":"second ask"}
 ```
+
+`think` is reasoning tokens, billed inside `out` and never added to it. Path per route via
+`thinkingFields`: `usage.output_tokens_details.thinking_tokens` (claude),
+`usage.output_tokens_details.reasoning_tokens` (codex),
+`usage.completion_tokens_details.reasoning_tokens` (local, OpenAI Chat Completions shape).
 
 `session` is the client's own conversation id where it sends one, read from `sessionField`:
 `metadata.user_id.session_id` for Claude Code, `client_metadata.thread_id` for Codex. A route without
