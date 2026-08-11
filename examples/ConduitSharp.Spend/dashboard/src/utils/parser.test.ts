@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseJsonl, computeMetrics, computeInsights, type SpendRecord } from './parser';
+import { parseJsonl, computeMetrics, computeInsights, DEFAULT_INSIGHTS_CONFIG, type SpendRecord, evaluatePromptFlags, calculateSMA, isToolHeavy } from './parser';
 
 describe('JSONL Parser', () => {
   it('parses valid JSONL correctly', () => {
@@ -73,6 +73,26 @@ describe('Insights Computation', () => {
     expect(insights.vaguePrompts).toBe(1); // Length 5 (< 30) and in 6000 (> 1000)
     expect(insights.inputHeavy).toBe(1); // in 6000 (> 5000), out 50 (< 100)
     expect(insights.modelDominance).toEqual({ model: "m", percent: 100 });
+  });
+
+  it('respects custom InsightsConfig thresholds', () => {
+    const records: SpendRecord[] = [
+      { ts: "2026-08-01T10:00:00Z", route: "local", model: "m", servedModel: "m", caller: "a", in: 6000, out: 50, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 16, tools: 0, ms: 1000, streamed: true, prompt: "short" }
+    ];
+    // With DEFAULT: vague = 1, inputHeavy = 1, marathon = 1
+    const defaultMetrics = computeMetrics(records);
+    const defaultInsights = computeInsights(records, defaultMetrics, DEFAULT_INSIGHTS_CONFIG);
+    expect(defaultInsights.vaguePrompts).toBe(1);
+    expect(defaultInsights.inputHeavy).toBe(1);
+    expect(defaultInsights.marathonSessions).toBe(1);
+
+    // Custom config that disables all three
+    const customConfig = { ...DEFAULT_INSIGHTS_CONFIG, vaguePromptLength: 4, inputHeavyMinInput: 7000, marathonMinTurns: 20 };
+    const customMetrics = computeMetrics(records, customConfig);
+    const customInsights = computeInsights(records, customMetrics, customConfig);
+    expect(customInsights.vaguePrompts).toBe(0);
+    expect(customInsights.inputHeavy).toBe(0);
+    expect(customInsights.marathonSessions).toBe(0);
   });
 
   it('detects model dominance', () => {
@@ -153,13 +173,13 @@ describe('Token Weights', () => {
 
   it('useWeights=false yields raw totals', () => {
     const rawMetrics = computeMetrics(records);
-    const configuredMetrics = computeMetrics(records, false, { "modelA": { in: 5, cw: 5, cr: 5, out: 5 } });
+    const configuredMetrics = computeMetrics(records, DEFAULT_INSIGHTS_CONFIG, false, { "modelA": { in: 5, cw: 5, cr: 5, out: 5 } });
     
     expect(rawMetrics.totals).toEqual(configuredMetrics.totals);
   });
 
   it('useWeights=true with no config uses requested defaults', () => {
-    const defaultMetrics = computeMetrics(records, true, {});
+    const defaultMetrics = computeMetrics(records, DEFAULT_INSIGHTS_CONFIG, true, {});
     // records: 
     // modelA: 100 in, 50 out, 10 cw, 5 cr
     // modelB: 200 in, 20 out, 0 cw, 0 cr
@@ -179,7 +199,7 @@ describe('Token Weights', () => {
       "modelB": { in: 1, cw: 1, cr: 1, out: 1 }  // 200 in, 20 out = 220
     };
     
-    const metrics = computeMetrics(records, true, weightsConfig);
+    const metrics = computeMetrics(records, DEFAULT_INSIGHTS_CONFIG, true, weightsConfig);
     
     // Total should be modelA + modelB = (200 + 200) = 400 in, (250 + 20) = 270 out
     expect(metrics.totals.in).toBe(400);
@@ -191,5 +211,59 @@ describe('Token Weights', () => {
     expect(metrics.sessions["sess1"].in).toBe(400);
     expect(metrics.sessions["sess1"].out).toBe(270);
     expect(metrics.sessions["sess1"].prompts[0].total).toBe(465); // modelA total
+  });
+});
+describe('evaluatePromptFlags', () => {
+  it('identifies vague prompts based on config', () => {
+    const flags = evaluatePromptFlags('short', 2000, 10, 1, DEFAULT_INSIGHTS_CONFIG);
+    expect(flags.isVague).toBe(true); // length 5 < 30, in 2000 > 1000
+
+    const customConfig = { ...DEFAULT_INSIGHTS_CONFIG, vaguePromptLength: 4 };
+    const flagsCustom = evaluatePromptFlags('short', 2000, 10, 1, customConfig);
+    expect(flagsCustom.isVague).toBe(false); // length 5 > 4
+  });
+
+  it('identifies input heavy prompts based on config', () => {
+    const flags = evaluatePromptFlags('prompt', 6000, 50, 1, DEFAULT_INSIGHTS_CONFIG);
+    expect(flags.isInputHeavy).toBe(true); // in 6000 > 5000, out 50 < 100
+  });
+
+  it('identifies marathon sessions based on config', () => {
+    const flags = evaluatePromptFlags('prompt', 10, 10, 16, DEFAULT_INSIGHTS_CONFIG);
+    expect(flags.isMarathon).toBe(true); // turn 16 > 15
+  });
+});
+
+describe('isToolHeavy', () => {
+  it('flags exactly at the threshold boundary as true', () => {
+    // 100 tool, 100 chat -> 50% tool ratio. With config 50, it should be true.
+    expect(isToolHeavy(100, 100, { ...DEFAULT_INSIGHTS_CONFIG, toolHeavyPercent: 50 })).toBe(true);
+    // 99 tool, 101 chat -> < 50% tool ratio. Should be false.
+    expect(isToolHeavy(99, 101, { ...DEFAULT_INSIGHTS_CONFIG, toolHeavyPercent: 50 })).toBe(false);
+  });
+});
+
+describe('calculateSMA', () => {
+  it('buckets and calculates simple moving average over periods', () => {
+    const prompts = [
+      { ts: "2026-08-01T10:00:00Z", in: 10, cacheWrite: 0, cacheRead: 0, out: 5, total: 15 },
+      { ts: "2026-08-01T10:01:00Z", in: 20, cacheWrite: 0, cacheRead: 0, out: 5, total: 25 },
+      { ts: "2026-08-01T10:02:00Z", in: 30, cacheWrite: 0, cacheRead: 0, out: 5, total: 35 }
+    ] as any;
+    
+    // Interval 1 min, Period 2
+    const sma = calculateSMA(prompts, 1, 2);
+    
+    // Buckets:
+    // 10:00: in 10
+    // 10:01: in 20
+    // 10:02: in 30
+    
+    // For Period 2, output starts at index 1 (10:01)
+    // 10:01 In: (10 + 20) / 2 = 15
+    // 10:02 In: (20 + 30) / 2 = 25
+    expect(sma).toHaveLength(2);
+    expect(sma[0].In).toBe(15);
+    expect(sma[1].In).toBe(25);
   });
 });

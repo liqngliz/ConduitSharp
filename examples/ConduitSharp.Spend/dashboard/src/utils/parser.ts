@@ -15,6 +15,7 @@ export interface SpendRecord {
   streamed: boolean;
   prompt?: string;
   sessionName?: string;
+  trace?: string;
 }
 
 export function parseJsonl(content: string): SpendRecord[] {
@@ -53,7 +54,7 @@ export interface MetricsData {
     models: Set<string>;
     tools: number;
     isToolHeavy?: boolean;
-    prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; out: number; total: number; ts: string; firstTs?: string; tools: number; hasToolCall: boolean }[];
+    prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; out: number; total: number; ts: string; firstTs?: string; tools: number; hasToolCall: boolean; }[];
   }>;
   dailyUsage: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
   modelBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
@@ -70,7 +71,7 @@ export interface TokenWeights {
 
 export const DEFAULT_WEIGHTS: TokenWeights = { in: 1, cw: 1.25, cr: 0.1, out: 5 };
 
-export function computeMetrics(records: SpendRecord[], useWeights: boolean = false, weightsConfig: Record<string, TokenWeights> = {}): MetricsData {
+export function computeMetrics(records: SpendRecord[], config: InsightsConfig = DEFAULT_INSIGHTS_CONFIG, useWeights: boolean = false, weightsConfig: Record<string, TokenWeights> = {}): MetricsData {
   const metrics: MetricsData = {
     totals: { in: 0, out: 0, cacheWrite: 0, cacheRead: 0, ms: 0, messagesSent: 0 },
     sessions: {},
@@ -280,7 +281,7 @@ export function computeMetrics(records: SpendRecord[], useWeights: boolean = fal
         sessChatTokens += p.total;
       }
     }
-    sess.isToolHeavy = sessToolTokens > sessChatTokens && sessToolTokens > 0;
+    sess.isToolHeavy = isToolHeavy(sessToolTokens, sessChatTokens, config);
   }
 
   metrics.topPrompts = Object.entries(promptsMap)
@@ -290,6 +291,24 @@ export function computeMetrics(records: SpendRecord[], useWeights: boolean = fal
 
   return metrics;
 }
+
+export interface InsightsConfig {
+  vaguePromptLength: number;
+  vagueMinInput: number;
+  inputHeavyMinInput: number;
+  inputHeavyMaxOutput: number;
+  marathonMinTurns: number;
+  toolHeavyPercent: number;
+}
+
+export const DEFAULT_INSIGHTS_CONFIG: InsightsConfig = {
+  vaguePromptLength: 30,
+  vagueMinInput: 1000,
+  inputHeavyMinInput: 5000,
+  inputHeavyMaxOutput: 100,
+  marathonMinTurns: 15,
+  toolHeavyPercent: 50,
+};
 
 export interface InsightsData {
   vaguePrompts: number;
@@ -309,7 +328,7 @@ export interface InsightsData {
   modelDominance: { model: string; percent: number } | null;
 }
 
-export function computeInsights(records: SpendRecord[], metrics: MetricsData, useWeights: boolean = false, weightsConfig: Record<string, TokenWeights> = {}): InsightsData {
+export function computeInsights(records: SpendRecord[], metrics: MetricsData, config: InsightsConfig = DEFAULT_INSIGHTS_CONFIG, useWeights: boolean = false, weightsConfig: Record<string, TokenWeights> = {}): InsightsData {
   let vaguePrompts = 0;
   let vagueTokensSum = 0;
   let nonVaguePromptsCount = 0;
@@ -339,7 +358,7 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, us
     const totalIn = record.in + record.cacheWrite + record.cacheRead;
     const total = totalIn + record.out;
     
-    const isVague = record.prompt && record.prompt.length < 30 && totalIn > 1000;
+    const isVague = record.prompt && record.prompt.length < config.vaguePromptLength && totalIn > config.vagueMinInput;
     if (isVague) {
       vaguePrompts++;
       vagueTokensSum += total;
@@ -348,7 +367,7 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, us
       nonVagueTokensSum += total;
     }
     
-    const isInputHeavy = totalIn > 5000 && record.out < 100;
+    const isInputHeavy = totalIn > config.inputHeavyMinInput && record.out < config.inputHeavyMaxOutput;
     if (isInputHeavy) {
       inputHeavy++;
       inputHeavyTokensSum += total;
@@ -370,7 +389,7 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, us
   let globalChatPrompts = 0;
 
   for (const sess of Object.values(metrics.sessions)) {
-    const isMarathon = sess.turnCount > 15;
+    const isMarathon = sess.turnCount > config.marathonMinTurns;
     if (isMarathon) marathonSessions++;
     
     let sessToolTokens = 0;
@@ -396,7 +415,7 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, us
       }
     }
     
-    if (sessToolTokens > sessChatTokens && sessToolTokens > 0) {
+    if (isToolHeavy(sessToolTokens, sessChatTokens, config)) {
       toolHeavy++;
     }
   }
@@ -439,4 +458,102 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, us
     avgNonInputHeavyTokens,
     modelDominance,
   };
+}
+
+export const evaluatePromptFlags = (promptStr: string, totalIn: number, out: number, turnCount: number, config: InsightsConfig) => {
+  const isVague = promptStr.length < config.vaguePromptLength && totalIn > config.vagueMinInput;
+  const isInputHeavy = totalIn > config.inputHeavyMinInput && out < config.inputHeavyMaxOutput;
+  const isMarathon = turnCount > config.marathonMinTurns;
+
+  return { isVague, isInputHeavy, isMarathon };
+};
+
+export const isToolHeavy = (toolTokens: number, chatTokens: number, config: InsightsConfig) => {
+  return toolTokens > 0 && toolTokens * 100 >= (toolTokens + chatTokens) * config.toolHeavyPercent;
+};
+
+export interface SMAPrompt {
+  ts: string;
+  in: number;
+  out: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+}
+
+export function calculateSMA(prompts: SMAPrompt[], intervalMinutes: number, period: number, explicitStartStr?: string, explicitEndStr?: string) {
+  const intervalMs = intervalMinutes * 60 * 1000;
+  const historyRequiredMs = (period - 1) * intervalMs;
+
+  const allSorted = [...(prompts || [])].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+  
+  let minTime = Date.now();
+  if (explicitStartStr) {
+    minTime = new Date(explicitStartStr).getTime() - historyRequiredMs;
+  } else if (allSorted.length > 0) {
+    minTime = new Date(allSorted[0].ts).getTime();
+  }
+
+  let maxTime = Date.now();
+  if (explicitEndStr) {
+    maxTime = new Date(explicitEndStr).getTime();
+  } else if (allSorted.length > 0) {
+    maxTime = explicitStartStr ? Math.max(Date.now(), new Date(allSorted[allSorted.length - 1].ts).getTime()) : new Date(allSorted[allSorted.length - 1].ts).getTime();
+  }
+  
+  if (minTime >= maxTime || (allSorted.length === 0 && !explicitStartStr)) return [];
+  
+  let actualIntervalMs = intervalMs;
+  let numBuckets = Math.max(1, Math.ceil((maxTime - minTime + 1) / actualIntervalMs));
+  
+  if (numBuckets > 5000) {
+    actualIntervalMs = Math.ceil((maxTime - minTime + 1) / 5000);
+    numBuckets = 5000;
+  }
+  
+  const buckets = Array(numBuckets).fill(null).map((_, i) => ({
+    time: minTime + i * actualIntervalMs,
+    in: 0,
+    cw: 0,
+    cr: 0,
+    out: 0,
+    total: 0
+  }));
+  
+  for (const p of allSorted) {
+    const pTime = new Date(p.ts).getTime();
+    const bucketIdx = Math.floor((pTime - minTime) / actualIntervalMs);
+    if (bucketIdx >= 0 && bucketIdx < numBuckets) {
+      buckets[bucketIdx].in += p.in;
+      buckets[bucketIdx].cw += p.cacheWrite;
+      buckets[bucketIdx].cr += p.cacheRead;
+      buckets[bucketIdx].out += p.out;
+      buckets[bucketIdx].total += p.total;
+    }
+  }
+  
+  const smaData = [];
+  for (let i = 0; i < buckets.length; i++) {
+    if (i >= period - 1) {
+      let sumIn = 0, sumCw = 0, sumCr = 0, sumOut = 0, sumTotal = 0;
+      for (let j = 0; j < period; j++) {
+        const b = buckets[i - j];
+        sumIn += b.in;
+        sumCw += b.cw;
+        sumCr += b.cr;
+        sumOut += b.out;
+        sumTotal += b.total;
+      }
+      smaData.push({
+        time: buckets[i].time,
+        In: Math.round(sumIn / period),
+        CW: Math.round(sumCw / period),
+        CR: Math.round(sumCr / period),
+        Out: Math.round(sumOut / period),
+        Total: Math.round(sumTotal / period)
+      });
+    }
+  }
+  
+  return smaData;
 }

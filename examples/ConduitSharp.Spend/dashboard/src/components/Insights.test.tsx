@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { Insights } from './Insights';
 import type { InsightsData } from '../utils/parser';
+import { DEFAULT_INSIGHTS_CONFIG } from '../utils/parser';
 import { describe, it, expect } from 'vitest';
 
 const mockInsights: InsightsData = {
@@ -31,7 +32,7 @@ const mockSessions = {
 
 describe('Insights Component', () => {
   it('renders correctly', () => {
-    render(<Insights insights={mockInsights} topPrompts={mockTopPrompts} sessions={mockSessions} />);
+    render(<Insights insights={mockInsights} topPrompts={mockTopPrompts} sessions={mockSessions} config={DEFAULT_INSIGHTS_CONFIG} setConfig={() => {}} />);
     expect(screen.getByText('5')).toBeInTheDocument(); // Vague
     expect(screen.getByText('2')).toBeInTheDocument(); // Marathon
     expect(screen.getByText('10')).toBeInTheDocument(); // Input Heavy
@@ -39,13 +40,13 @@ describe('Insights Component', () => {
   });
 
   it('renders model dominance', () => {
-    render(<Insights insights={mockInsights} topPrompts={mockTopPrompts} sessions={mockSessions} />);
+    render(<Insights insights={mockInsights} topPrompts={mockTopPrompts} sessions={mockSessions} config={DEFAULT_INSIGHTS_CONFIG} setConfig={() => {}} />);
     expect(screen.getByText(/Model Dominance Detected:/i)).toBeInTheDocument();
     expect(screen.getByText('Claude')).toBeInTheDocument();
   });
 
   it('renders top prompts', () => {
-    render(<Insights insights={mockInsights} topPrompts={mockTopPrompts} sessions={mockSessions} />);
+    render(<Insights insights={mockInsights} topPrompts={mockTopPrompts} sessions={mockSessions} config={DEFAULT_INSIGHTS_CONFIG} setConfig={() => {}} />);
     expect(screen.getByText('Hello world')).toBeInTheDocument();
     expect(screen.getByText(/Tot:/)).toBeInTheDocument();
     expect(screen.getAllByText('1.5K').length).toBeGreaterThan(0);

@@ -1,10 +1,29 @@
-import React from 'react';
-import type { MetricsData } from '../utils/parser';
+import React, { useMemo } from 'react';
+import { calculateSMA, type MetricsData } from '../utils/parser';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { Infinity as InfinityIcon, RotateCcw } from 'lucide-react';
 
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
 const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
 
-export const Charts: React.FC<{ metrics: MetricsData }> = React.memo(({ metrics }) => {
+export const Charts: React.FC<{ 
+  metrics: MetricsData; 
+  smaConfig: { intervalMinutes: number; smaPeriod: number };
+  setSmaConfig: (cfg: { intervalMinutes: number; smaPeriod: number }) => void;
+}> = React.memo(({ metrics, smaConfig, setSmaConfig }) => {
+  const [startDate, setStartDate] = React.useState(() => {
+    const d = new Date();
+    d.setHours(d.getHours() - 6);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  });
+
+  const allPrompts = useMemo(() => {
+    return Object.values(metrics.sessions).flatMap(s => s.prompts);
+  }, [metrics]);
+  
+  const smaData = useMemo(() => {
+    return calculateSMA(allPrompts, smaConfig.intervalMinutes, smaConfig.smaPeriod, startDate);
+  }, [allPrompts, smaConfig.intervalMinutes, smaConfig.smaPeriod, startDate]);
   // Format daily usage data
   const dailyData = Object.entries(metrics.dailyUsage)
     .map(([date, counts]) => ({
@@ -121,6 +140,96 @@ export const Charts: React.FC<{ metrics: MetricsData }> = React.memo(({ metrics 
                 );
               })}
             </div>
+          </div>
+        </div>
+        {/* Token Trend SMA Chart */}
+        <div className="glass-panel p-6 animate-slide-up flex flex-col lg:col-span-2" data-testid="chart-sma">
+          <div className="flex flex-col sm:flex-row justify-between items-center sm:items-start mb-6 gap-4 border-b border-white/10 pb-4">
+            <h3 className="text-xl font-semibold text-center sm:text-left">Token Trend (SMA)</h3>
+            
+            <div className="flex flex-wrap gap-4 items-center">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-400">Start</label>
+                <input 
+                  type="datetime-local" 
+                  value={startDate} 
+                  onChange={e => setStartDate(e.target.value)}
+                  className="bg-black/40 border border-white/10 rounded px-2 py-1 text-sm focus:border-blue-500 focus:outline-none transition-colors text-gray-300"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-400">Time (min)</label>
+                <input 
+                  type="number" 
+                  min="1"
+                  value={smaConfig.intervalMinutes} 
+                  onChange={e => setSmaConfig({...smaConfig, intervalMinutes: Math.max(1, Number(e.target.value) || 1)})}
+                  className="bg-black/40 border border-white/10 rounded px-2 py-1 text-sm w-16 focus:border-blue-500 focus:outline-none transition-colors text-right"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-400">Period (intervals)</label>
+                <input 
+                  type="number" 
+                  min="1"
+                  value={smaConfig.smaPeriod} 
+                  onChange={e => setSmaConfig({...smaConfig, smaPeriod: Math.max(1, Number(e.target.value) || 1)})}
+                  className="bg-black/40 border border-white/10 rounded px-2 py-1 text-sm w-16 focus:border-blue-500 focus:outline-none transition-colors text-right"
+                />
+              </div>
+              <button 
+                onClick={() => {
+                  const d = new Date();
+                  d.setHours(d.getHours() - 6);
+                  setStartDate(new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+                  setSmaConfig({ 
+                    intervalMinutes: 1, 
+                    smaPeriod: 5
+                  });
+                }}
+                className="p-1.5 ml-1 bg-black/40 border border-white/10 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                title="Reset to Defaults"
+              >
+                <RotateCcw size={16} />
+              </button>
+            </div>
+          </div>
+          
+          <div className="w-full h-80 relative flex items-center justify-center">
+            {smaData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-gray-500 gap-3">
+                <InfinityIcon size={48} className="text-gray-600 animate-pulse" />
+                <p className="text-sm">waiting for more data to assert trend</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={smaData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                  <XAxis 
+                    dataKey="time" 
+                    tickFormatter={(tick) => new Date(tick).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
+                    stroke="#4b5563"
+                    tick={{ fill: '#9ca3af', fontSize: 12 }}
+                  />
+                  <YAxis 
+                    stroke="#4b5563" 
+                    tick={{ fill: '#9ca3af', fontSize: 12 }}
+                    tickFormatter={formatCompact}
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1f2937', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '0.5rem' }}
+                    labelFormatter={(label: any) => new Date(label).toLocaleString()}
+                    formatter={(value: any, name: any) => [formatCompact(Number(value)), name]}
+                    itemSorter={(item: any) => -Number(item.value)}
+                  />
+                  <Legend />
+                  <Line type="monotone" dataKey="Total" stroke="#06b6d4" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                  <Line type="monotone" dataKey="In" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="CW" stroke="#ec4899" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="CR" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="Out" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 

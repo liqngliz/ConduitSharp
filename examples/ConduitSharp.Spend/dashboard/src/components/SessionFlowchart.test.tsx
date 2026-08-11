@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { SessionFlowchart } from './SessionFlowchart';
+import { DEFAULT_INSIGHTS_CONFIG } from '../utils/parser';
 
 describe('SessionFlowchart Component', () => {
   it('renders tool call badge when hasToolCall is true', () => {
@@ -32,7 +33,7 @@ describe('SessionFlowchart Component', () => {
     };
 
     render(
-      <SessionFlowchart session={mockSession as any} sessionId="test-id" />
+      <SessionFlowchart session={mockSession as any} sessionId="sess1" config={DEFAULT_INSIGHTS_CONFIG} />
     );
 
     // Should find the text

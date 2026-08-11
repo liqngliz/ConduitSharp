@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import type { MetricsData } from '../utils/parser';
+import type { MetricsData, InsightsConfig } from '../utils/parser';
+import { evaluatePromptFlags } from '../utils/parser';
 import { AnimatedNumber } from './AnimatedNumber';
 import { MessageCircleQuestion, SportShoe, Dumbbell, Wrench } from 'lucide-react';
 
@@ -27,7 +28,8 @@ export const Flowchart: React.FC<{
   headerTitle?: React.ReactNode;
   onPromptClick?: (sessionId: string) => void;
   isExpanded?: boolean;
-}> = ({ prompts, totals, title, headerTitle, onPromptClick, isExpanded = true }) => {
+  config: InsightsConfig;
+}> = ({ prompts, totals, title, headerTitle, onPromptClick, isExpanded = true, config }) => {
   const [sortOrder, setSortOrder] = useState<SortOrder>('latest');
 
   const totalTokens = totals.in + totals.out + totals.cr + totals.cw;
@@ -265,8 +267,13 @@ export const Flowchart: React.FC<{
           const y = gap + i * (nodeHeight + gap);
           const rawPrompt = p.prompt || 'Empty Prompt';
           const totalIn = p.in + p.cacheRead + p.cacheWrite;
-          const isVague = rawPrompt.length < 30 && totalIn > 1000;
-          const isInputHeavy = totalIn > 5000 && p.out < 100;
+          const { isVague, isInputHeavy } = evaluatePromptFlags(
+            rawPrompt, 
+            totalIn, 
+            p.out, 
+            p.turnCount, 
+            config
+          );
           
           const prefixIcons: React.ReactNode[] = [];
           let shortenLength = 25;
@@ -329,7 +336,7 @@ export const Flowchart: React.FC<{
                 {p.model || 'Unknown'}
               </text>
               
-              {p.turnCount > 15 ? (
+              {p.turnCount > config.marathonMinTurns ? (
                 <g>
                   <text x="12" y="85" fill="#6D28D9" fontSize="10" fontWeight="bold" className="font-mono">
                     {p.sessionId}
@@ -367,7 +374,8 @@ export const Flowchart: React.FC<{
 export const SessionFlowchart: React.FC<{
   session: MetricsData['sessions'][string];
   sessionId: string;
-}> = ({ session, sessionId }) => {
+  config: InsightsConfig;
+}> = ({ session, sessionId, config }) => {
   const flowchartPrompts: FlowchartPrompt[] = session.prompts.map(p => ({
     ...p,
     sessionId,
@@ -381,6 +389,6 @@ export const SessionFlowchart: React.FC<{
     out: session.out
   };
 
-  return <Flowchart prompts={flowchartPrompts} totals={totals} title="TOTAL SESSION BUDGET" />;
+  return <Flowchart prompts={flowchartPrompts} totals={totals} title="TOTAL SESSION BUDGET" config={config} />;
 };
 

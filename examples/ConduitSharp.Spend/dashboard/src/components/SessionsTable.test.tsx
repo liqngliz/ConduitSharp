@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { SessionsTable } from './SessionsTable';
+import { DEFAULT_INSIGHTS_CONFIG } from '../utils/parser';
 import type { MetricsData } from '../utils/parser';
 import { describe, it, expect } from 'vitest';
 import userEvent from '@testing-library/user-event';
@@ -18,13 +19,13 @@ const mockMetrics: MetricsData = {
 
 describe('SessionsTable Component', () => {
   it('renders sessions', () => {
-    render(<SessionsTable metrics={mockMetrics} />);
+    render(<SessionsTable metrics={mockMetrics} config={DEFAULT_INSIGHTS_CONFIG} />);
     expect(screen.getByText('Test Session')).toBeInTheDocument();
   });
 
   it('shows no sessions match when search has no results', async () => {
     const user = userEvent.setup();
-    render(<SessionsTable metrics={mockMetrics} />);
+    render(<SessionsTable metrics={mockMetrics} config={DEFAULT_INSIGHTS_CONFIG} />);
     const input = screen.getByPlaceholderText('Search sessions...');
     await user.type(input, 'Nonexistent');
     expect(screen.getByText('No sessions match your search.')).toBeInTheDocument();

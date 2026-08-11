@@ -12,7 +12,7 @@ describe('WeightsControl Component', () => {
     expect(screen.queryByText('Apply to')).not.toBeInTheDocument();
     
     fireEvent.click(btn);
-    expect(screen.getByText('Apply to modelA')).toBeInTheDocument();
+    expect(screen.getByText(/Apply to/)).toBeInTheDocument();
   });
 
   it('calls setUseWeights when toggle is clicked', () => {

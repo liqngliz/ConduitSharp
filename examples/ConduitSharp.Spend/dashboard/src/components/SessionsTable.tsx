@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import type { MetricsData } from '../utils/parser';
+import type { MetricsData, InsightsConfig } from '../utils/parser';
 import { SessionFlowchart } from './SessionFlowchart';
 import { SportShoe, Wrench } from 'lucide-react';
 
 const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
 
-export const SessionsTable = React.memo(({ metrics, focusedSession, onSessionClear }: { metrics: MetricsData; focusedSession?: string | null; onSessionClear?: () => void }) => {
+export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSessionClear }: { metrics: MetricsData; config: InsightsConfig; focusedSession?: string | null; onSessionClear?: () => void }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   type SortColumn = 'name' | 'lastActive' | 'read' | 'written' | 'total';
@@ -131,10 +131,10 @@ export const SessionsTable = React.memo(({ metrics, focusedSession, onSessionCle
             <tbody>
               {filteredSessions.length > 0 ? (
                 filteredSessions.map((s) => {
-                  const isMarathon = s.name === s.id && s.turns > 15;
+                  const isMarathon = s.name === s.id && s.turns > config.marathonMinTurns;
                   const isTool = s.session.isToolHeavy;
                   const nameColor = isTool ? 'text-success font-bold' : (isMarathon ? 'text-primary font-bold' : 'text-white');
-                  const subColor = s.turns > 15 ? 'text-primary font-bold' : 'text-gray-400';
+                  const subColor = s.turns > config.marathonMinTurns ? 'text-primary font-bold' : 'text-gray-400';
 
                   return (
                   <React.Fragment key={s.id}>
@@ -152,7 +152,7 @@ export const SessionsTable = React.memo(({ metrics, focusedSession, onSessionCle
                         {s.name !== s.id && (
                           <div className={`flex items-center gap-1.5 text-xs font-mono mt-1 truncate ${subColor}`}>
                             <span className="truncate">{s.id}</span>
-                            {s.turns > 15 && <SportShoe size={12} className="text-primary shrink-0" />}
+                            {s.turns > config.marathonMinTurns && <SportShoe size={12} className="text-primary shrink-0" />}
                           </div>
                         )}
                       </td>
@@ -180,7 +180,7 @@ export const SessionsTable = React.memo(({ metrics, focusedSession, onSessionCle
                     {expandedSessionId === s.id && (
                       <tr className="bg-black/20 border-b border-white/5">
                         <td colSpan={5} className="p-0">
-                          <SessionFlowchart session={metrics.sessions[s.id]} sessionId={s.id} />
+                          <SessionFlowchart session={metrics.sessions[s.id]} sessionId={s.id} config={config} />
                         </td>
                       </tr>
                     )}

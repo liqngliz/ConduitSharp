@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import type { MetricsData } from '../utils/parser';
+import type { MetricsData, InsightsConfig } from '../utils/parser';
 import { Flowchart, type FlowchartPrompt } from './SessionFlowchart';
 
 export const ActiveFlow = React.memo<{ 
   metrics: MetricsData; 
+  config: InsightsConfig;
   onSessionSelect?: (sessionId: string) => void;
-}>(({ metrics, onSessionSelect }) => {
+}>(({ metrics, config, onSessionSelect }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Extract and sort all prompts globally
@@ -75,6 +76,7 @@ export const ActiveFlow = React.memo<{
             headerTitle="Active Flow"
             onPromptClick={onSessionSelect}
             isExpanded={isExpanded}
+            config={config}
           />
         </div>
         
