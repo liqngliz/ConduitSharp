@@ -227,6 +227,7 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                         row.CacheWriteTokens, Column(root, config.CacheWriteFields, config.SubtractCacheWriteFields)),
                     CacheReadTokens = Math.Max(
                         row.CacheReadTokens, Column(root, config.CacheReadFields, config.SubtractCacheReadFields)),
+                    ThinkingTokens = Math.Max(row.ThinkingTokens, SumPaths(root, config.ThinkingFields)),
                     ServedModel = root.TryGetProperty("model", out var m) && m.ValueKind == JsonValueKind.String
                         ? m.GetString() ?? row.ServedModel
                         : row.ServedModel,
@@ -264,6 +265,7 @@ public sealed class TokenSpendPlugin : IPipelinePlugin
                 OutputTokens = Column(root, config.OutputFields, config.SubtractOutputFields),
                 CacheWriteTokens = Column(root, config.CacheWriteFields, config.SubtractCacheWriteFields),
                 CacheReadTokens = Column(root, config.CacheReadFields, config.SubtractCacheReadFields),
+                ThinkingTokens = SumPaths(root, config.ThinkingFields),
                 ServedModel = root.TryGetProperty("model", out var served) && served.ValueKind == JsonValueKind.String
                     ? served.GetString() ?? ""
                     : "",

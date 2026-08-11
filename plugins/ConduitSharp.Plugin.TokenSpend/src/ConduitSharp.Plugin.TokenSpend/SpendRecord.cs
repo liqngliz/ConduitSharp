@@ -36,6 +36,12 @@ public sealed record SpendRecord
     [JsonPropertyName("cacheWrite")] public long CacheWriteTokens { get; init; }
     [JsonPropertyName("cacheRead")] public long CacheReadTokens { get; init; }
 
+    /// <summary>Reasoning tokens the provider billed, a <em>subset</em> of <c>out</c> and never added
+    /// to it. Both providers report a count whatever the content looked like, so an encrypted or
+    /// redacted thinking block is measured here exactly like a plain one. Zero where the provider
+    /// reports no such field, which is not the same as a model that did not think.</summary>
+    [JsonPropertyName("think")] public long ThinkingTokens { get; init; }
+
     /// <summary>Hash of the conversation's first user message, so turns of one session group together
     /// without the client having to send a session header.</summary>
     [JsonPropertyName("session")] public string SessionId { get; init; } = "";

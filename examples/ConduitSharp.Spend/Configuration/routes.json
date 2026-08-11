@@ -39,6 +39,9 @@
             "cacheReadFields": [
               "usage.cache_read_input_tokens"
             ],
+            "thinkingFields": [
+              "usage.output_tokens_details.thinking_tokens"
+            ],
             "keyHeader": "x-api-key",
             "maxResponseBytes": 33554432,
             "maxRequestBytes": 33554432,
@@ -113,6 +116,9 @@
             "outputFields": [
               "usage.completion_tokens"
             ],
+            "thinkingFields": [
+              "usage.completion_tokens_details.reasoning_tokens"
+            ],
             "keyHeader": "authorization",
             "maxResponseBytes": 33554432,
             "maxRequestBytes": 33554432,
@@ -184,6 +190,9 @@
             ],
             "cacheWriteFields": [
               "usage.input_tokens_details.cache_write_tokens"
+            ],
+            "thinkingFields": [
+              "usage.output_tokens_details.reasoning_tokens"
             ],
             "keyHeader": "authorization",
             "maxResponseBytes": 33554432,

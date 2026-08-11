@@ -33,6 +33,13 @@ public sealed record TokenSpendConfig
     /// <summary>Paths taken back off the cache-read column.</summary>
     [JsonPropertyName("subtractCacheReadFields")] public IReadOnlyList<string> SubtractCacheReadFields { get; init; } = [];
 
+    /// <summary>Dotted response paths for reasoning tokens, e.g.
+    /// <c>usage.output_tokens_details.thinking_tokens</c> on Anthropic or
+    /// <c>usage.output_tokens_details.reasoning_tokens</c> on the Responses API. Reported as part of
+    /// the output total, so this column is a subset of <c>out</c> and is never added to it. No
+    /// subtract twin: no provider double-counts here.</summary>
+    [JsonPropertyName("thinkingFields")] public IReadOnlyList<string> ThinkingFields { get; init; } = [];
+
     /// <summary>Header identifying the caller (e.g. <c>x-api-key</c>). Only its salted hash is stored.</summary>
     [JsonPropertyName("keyHeader")] public string? KeyHeader { get; init; }
 

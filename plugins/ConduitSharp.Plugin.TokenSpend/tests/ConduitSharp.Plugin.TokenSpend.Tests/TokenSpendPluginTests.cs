@@ -502,6 +502,65 @@ public sealed class TokenSpendPluginTests
         Assert.Equal("gpt-5.6-luna", row.ServedModel);
     }
 
+    // Both providers report reasoning as a leaf under the output details, differing only in its
+    // name. Neither ships tokens for the thinking content itself, so an encrypted block counts here
+    // exactly like a plain one.
+    private const string ResponsesThinking = """
+        { "inputFields": ["usage.input_tokens"], "outputFields": ["usage.output_tokens"],
+          "thinkingFields": ["usage.output_tokens_details.reasoning_tokens"] }
+        """;
+
+    private const string AnthropicThinking = """
+        { "inputFields": ["usage.input_tokens"], "outputFields": ["usage.output_tokens"],
+          "thinkingFields": ["usage.output_tokens_details.thinking_tokens"] }
+        """;
+
+    [Fact]
+    public async Task CodexStream_ReportsReasoningTokensAsASubsetOfOutput()
+    {
+        var (ctx, _, store) = NewContext();
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(ResponsesThinking), ForwardStreaming(CodexSse));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal(227, row.ThinkingTokens);
+        Assert.Equal(698, row.OutputTokens);
+        Assert.True(row.ThinkingTokens < row.OutputTokens, "think is part of out, never added to it");
+    }
+
+    [Fact]
+    public async Task AnthropicStream_ReadsThinkingFromTheFrameCarryingTheOutput()
+    {
+        // Same two-frame split as the token columns: message_start has no output details at all, so
+        // last-frame-wins would be fine here but max keeps one rule for every column.
+        const string sse = """
+            event: message_start
+            data: {"type":"message_start","message":{"model":"claude-opus-5","usage":{"input_tokens":812,"output_tokens":1}}}
+
+            event: message_delta
+            data: {"type":"message_delta","usage":{"output_tokens":318,"output_tokens_details":{"thinking_tokens":86}}}
+
+            """;
+
+        var (ctx, _, store) = NewContext();
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(AnthropicThinking), ForwardStreaming(sse));
+
+        var row = Assert.Single(store.Rows);
+        Assert.Equal(812, row.InputTokens);
+        Assert.Equal(318, row.OutputTokens);
+        Assert.Equal(86, row.ThinkingTokens);
+    }
+
+    [Fact]
+    public async Task NoThinkingField_LeavesTheColumnAtZero()
+    {
+        // A route without the path configured, and a provider that reports no such leaf, are the
+        // same row here. Neither means the model did not think.
+        var (ctx, _, store) = NewContext();
+        await new TokenSpendPlugin().ExecuteAsync(ctx, Config(ResponsesUsage), ForwardStreaming(CodexSse));
+
+        Assert.Equal(0, Assert.Single(store.Rows).ThinkingTokens);
+    }
+
     [Fact]
     public async Task StreamIsDetectedFromTheBody_EvenWithoutTheContentTypeHeader()
     {
