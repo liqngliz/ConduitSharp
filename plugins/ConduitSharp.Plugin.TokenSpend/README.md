@@ -56,6 +56,8 @@ one number hides the largest lever a caller has over their bill.
 | `maxRequestBytes` | no | `1048576` | cap on request bytes parsed for model and messages |
 | `capturePrompts` | no | `false` | store a bounded prefix of the newest user message |
 | `maxPromptChars` | no | `200` | how much of that message is kept |
+| `sessionField` | no | — | dotted request path holding the client's own session id. Descends into a JSON document held in a string, which is how Claude Code and Codex ship theirs. Name the leaf, not its parent: Claude's `user_id` object also holds a device id and an account uuid. Unset falls back to hashing the first user message, which splits a session on compaction and merges sessions sharing a synthetic preamble. |
+| `metadataFields` | no | `{}` | named dotted request paths copied onto each row under `meta`, e.g. `{"source": "client_metadata.x-codex-turn-metadata.thread_source"}`. Values truncated to 200 characters. Nothing is captured unless a path names it, so point these at metadata rather than at content. |
 
 ### Fields per provider
 
@@ -64,6 +66,38 @@ one number hides the largest lever a caller has over their bill.
 | OpenAI and OpenAI-compatible (LM Studio, Ollama `/v1`) | `usage.prompt_tokens` / `usage.completion_tokens` | — |
 | Anthropic | `usage.input_tokens` / `usage.output_tokens` | `usage.cache_creation_input_tokens`, `usage.cache_read_input_tokens` |
 | Ollama native (`/api/chat`) | `prompt_eval_count` / `eval_count` | — |
+
+## Row
+
+| Field | Type | Meaning |
+| :--- | :--- | :--- |
+| `ts` | string | completion time, UTC. Also selects the day file. |
+| `route` | string | route that served the call, from `ConduitSharp.RouteId` |
+| `model` | string | model the caller asked for, from the request body |
+| `servedModel` | string | model the provider says served it, from the response. Empty on every streamed reply. |
+| `caller` | string | salted hash of the API key or JWT claim, never the raw credential |
+| `trace` | string | W3C trace id, or `HttpContext.TraceIdentifier` when no tracer is listening |
+| `in` / `out` | number | input and output tokens |
+| `cacheWrite` / `cacheRead` | number | cache-creation and cache-read tokens |
+| `think` | number | reasoning tokens, a subset of `out` |
+| `session` | string | client's session id, or a hash of the first user message |
+| `turn` | number | messages the request carried |
+| `tools` | number | tool-use blocks in the request |
+| `ms` | number | upstream wall-clock milliseconds |
+| `streamed` | bool | response was an event stream, decided from the body not the header |
+| `prompt` | string? | prefix of the newest user message, only when `capturePrompts` is on |
+| `sessionName` | string? | prefix of the session's first user message, used as a title |
+| `meta` | object? | values named by `metadataFields` |
+
+### Joining to the wire log
+
+`trace` is `Activity.Current?.TraceId ?? HttpContext.TraceIdentifier`, the same expression and the
+same fallback [`body-capture-file`](../ConduitSharp.Plugin.BodyCaptureToFile) writes, so a row joins
+to the bodies it was counted from and to its spans. Timestamp plus route cannot: two concurrent
+calls on one route share both.
+
+With no tracer listening the value is a connection-scoped identifier (`0HN7...:00000001`) rather
+than a W3C id. Both sides fall back identically, so the join still holds.
 
 ## Storage
 
