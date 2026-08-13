@@ -30,4 +30,11 @@ describe('SessionsTable Component', () => {
     await user.type(input, 'Nonexistent');
     expect(screen.getByText('No sessions match your search.')).toBeInTheDocument();
   });
+
+  it('includes cacheWrite in input and total column sums', () => {
+    render(<SessionsTable metrics={mockMetrics} config={DEFAULT_INSIGHTS_CONFIG} />);
+    // sess2: in 200 + cw 50 + cr 50 = 300 input, 100 out -> total 400
+    expect(screen.getByText('300')).toBeInTheDocument();
+    expect(screen.getByText('400')).toBeInTheDocument();
+  });
 });

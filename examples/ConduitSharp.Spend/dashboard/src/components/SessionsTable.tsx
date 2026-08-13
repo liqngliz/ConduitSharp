@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import type { MetricsData, InsightsConfig } from '../utils/parser';
 import { SessionFlowchart } from './SessionFlowchart';
-import { SportShoe, Wrench } from 'lucide-react';
+import { SportShoe, Wrench, Brain } from 'lucide-react';
 
 const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
 
 export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSessionClear }: { metrics: MetricsData; config: InsightsConfig; focusedSession?: string | null; onSessionClear?: () => void }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
-  type SortColumn = 'name' | 'lastActive' | 'read' | 'written' | 'total';
+  type SortColumn = 'name' | 'lastActive' | 'read' | 'think' | 'written' | 'total';
   const [sortColumn, setSortColumn] = useState<SortColumn>('total');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
@@ -55,7 +55,8 @@ export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSe
     return {
       id: sessionId,
       name: session.sessionName || sessionId,
-      read: session.cacheRead + session.in,
+      read: session.cacheRead + session.cacheWrite + session.in,
+      think: session.think,
       written: session.out,
       rawIn: session.in,
       rawOut: session.out,
@@ -80,12 +81,15 @@ export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSe
       } else if (sortColumn === 'read') {
         valA = a.read;
         valB = b.read;
+      } else if (sortColumn === 'think') {
+        valA = a.think;
+        valB = b.think;
       } else if (sortColumn === 'written') {
         valA = a.written;
         valB = b.written;
       } else {
-        valA = a.read + a.written;
-        valB = b.read + b.written;
+        valA = a.read + a.think + a.written;
+        valB = b.read + b.think + b.written;
       }
 
       if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
@@ -119,6 +123,9 @@ export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSe
                 </th>
                 <th className="p-4 text-sm font-semibold text-gray-400 text-right cursor-pointer hover:text-white transition-colors whitespace-nowrap" onClick={() => handleSort('read')}>
                   Input {getSortIcon('read')}
+                </th>
+                <th className="p-4 text-sm font-semibold text-gray-400 text-right cursor-pointer hover:text-white transition-colors whitespace-nowrap" onClick={() => handleSort('think')}>
+                  Think {getSortIcon('think')}
                 </th>
                 <th className="p-4 text-sm font-semibold text-gray-400 text-right cursor-pointer hover:text-white transition-colors whitespace-nowrap" onClick={() => handleSort('written')}>
                   Output {getSortIcon('written')}
@@ -162,24 +169,33 @@ export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSe
                       <td className="p-4 text-right">
                         <div className="font-mono text-gray-300">{formatCompact(s.read)}</div>
                         <div className="text-[10px] text-gray-500 font-mono mt-1 flex justify-end gap-1">
-                          <span>in:<span className="text-blue-500">{formatCompact(s.rawIn)}</span></span>
+                          <span>In:<span className="text-blue-500">{formatCompact(s.rawIn)}</span></span>
                           <span className="text-gray-600">|</span>
-                          <span>cw:<span className="text-pink-500">{formatCompact(s.rawCacheWrite)}</span></span>
+                          <span>CW:<span className="text-pink-500">{formatCompact(s.rawCacheWrite)}</span></span>
                           <span className="text-gray-600">|</span>
-                          <span>cr:<span className="text-purple-500">{formatCompact(s.rawCacheRead)}</span></span>
+                          <span>CR:<span className="text-purple-500">{formatCompact(s.rawCacheRead)}</span></span>
                         </div>
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="font-mono text-emerald-400">{formatCompact(s.think)}</div>
+                        {s.think > 0 && (
+                          <div className="text-[10px] text-gray-500 font-mono mt-1 flex items-center justify-end gap-1">
+                            <Brain size={10} className="text-emerald-400 shrink-0" />
+                            <span>{Math.round((s.think / (s.rawOut + s.think)) * 100)}% of model output</span>
+                          </div>
+                        )}
                       </td>
                       <td className="p-4 text-right">
                         <div className="font-mono text-gray-300">{formatCompact(s.written)}</div>
                         <div className="text-[10px] text-gray-500 font-mono mt-1 flex justify-end">
-                          <span>out:<span className="text-amber-500">{formatCompact(s.rawOut)}</span></span>
+                          <span>Out:<span className="text-amber-500">{formatCompact(s.rawOut)}</span></span>
                         </div>
                       </td>
-                      <td className="p-4 text-right font-mono text-secondary font-bold">{formatCompact(s.read + s.written)}</td>
+                      <td className="p-4 text-right font-mono text-secondary font-bold">{formatCompact(s.read + s.think + s.written)}</td>
                     </tr>
                     {expandedSessionId === s.id && (
                       <tr className="bg-black/20 border-b border-white/5">
-                        <td colSpan={5} className="p-0">
+                        <td colSpan={6} className="p-0">
                           <SessionFlowchart session={metrics.sessions[s.id]} sessionId={s.id} config={config} />
                         </td>
                       </tr>
@@ -189,7 +205,7 @@ export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSe
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} className="p-6 text-center text-gray-500">
+                  <td colSpan={6} className="p-6 text-center text-gray-500">
                     No sessions match your search.
                   </td>
                 </tr>
