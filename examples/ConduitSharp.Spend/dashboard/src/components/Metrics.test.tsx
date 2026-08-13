@@ -47,15 +47,22 @@ describe('Metrics Component', () => {
     expect(screen.queryByTestId('metric-think')).toBeNull();
   });
 
-  it('shows thinking against Out, not against the total', () => {
+  it('shows Think token values correctly when present', () => {
     const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, out: 500, think: 125 } };
     render(<Metrics metrics={metrics} routeName="Claude" />);
-    expect(screen.getByTestId('metric-think')).toHaveTextContent('25% of Out');
+    expect(screen.getByTestId('metric-think')).toHaveTextContent('Think: 125');
   });
 
-  it('shows Writing output insight when output is highest', () => {
-    const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, in: 100, out: 1000, cacheRead: 10, cacheWrite: 0 } };
+  it('shows Writing output insight when think + out is highest', () => {
+    const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, in: 100, out: 200, think: 900, cacheRead: 10, cacheWrite: 0 } };
     render(<Metrics metrics={metrics} routeName="Claude" />);
     expect(screen.getByText(/Most usage: Writing output/)).toBeInTheDocument();
+  });
+
+  it('includes think tokens in totalTokens headline and calculates wrotePercent', () => {
+    const metrics = { ...mockMetrics, totals: { ...mockMetrics.totals, in: 1000, out: 500, think: 500, cacheRead: 0, cacheWrite: 0 } };
+    render(<Metrics metrics={metrics} routeName="Claude" />);
+    // total = 1000 + 500 + 500 = 2000, outTokens = 500 + 500 = 1000 -> wrotePercent = 50%
+    expect(screen.getByText(/of total/)).toHaveTextContent('50% of total');
   });
 });

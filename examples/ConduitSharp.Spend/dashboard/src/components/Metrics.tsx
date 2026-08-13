@@ -1,10 +1,9 @@
 import React from 'react';
 import type { MetricsData } from '../utils/parser';
-import { Brain } from 'lucide-react';
 import { AnimatedNumber } from './AnimatedNumber';
 
 export const Metrics = React.memo(({ metrics, routeName }: { metrics: MetricsData; routeName: string }) => {
-  const totalTokens = metrics.totals.in + metrics.totals.out + metrics.totals.cacheRead + metrics.totals.cacheWrite;
+  const totalTokens = metrics.totals.in + metrics.totals.out + metrics.totals.cacheRead + metrics.totals.cacheWrite + metrics.totals.think;
   const totalSessions = Object.keys(metrics.sessions).length;
   const totalPromptsSent = Object.values(metrics.sessions).reduce((sum, sess) => sum + sess.prompts.length, 0);
 
@@ -13,15 +12,14 @@ export const Metrics = React.memo(({ metrics, routeName }: { metrics: MetricsDat
   const avgMessageIn = totalPromptsSent > 0 ? Math.round(metrics.totals.in / totalPromptsSent) : 0;
   const avgMessageCw = totalPromptsSent > 0 ? Math.round(metrics.totals.cacheWrite / totalPromptsSent) : 0;
   const avgMessageCr = totalPromptsSent > 0 ? Math.round(metrics.totals.cacheRead / totalPromptsSent) : 0;
-  const wrotePercent = totalTokens > 0 ? Math.round((metrics.totals.out / totalTokens) * 100) : 0;
-  // Reasoning is billed inside Out, so it is shown against Out and never added to the total.
-  const thinkPercent = metrics.totals.out > 0 ? Math.round((metrics.totals.think / metrics.totals.out) * 100) : 0;
+  const outTokens = metrics.totals.out + metrics.totals.think;
+  const wrotePercent = totalTokens > 0 ? Math.round((outTokens / totalTokens) * 100) : 0;
 
   let mostUsageInsight = "Reading context";
   const cacheTokens = metrics.totals.cacheRead + metrics.totals.cacheWrite;
-  if (cacheTokens > metrics.totals.in && cacheTokens > metrics.totals.out) {
+  if (cacheTokens > metrics.totals.in && cacheTokens > outTokens) {
     mostUsageInsight = "Caching";
-  } else if (metrics.totals.out > metrics.totals.in && metrics.totals.out > cacheTokens) {
+  } else if (outTokens > metrics.totals.in && outTokens > cacheTokens) {
     mostUsageInsight = "Writing output";
   }
 
@@ -34,29 +32,38 @@ export const Metrics = React.memo(({ metrics, routeName }: { metrics: MetricsDat
             <span className="relative group cursor-help text-xs bg-white/10 rounded-full w-4 h-4 flex items-center justify-center">
               ?
               <span className="absolute bottom-full mb-2 hidden group-hover:block w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg z-10 left-1/2 -translate-x-1/2 whitespace-normal">
-                Total tokens processed (Input + Output + Cache)
+                Total tokens processed (Input + Output + Think + Cache)
               </span>
             </span>
           </h3>
           <p className="text-3xl font-bold mt-2"><AnimatedNumber value={totalTokens} compact /></p>
           <div className="text-[13px] text-gray-400 mt-3 font-mono flex flex-col items-center gap-1 leading-relaxed">
-            <span className="flex items-center gap-1">
-              In: <span className="text-blue-500"><AnimatedNumber value={metrics.totals.in} compact /></span>
-              <span className="text-gray-600">|</span>
-              CW: <span className="text-pink-500"><AnimatedNumber value={metrics.totals.cacheWrite} compact /></span>
-            </span>
-            <span className="flex items-center gap-1">
-              CR: <span className="text-purple-500"><AnimatedNumber value={metrics.totals.cacheRead} compact /></span>
-              <span className="text-gray-600">|</span>
-              Out: <span className="text-amber-500"><AnimatedNumber value={metrics.totals.out} compact /></span>
-            </span>
-            {metrics.totals.think > 0 && (
-              <span className="flex items-center gap-1" data-testid="metric-think">
-                <Brain size={12} className="text-emerald-400" />
-                Think: <span className="text-emerald-400"><AnimatedNumber value={metrics.totals.think} compact /></span>
-                <span className="text-gray-500">({thinkPercent}% of Out)</span>
+            <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+              <span className="flex items-center gap-1">
+                In: <span className="text-blue-500"><AnimatedNumber value={metrics.totals.in} compact /></span>
               </span>
-            )}
+              <span className="text-gray-600 hidden sm:inline">|</span>
+              <span className="flex items-center gap-1">
+                CW: <span className="text-pink-500"><AnimatedNumber value={metrics.totals.cacheWrite} compact /></span>
+              </span>
+              <span className="text-gray-600 hidden sm:inline">|</span>
+              <span className="flex items-center gap-1">
+                CR: <span className="text-purple-500"><AnimatedNumber value={metrics.totals.cacheRead} compact /></span>
+              </span>
+            </div>
+            <div className="flex items-center justify-center gap-2 mt-1">
+              {metrics.totals.think > 0 && (
+                <>
+                  <span className="flex items-center gap-1" data-testid="metric-think">
+                    Think: <span className="text-emerald-400"><AnimatedNumber value={metrics.totals.think} compact /></span>
+                  </span>
+                  <span className="text-gray-600">|</span>
+                </>
+              )}
+              <span className="flex items-center gap-1">
+                Out: <span className="text-amber-500"><AnimatedNumber value={metrics.totals.out} compact /></span>
+              </span>
+            </div>
           </div>
         </div>
         <div className="glass-panel p-6 animate-fade-in flex flex-col items-center text-center h-full" style={{ animationDelay: '100ms' }}>
