@@ -119,6 +119,44 @@ app.MapGet("/api/spend/stream", async (HttpContext ctx, SpendBroadcaster broadca
     }
 });
 
+// Wire log lookup, so the dashboard can show a prompt's full text from a spend row's trace id.
+// Gateway-only, not part of BodyCaptureToFile: the plugin writes the file, this reads it back.
+// No auth, and the file holds prompt text in the clear. Local dashboard only.
+var wireLogPath = Environment.GetEnvironmentVariable("CONDUIT_WIRE_LOG")
+    ?? Path.Combine(dataDir, "conduit-wire.jsonl");
+
+app.MapGet("/api/wire/{traceId}", async (string traceId, CancellationToken ct) =>
+{
+    if (traceId.Length < 8 || !File.Exists(wireLogPath))
+        return Results.NotFound();
+
+    var hits = new List<WireEntry>();
+    // FileShare.ReadWrite matches the writer at BodyCaptureToFilePlugin.cs:250. StreamReader's
+    // default is FileShare.Read, which denies the live appender and throws on Windows.
+    using var stream = new FileStream(wireLogPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+    using var reader = new StreamReader(stream);
+    string? line;
+    while ((line = await reader.ReadLineAsync(ct)) is not null)
+    {
+        // Substring prefilter. The log runs ~125KB per line, so deserializing every one to read a
+        // 32-char field costs seconds; IndexOf costs microseconds. The parse below drops the false
+        // positives from a trace id echoed inside a body.
+        if (!line.Contains(traceId, StringComparison.OrdinalIgnoreCase)) continue;
+
+        WireEntry? entry;
+        try { entry = JsonSerializer.Deserialize<WireEntry>(line); }
+        catch (JsonException) { continue; }
+
+        if (entry is null || !string.Equals(entry.TraceId, traceId, StringComparison.OrdinalIgnoreCase))
+            continue;
+
+        hits.Add(entry);
+        if (hits.Count >= 4) break; // request + response, with slack for a retried turn
+    }
+
+    return hits.Count == 0 ? Results.NotFound() : Results.Json(hits);
+});
+
 app.MapGet("/info", () => Results.Text(
     $"""
      TokenFlow
@@ -133,5 +171,14 @@ app.MapGet("/info", () => Results.Text(
 
 app.UseConduitSharpGateway();
 app.Run();
+
+/// <summary>One line of the wire log written by BodyCaptureToFile. Body is a raw provider payload:
+/// JSON on a request, SSE text on a streamed response.</summary>
+internal sealed record WireEntry(
+    [property: JsonPropertyName("time")] string Time,
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("traceId")] string TraceId,
+    [property: JsonPropertyName("direction")] string Direction,
+    [property: JsonPropertyName("body")] string Body);
 
 public partial class Program { }
