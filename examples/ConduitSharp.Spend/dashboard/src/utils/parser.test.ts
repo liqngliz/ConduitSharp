@@ -276,4 +276,16 @@ describe('calculateSMA', () => {
     expect(sma[0].In).toBe(15);
     expect(sma[1].In).toBe(25);
   });
+
+  it('preserves first trace id when folding identical consecutive prompts', () => {
+    const records: SpendRecord[] = [
+      { ts: "2026-08-01T10:00:00Z", route: "claude", model: "m", servedModel: "m", caller: "a", in: 10, out: 5, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 1, tools: 0, ms: 100, streamed: true, prompt: "repeated", trace: "trace-first" },
+      { ts: "2026-08-01T10:01:00Z", route: "claude", model: "m", servedModel: "m", caller: "a", in: 20, out: 10, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 2, tools: 0, ms: 100, streamed: true, prompt: "repeated", trace: "trace-second" }
+    ];
+
+    const metrics = computeMetrics(records);
+    expect(metrics.sessions['sess1'].prompts).toHaveLength(1);
+    expect(metrics.sessions['sess1'].prompts[0].trace).toBe('trace-first');
+    expect(metrics.sessions['sess1'].prompts[0].traces).toEqual(['trace-first', 'trace-second']);
+  });
 });

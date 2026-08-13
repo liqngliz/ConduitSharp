@@ -57,12 +57,12 @@ export interface MetricsData {
     models: Set<string>;
     tools: number;
     isToolHeavy?: boolean;
-    prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; think: number; out: number; total: number; ts: string; firstTs?: string; tools: number; hasToolCall: boolean; }[];
+    prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; think: number; out: number; total: number; ts: string; firstTs?: string; tools: number; hasToolCall: boolean; trace?: string; traces?: string[]; }[];
   }>;
   dailyUsage: Record<string, { in: number; cacheRead: number; cacheWrite: number; think: number; out: number }>;
   modelBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; think: number; out: number }>;
   routeBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; think: number; out: number }>;
-  topPrompts: { prompt: string; in: number; cacheRead: number; cacheWrite: number; think: number; out: number; totalTokens: number; session: string; turn: number; model: string; hasToolCall?: boolean }[];
+  topPrompts: { prompt: string; in: number; cacheRead: number; cacheWrite: number; think: number; out: number; totalTokens: number; session: string; turn: number; ts?: string; model: string; hasToolCall?: boolean; trace?: string; traces?: string[]; }[];
 }
 
 export interface TokenWeights {
@@ -83,8 +83,6 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
     routeBreakdown: {},
     topPrompts: [],
   };
-
-  const promptsMap: Record<string, { in: number; cacheRead: number; cacheWrite: number; think: number; out: number; total: number; session: string; turn: number; model: string; hasToolCall?: boolean }> = {};
 
   for (const rawRecord of records) {
     let record = rawRecord;
@@ -168,7 +166,9 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
         out: record.out,
         total: record.in + record.out + record.cacheRead + record.cacheWrite + (record.think ?? 0),
         tools: record.tools || 0,
-        hasToolCall: false
+        hasToolCall: false,
+        trace: record.trace,
+        traces: record.trace ? [record.trace] : []
       });
     }
 
@@ -197,20 +197,6 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
     metrics.routeBreakdown[route].cacheWrite += record.cacheWrite;
     metrics.routeBreakdown[route].think += record.think ?? 0;
     metrics.routeBreakdown[route].out += record.out;
-
-    // Prompts
-    if (record.prompt && (record.in + record.out + record.cacheRead + record.cacheWrite + (record.think ?? 0) > 0)) {
-      if (!promptsMap[record.prompt]) {
-        promptsMap[record.prompt] = { in: 0, cacheRead: 0, cacheWrite: 0, think: 0, out: 0, total: 0, session: record.session || '', turn: record.turn || 0, model: record.model || '', hasToolCall: false };
-      }
-      const p = promptsMap[record.prompt];
-      p.in += record.in;
-      p.cacheRead += record.cacheRead;
-      p.cacheWrite += record.cacheWrite;
-      p.think += record.think ?? 0;
-      p.out += record.out;
-      p.total += (record.in + record.cacheRead + record.cacheWrite + (record.think ?? 0) + record.out);
-    }
   }
 
   // Sort prompts by timestamp for all sessions, remove 0-token sessions, and fold identical consecutive prompts
@@ -237,22 +223,12 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
       }
 
       if (bestStream) {
-        if (p.tools > bestStream.lastTools) {
-          p.hasToolCall = true;
-          if (promptsMap[p.prompt]) promptsMap[p.prompt].hasToolCall = true;
-        } else {
-          p.hasToolCall = false;
-        }
+        p.hasToolCall = p.tools > bestStream.lastTools;
         bestStream.lastTurn = p.turn;
         bestStream.lastTools = p.tools;
       } else {
         streams.push({ lastTurn: p.turn, lastTools: p.tools });
-        if (p.tools > 0) {
-          p.hasToolCall = true;
-          if (promptsMap[p.prompt]) promptsMap[p.prompt].hasToolCall = true;
-        } else {
-          p.hasToolCall = false;
-        }
+        p.hasToolCall = p.tools > 0;
       }
     }
 
@@ -262,7 +238,7 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
     
     for (const cur of sess.prompts) {
       if (!pre) {
-        pre = { ...cur };
+        pre = { ...cur, traces: cur.traces ? [...cur.traces] : (cur.trace ? [cur.trace] : []) };
         preOrigDate = new Date(cur.ts).getTime();
         foldedPrompts.push(pre);
         continue;
@@ -280,11 +256,18 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
         pre.total += cur.total;
         pre.tools = Math.max(pre.tools, cur.tools);
         pre.hasToolCall = pre.hasToolCall || cur.hasToolCall;
+        if (cur.trace) {
+          if (!pre.traces) pre.traces = pre.trace ? [pre.trace] : [];
+          if (!pre.traces.includes(cur.trace)) {
+            pre.traces.push(cur.trace);
+          }
+        }
+        pre.trace = pre.trace || cur.trace;
         pre.ts = cur.ts;
         
         preOrigDate = curDate;
       } else {
-        pre = { ...cur };
+        pre = { ...cur, traces: cur.traces ? [...cur.traces] : (cur.trace ? [cur.trace] : []) };
         preOrigDate = curDate;
         foldedPrompts.push(pre);
       }
@@ -304,8 +287,23 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
     sess.isToolHeavy = isToolHeavy(sessToolTokens, sessChatTokens, config);
   }
 
-  metrics.topPrompts = Object.entries(promptsMap)
-    .map(([prompt, stats]) => ({ prompt, in: stats.in, cacheRead: stats.cacheRead, cacheWrite: stats.cacheWrite, think: stats.think, out: stats.out, totalTokens: stats.total, session: stats.session, turn: stats.turn, model: stats.model, hasToolCall: stats.hasToolCall }))
+  metrics.topPrompts = Object.entries(metrics.sessions)
+    .flatMap(([sessionId, sess]) => sess.prompts.map(p => ({
+      prompt: p.prompt,
+      in: p.in,
+      cacheRead: p.cacheRead,
+      cacheWrite: p.cacheWrite,
+      think: p.think,
+      out: p.out,
+      totalTokens: p.total,
+      session: sessionId,
+      turn: p.turn,
+      ts: p.ts,
+      model: p.model,
+      hasToolCall: p.hasToolCall,
+      trace: p.trace,
+      traces: p.traces
+    })))
     .sort((a, b) => b.totalTokens - a.totalTokens)
     .slice(0, 10);
 
