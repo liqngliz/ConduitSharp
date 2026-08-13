@@ -108,9 +108,12 @@ jobs:
   # A tool package runs through the `dotnet` muxer, so it needs no apphost and no
   # macOS code signature, unlike the tarballs below.
   #
-  # One-time setup, blocks the first release: nuget.org Trusted Publishing is
-  # per-package AND per-workflow. Add a policy for ConduitSharp.TokenFlow /
-  # liqngliz/ConduitSharp / tokenflow.yml — the release.yml policy does not cover it.
+  # One-time setup, blocks the first release: a Trusted Publishing policy is scoped to
+  # owner + repository + workflow FILE, so the release.yml policy does not reach this
+  # workflow. Add one for liqngliz / ConduitSharp / tokenflow.yml. Package ID is not part
+  # of the scope. Leave Environment empty; no job here declares `environment:`.
+  # A policy nuget cannot yet pin to GitHub's repo/owner IDs is active for 7 days only;
+  # the first successful publish makes it permanent, and the window restarts from the UI.
   # ---------------------------------------------------------------------------
   tool:
     needs: dashboard

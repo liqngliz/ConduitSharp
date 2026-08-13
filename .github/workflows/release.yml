@@ -145,8 +145,10 @@ jobs:
   # ProjectReferences pack as dependencies on the same-version core packages.
   #
   # Uses GitHub OIDC (trusted publisher) — no API key secret required.
-  # One-time setup per package: nuget.org → Trusted Publishers → add this repo/workflow
-  # (release.yml) for EACH package ID below — trust is configured per package, not per repo.
+  # One-time setup per workflow file, NOT per package: nuget.org → Trusted Publishing →
+  # owner liqngliz, repository ConduitSharp, workflow release.yml. A policy applies to
+  # every package the owner owns, so adding a package ID to the loop above needs no new
+  # policy. A second workflow pushing packages does (see tokenflow.yml).
   # ---------------------------------------------------------------------------
   nuget:
     needs: verify-version
