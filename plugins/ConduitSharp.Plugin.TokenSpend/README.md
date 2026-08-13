@@ -49,7 +49,7 @@ one number hides the largest lever a caller has over their bill.
 | `outputFields` | yes | — | dotted response paths summed into the output column |
 | `cacheWriteFields` | no | `[]` | cache-creation tokens, priced above input |
 | `cacheReadFields` | no | `[]` | cache-read tokens, priced far below input |
-| `thinkingFields` | no | `[]` | reasoning tokens. A **subset of `out`**, never added to it. Anthropic `usage.output_tokens_details.thinking_tokens`, Responses API `…reasoning_tokens`, Chat Completions `usage.completion_tokens_details.reasoning_tokens`. `0` also means "provider reports no such field", not "model did not think". |
+| `thinkingFields` | no | `[]` | reasoning tokens. On the wire, a **subset of `out`** (the dashboard splits them into separate Out and Think metrics). Anthropic `usage.output_tokens_details.thinking_tokens`, Responses API `…reasoning_tokens`, Chat Completions `usage.completion_tokens_details.reasoning_tokens`. `0` also means "provider reports no such field", not "model did not think". |
 | `keyHeader` | no | — | header identifying the caller (e.g. `x-api-key`). Only its salted hash is stored. |
 | `keyClaim` | no | — | JWT claim identifying the caller, used when `keyHeader` is absent. Not re-validated: put `jwt-auth` earlier in the chain. |
 | `maxResponseBytes` | no | `1048576` | cap on response bytes buffered to find the usage |

@@ -136,7 +136,7 @@ cat logs/spend-$(date -u +%F).jsonl
  "turn":3,"tools":0,"ms":24,"streamed":false,"prompt":"second ask"}
 ```
 
-`think` is reasoning tokens, billed inside `out` and never added to it. Path per route via
+`think` is reasoning tokens, billed inside `out` on the wire (the dashboard splits them into separate Out and Think metrics). Path per route via
 `thinkingFields`: `usage.output_tokens_details.thinking_tokens` (claude),
 `usage.output_tokens_details.reasoning_tokens` (codex),
 `usage.completion_tokens_details.reasoning_tokens` (local, OpenAI Chat Completions shape).

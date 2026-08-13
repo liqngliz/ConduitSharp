@@ -35,9 +35,9 @@ public sealed record TokenSpendConfig
 
     /// <summary>Dotted response paths for reasoning tokens, e.g.
     /// <c>usage.output_tokens_details.thinking_tokens</c> on Anthropic or
-    /// <c>usage.output_tokens_details.reasoning_tokens</c> on the Responses API. Reported as part of
-    /// the output total, so this column is a subset of <c>out</c> and is never added to it. No
-    /// subtract twin: no provider double-counts here.</summary>
+    /// <c>usage.output_tokens_details.reasoning_tokens</c> on the Responses API. Reported on the wire
+    /// as part of the output total (<c>think</c> is a subset of <c>out</c>; the dashboard decomposes
+    /// them into separate Out and Think metrics). No subtract twin: no provider double-counts here.</summary>
     [JsonPropertyName("thinkingFields")] public IReadOnlyList<string> ThinkingFields { get; init; } = [];
 
     /// <summary>Header identifying the caller (e.g. <c>x-api-key</c>). Only its salted hash is stored.</summary>
