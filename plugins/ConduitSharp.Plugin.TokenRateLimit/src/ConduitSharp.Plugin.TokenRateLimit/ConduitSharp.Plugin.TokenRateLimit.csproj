@@ -5,14 +5,27 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <OutputType>Library</OutputType>
     <RootNamespace>ConduitSharp.Plugin.TokenRateLimit</RootNamespace>
-    <IsPackable>false</IsPackable>
     <!--
       Meters LLM token usage per caller against a windowed budget, reusing the gateway's
       IRateLimitStore (in-memory, or the Redis drop-in for shared limits across replicas).
       Charge-after: parses the response body's usage fields and charges them; the next request
       over budget gets 429. Variant "token-rate-limit".
     -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ConduitSharp.Plugin.TokenRateLimit</PackageId>
+    <Title>ConduitSharp TokenRateLimit Plugin</Title>
+    <PackageTags>$(PackageTags);llm;tokens;rate-limiting;quota;plugin</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>
+      A plugin for the ConduitSharp API gateway that rate limits by LLM tokens instead of request
+      count. Charge-after: reads the token counts out of the response body and charges them to a
+      per-caller fixed window, so the next request over budget gets a 429. Shares the gateway's
+      IRateLimitStore, so the Redis drop-in makes the budget hold across replicas.
+    </Description>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>

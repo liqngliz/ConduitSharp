@@ -5,7 +5,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <OutputType>Library</OutputType>
     <RootNamespace>ConduitSharp.Plugin.TokenSpend</RootNamespace>
-    <IsPackable>false</IsPackable>
     <!--
       Records what every LLM call actually cost in tokens, as durable history. Reads the same
       provider `usage` fields as token-rate-limit, but persists a row per request instead of
@@ -14,7 +13,20 @@
       References ConduitSharp.Core and nothing else: the store is this plugin's own ISpendStore,
       so nothing here reaches into Traffic the way token-rate-limit does for IRateLimitStore.
     -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ConduitSharp.Plugin.TokenSpend</PackageId>
+    <Title>ConduitSharp TokenSpend Plugin</Title>
+    <PackageTags>$(PackageTags);llm;tokens;usage;metering;observability;plugin</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>
+      A plugin for the ConduitSharp API gateway that records one durable row per LLM call:
+      model, route, salted caller hash, trace id, session and turn, and the four token classes
+      (input, output, cache-write, cache-read). Persists history rather than charging a window.
+    </Description>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>

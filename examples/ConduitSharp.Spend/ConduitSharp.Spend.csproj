@@ -28,8 +28,15 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ConduitSharp.Gateway.AspNetCore\ConduitSharp.Gateway.AspNetCore.csproj" />
-    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.TokenSpend\src\ConduitSharp.Plugin.TokenSpend\ConduitSharp.Plugin.TokenSpend.csproj" />
-    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.BodyCaptureToFile\src\ConduitSharp.Plugin.BodyCaptureToFile\ConduitSharp.Plugin.BodyCaptureToFile.csproj" />
+    <!--
+      PrivateAssets=all: both plugins are now packable in their own right, and without this the
+      tool package would carry a nuspec <dependency> on each, so `dotnet tool install` would
+      resolve them from nuget.org at their Directory.Build.props version rather than using the
+      copies published into tools/. The tool ships self-contained; the packages exist for anyone
+      adding these to a standalone ConduitSharp.Gateway install.
+    -->
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.TokenSpend\src\ConduitSharp.Plugin.TokenSpend\ConduitSharp.Plugin.TokenSpend.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.BodyCaptureToFile\src\ConduitSharp.Plugin.BodyCaptureToFile\ConduitSharp.Plugin.BodyCaptureToFile.csproj" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

@@ -173,6 +173,9 @@ jobs:
             src/ConduitSharp.Gateway.AspNetCore.Swagger \
             src/ConduitSharp.Host \
             plugins/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture \
+            plugins/ConduitSharp.Plugin.BodyCaptureToFile/src/ConduitSharp.Plugin.BodyCaptureToFile \
+            plugins/ConduitSharp.Plugin.TokenSpend/src/ConduitSharp.Plugin.TokenSpend \
+            plugins/ConduitSharp.Plugin.TokenRateLimit/src/ConduitSharp.Plugin.TokenRateLimit \
             plugins/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell \
             plugins/ConduitSharp.Cache.RedisProtocol/src/ConduitSharp.Cache.RedisProtocol \
             plugins/ConduitSharp.RateLimit.RedisProtocol/src/ConduitSharp.RateLimit.RedisProtocol \
