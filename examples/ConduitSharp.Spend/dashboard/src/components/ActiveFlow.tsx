@@ -12,7 +12,7 @@ export const ActiveFlow = React.memo<{
   // Extract and sort all prompts globally
   const { prompts, totals } = useMemo(() => {
     const allPrompts: FlowchartPrompt[] = [];
-    const accTotals = { in: 0, cw: 0, cr: 0, out: 0 };
+    const accTotals = { in: 0, cw: 0, cr: 0, think: 0, out: 0 };
 
     Object.entries(metrics.sessions).forEach(([sessionId, session]) => {
       session.prompts.forEach(p => {
@@ -24,6 +24,7 @@ export const ActiveFlow = React.memo<{
         accTotals.in += p.in;
         accTotals.cw += p.cacheWrite;
         accTotals.cr += p.cacheRead;
+        accTotals.think += (p.think || 0);
         accTotals.out += p.out;
       });
     });
@@ -51,10 +52,8 @@ export const ActiveFlow = React.memo<{
   }
 
   // Node height is 125, gap is 25 in Flowchart
-  // We want to show ~4.5 prompts when collapsed.
-  // Height calculation: gap + 4 * (125 + 25) + (125 / 2) = 25 + 600 + 62.5 = 687.5
-  // But Flowchart has some padding in its container.
-  const collapsedHeight = 730; // roughly 4.5 nodes
+  // Accommodate 4 full nodes + 5 middle categories (In, CW, CR, Think, Out) + 5th fading node
+  const collapsedHeight = 840;
 
   const needsCollapse = prompts.length >= 5;
 
@@ -65,8 +64,8 @@ export const ActiveFlow = React.memo<{
           className="overflow-hidden transition-all duration-1000 ease-in-out relative"
           style={{ 
             maxHeight: isExpanded || !needsCollapse ? '10000px' : `${collapsedHeight}px`,
-            WebkitMaskImage: !isExpanded && needsCollapse ? 'linear-gradient(to bottom, black 85%, transparent 100%)' : 'none',
-            maskImage: !isExpanded && needsCollapse ? 'linear-gradient(to bottom, black 85%, transparent 100%)' : 'none'
+            WebkitMaskImage: !isExpanded && needsCollapse ? 'linear-gradient(to bottom, black 80%, transparent 100%)' : 'none',
+            maskImage: !isExpanded && needsCollapse ? 'linear-gradient(to bottom, black 80%, transparent 100%)' : 'none'
           }}
         >
           <Flowchart 

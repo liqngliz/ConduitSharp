@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import type { MetricsData, InsightsConfig } from '../utils/parser';
 import { evaluatePromptFlags } from '../utils/parser';
 import { AnimatedNumber } from './AnimatedNumber';
-import { MessageCircleQuestion, SportShoe, Dumbbell, Wrench } from 'lucide-react';
+import { MessageCircleQuestion, SportShoe, Dumbbell, Wrench, Brain } from 'lucide-react';
 
-type SortOrder = 'latest' | 'oldest' | 'total' | 'in' | 'cw' | 'cr' | 'out';
+type SortOrder = 'latest' | 'oldest' | 'total' | 'in' | 'cw' | 'cr' | 'think' | 'out';
 
 export interface FlowchartPrompt {
   ts: string;
@@ -14,6 +14,7 @@ export interface FlowchartPrompt {
   in: number;
   cacheRead: number;
   cacheWrite: number;
+  think: number;
   out: number;
   hasToolCall?: boolean;
   model: string;
@@ -23,7 +24,7 @@ export interface FlowchartPrompt {
 
 export const Flowchart: React.FC<{
   prompts: FlowchartPrompt[];
-  totals: { in: number; cw: number; cr: number; out: number };
+  totals: { in: number; cw: number; cr: number; think: number; out: number };
   title: string;
   headerTitle?: React.ReactNode;
   onPromptClick?: (sessionId: string) => void;
@@ -32,7 +33,7 @@ export const Flowchart: React.FC<{
 }> = ({ prompts, totals, title, headerTitle, onPromptClick, isExpanded = true, config }) => {
   const [sortOrder, setSortOrder] = useState<SortOrder>('latest');
 
-  const totalTokens = totals.in + totals.out + totals.cr + totals.cw;
+  const totalTokens = (totals.in || 0) + (totals.out || 0) + (totals.think || 0) + (totals.cr || 0) + (totals.cw || 0);
   if (totalTokens === 0 || prompts.length === 0) return (
     <div className="p-8 text-center text-gray-500">No token data available for this session.</div>
   );
@@ -48,6 +49,7 @@ export const Flowchart: React.FC<{
     if (sortOrder === 'in') return b.in - a.in;
     if (sortOrder === 'cw') return b.cacheWrite - a.cacheWrite;
     if (sortOrder === 'cr') return b.cacheRead - a.cacheRead;
+    if (sortOrder === 'think') return b.think - a.think;
     if (sortOrder === 'out') return b.out - a.out;
     return 0;
   });
@@ -58,22 +60,25 @@ export const Flowchart: React.FC<{
   const midTargetHeight = 4 * (nodeHeight + gap) * 0.8;
 
   const getThickness = (tokens: number) => {
-    if (tokens === 0) return 0;
-    return Math.max(2, (tokens / totalTokens) * 100); // max 100px thick
+    const t = tokens || 0;
+    if (t === 0 || totalTokens === 0) return 0;
+    return Math.max(2, (t / totalTokens) * 100); // max 100px thick
   };
 
   const getMidHeight = (tokens: number) => {
-    if (tokens === 0) return 0;
-    return Math.max(40, (tokens / totalTokens) * (midTargetHeight - 45));
+    const t = tokens || 0;
+    if (t === 0 || totalTokens === 0) return 0;
+    return Math.max(40, (t / totalTokens) * (midTargetHeight - 45));
   };
 
   const hIn = getMidHeight(totals.in);
   const hCw = getMidHeight(totals.cw);
   const hCr = getMidHeight(totals.cr);
+  const hThink = getMidHeight(totals.think);
   const hOut = getMidHeight(totals.out);
 
-  const activeNodesCount = [hIn, hCw, hCr, hOut].filter(h => h > 0).length;
-  const actualMidCombined = hIn + hCw + hCr + hOut + Math.max(0, activeNodesCount - 1) * 15;
+  const activeNodesCount = [hIn, hCw, hCr, hThink, hOut].filter(h => h > 0).length;
+  const actualMidCombined = hIn + hCw + hCr + hThink + hOut + Math.max(0, activeNodesCount - 1) * 15;
   const maxTotalHeight = 2 * (nodeHeight + gap) * 0.8;
   const totalHeight = Math.min(maxTotalHeight, actualMidCombined * 0.8);
 
@@ -97,6 +102,8 @@ export const Flowchart: React.FC<{
   if (hCw > 0) currentY += hCw + 15;
   const midYCr = currentY;
   if (hCr > 0) currentY += hCr + 15;
+  const midYThink = currentY;
+  if (hThink > 0) currentY += hThink + 15;
   const midYOut = currentY;
 
   const totalY = gap;
@@ -127,11 +134,12 @@ export const Flowchart: React.FC<{
           <option value="in">Sort: IN</option>
           <option value="cw">Sort: CW</option>
           <option value="cr">Sort: CR</option>
+          <option value="think">Sort: THINK</option>
           <option value="out">Sort: OUT</option>
         </select>
       </div>
       <svg 
-          viewBox={`0 0 ${W} ${H}`} 
+          viewBox={`-20 0 ${W + 20} ${H}`} 
           className="w-full min-w-[800px] drop-shadow-lg font-sans" 
           style={{ transition: 'all 0.8s ease-in-out', height: 'auto' }}
         >
@@ -143,42 +151,51 @@ export const Flowchart: React.FC<{
           const inThick = getThickness(p.in);
           const cwThick = getThickness(p.cacheWrite);
           const crThick = getThickness(p.cacheRead);
+          const thinkThick = getThickness(p.think);
           const outThick = getThickness(p.out);
 
-          const totalNodeThick = inThick + cwThick + crThick + outThick;
+          const totalNodeThick = inThick + cwThick + crThick + thinkThick + outThick;
           let currentPathY = y + (nodeHeight / 2) - (totalNodeThick / 2);
 
           const yIn = currentPathY + inThick / 2; currentPathY += inThick;
           const yCw = currentPathY + cwThick / 2; currentPathY += cwThick;
           const yCr = currentPathY + crThick / 2; currentPathY += crThick;
+          const yThink = currentPathY + thinkThick / 2; currentPathY += thinkThick;
           const yOut = currentPathY + outThick / 2;
 
           return (
             <g key={`paths-left-${p.sessionId}-${p.firstTs}`} style={{ mixBlendMode: 'screen' }}>
               {p.in > 0 && (
                 <path 
-                  d={createPath(340, yIn, 440, midYIn + hIn / 2)} 
+                  d={createPath(350, yIn, 440, midYIn + hIn / 2)} 
                   fill="none" stroke="#3b82f6" strokeWidth={inThick} strokeOpacity="0.5"
                   style={{ transition: 'd 0.8s ease-in-out, stroke-opacity 0.8s' }} className="hover:stroke-opacity-100"
                 />
               )}
               {p.cacheWrite > 0 && (
                 <path 
-                  d={createPath(340, yCw, 440, midYCw + hCw / 2)} 
+                  d={createPath(350, yCw, 440, midYCw + hCw / 2)} 
                   fill="none" stroke="#ec4899" strokeWidth={cwThick} strokeOpacity="0.5"
                   style={{ transition: 'd 0.8s ease-in-out, stroke-opacity 0.8s' }} className="hover:stroke-opacity-100"
                 />
               )}
               {p.cacheRead > 0 && (
                 <path 
-                  d={createPath(340, yCr, 440, midYCr + hCr / 2)} 
+                  d={createPath(350, yCr, 440, midYCr + hCr / 2)} 
                   fill="none" stroke="#8b5cf6" strokeWidth={crThick} strokeOpacity="0.5"
+                  style={{ transition: 'd 0.8s ease-in-out, stroke-opacity 0.8s' }} className="hover:stroke-opacity-100"
+                />
+              )}
+              {p.think > 0 && (
+                <path 
+                  d={createPath(350, yThink, 440, midYThink + hThink / 2)} 
+                  fill="none" stroke="#10b981" strokeWidth={thinkThick} strokeOpacity="0.5"
                   style={{ transition: 'd 0.8s ease-in-out, stroke-opacity 0.8s' }} className="hover:stroke-opacity-100"
                 />
               )}
               {p.out > 0 && (
                 <path 
-                  d={createPath(340, yOut, 440, midYOut + hOut / 2)} 
+                  d={createPath(350, yOut, 440, midYOut + hOut / 2)} 
                   fill="none" stroke="#f59e0b" strokeWidth={outThick} strokeOpacity="0.5"
                   style={{ transition: 'd 0.8s ease-in-out, stroke-opacity 0.8s' }} className="hover:stroke-opacity-100"
                 />
@@ -193,13 +210,15 @@ export const Flowchart: React.FC<{
             const tInThick = getThickness(totals.in);
             const tCwThick = getThickness(totals.cw);
             const tCrThick = getThickness(totals.cr);
+            const tThinkThick = getThickness(totals.think);
             const tOutThick = getThickness(totals.out);
-            const totalRightThick = tInThick + tCwThick + tCrThick + tOutThick;
+            const totalRightThick = tInThick + tCwThick + tCrThick + tThinkThick + tOutThick;
             let rightPathY = totalY + (totalHeight / 2) - (totalRightThick / 2);
             
             const rYIn = rightPathY + tInThick / 2; rightPathY += tInThick;
             const rYCw = rightPathY + tCwThick / 2; rightPathY += tCwThick;
             const rYCr = rightPathY + tCrThick / 2; rightPathY += tCrThick;
+            const rYThink = rightPathY + tThinkThick / 2; rightPathY += tThinkThick;
             const rYOut = rightPathY + tOutThick / 2;
 
             return (
@@ -207,6 +226,7 @@ export const Flowchart: React.FC<{
                 {hIn > 0 && <path d={createPath(560, midYIn + hIn / 2, 760, rYIn)} fill="none" stroke="#3b82f6" strokeWidth={tInThick} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />}
                 {hCw > 0 && <path d={createPath(560, midYCw + hCw / 2, 760, rYCw)} fill="none" stroke="#ec4899" strokeWidth={tCwThick} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />}
                 {hCr > 0 && <path d={createPath(560, midYCr + hCr / 2, 760, rYCr)} fill="none" stroke="#8b5cf6" strokeWidth={tCrThick} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />}
+                {hThink > 0 && <path d={createPath(560, midYThink + hThink / 2, 760, rYThink)} fill="none" stroke="#10b981" strokeWidth={tThinkThick} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />}
                 {hOut > 0 && <path d={createPath(560, midYOut + hOut / 2, 760, rYOut)} fill="none" stroke="#f59e0b" strokeWidth={tOutThick} strokeOpacity="0.5" style={{ transition: 'd 0.8s ease-in-out' }} />}
               </>
             );
@@ -241,6 +261,15 @@ export const Flowchart: React.FC<{
             </g>
           </g>
         )}
+        {hThink > 0 && (
+          <g transform={`translate(440, ${midYThink})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+            <rect width="120" height={hThink} rx="6" fill="#1f2937" stroke="#10b981" strokeWidth="1" style={{ transition: 'height 0.8s ease-in-out' }} />
+            <g transform={`translate(0, ${hThink / 2})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
+              <text x="60" y="-4" fill="#9ca3af" fontSize="10" textAnchor="middle" fontWeight="bold">THINK</text>
+              <text x="60" y="12" fill="#f3f4f6" fontSize="14" textAnchor="middle" fontWeight="bold"><AnimatedNumber value={totals.think} compact as="tspan" /></text>
+            </g>
+          </g>
+        )}
         {hOut > 0 && (
           <g transform={`translate(440, ${midYOut})`} style={{ transition: 'transform 0.8s ease-in-out' }}>
             <rect width="120" height={hOut} rx="6" fill="#1f2937" stroke="#f59e0b" strokeWidth="1" style={{ transition: 'height 0.8s ease-in-out' }} />
@@ -270,13 +299,13 @@ export const Flowchart: React.FC<{
           const { isVague, isInputHeavy } = evaluatePromptFlags(
             rawPrompt, 
             totalIn, 
-            p.out, 
+            p.out + (p.think || 0), 
             p.turnCount, 
             config
           );
           
           const prefixIcons: React.ReactNode[] = [];
-          let shortenLength = 25;
+          let shortenLength = 30;
           let promptColor = '#f3f4f6';
           let iconX = 12;
           
@@ -291,6 +320,11 @@ export const Flowchart: React.FC<{
             iconX += 18;
             shortenLength -= 3;
             promptColor = '#06B6D4';
+          }
+          if (p.think > 0) {
+            prefixIcons.push(<Brain key="brain" x={iconX} y={32} width={14} height={14} className="text-emerald-400" />);
+            iconX += 18;
+            shortenLength -= 3;
           }
           if (isVague) {
             prefixIcons.push(<MessageCircleQuestion key="vague" x={iconX} y={32} width={14} height={14} className="text-rose-500" />);
@@ -310,14 +344,14 @@ export const Flowchart: React.FC<{
           return (
             <g 
               key={`node-${p.sessionId}-${p.firstTs || p.ts}`} 
-              transform={`translate(20, ${y})`}
+              transform={`translate(0, ${y})`}
               style={{ transition: 'transform 0.8s ease-in-out' }}
             >
-              <rect width="320" height={nodeHeight} rx="8" fill="#1f2937" stroke="#374151" strokeWidth="1" />
+              <rect width="350" height={nodeHeight} rx="8" fill="#1f2937" stroke="#374151" strokeWidth="1" />
               <text x="12" y="25" fill="#f3f4f6" fontSize="14" fontWeight="600">
                 {timeStr}
               </text>
-              <text x={320 - 12} y="25" fill="#f3f4f6" fontSize="15" textAnchor="end" fontWeight="bold">
+              <text x={350 - 12} y="25" fill="#f3f4f6" fontSize="15" textAnchor="end" fontWeight="bold">
                 <AnimatedNumber value={p.total} compact as="tspan" disableAnimation={!isExpanded && i >= 4} />
               </text>
               {prefixIcons.length > 0 ? (
@@ -352,12 +386,13 @@ export const Flowchart: React.FC<{
                 In:<tspan fill="#3b82f6"><AnimatedNumber value={p.in} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>|
                 CW:<tspan fill="#ec4899"><AnimatedNumber value={p.cacheWrite} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>|
                 CR:<tspan fill="#8b5cf6"><AnimatedNumber value={p.cacheRead} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>|
+                Think:<tspan fill="#10b981"><AnimatedNumber value={p.think} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>|
                 Out:<tspan fill="#f59e0b"><AnimatedNumber value={p.out} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>
               </text>
 
               {onPromptClick && (
                 <rect 
-                  width="320" height={nodeHeight} rx="8" 
+                  width="350" height={nodeHeight} rx="8" 
                   fill="transparent" 
                   className="cursor-pointer hover:fill-white/5 transition-colors"
                   onClick={() => onPromptClick(p.sessionId)}
@@ -386,6 +421,7 @@ export const SessionFlowchart: React.FC<{
     in: session.in,
     cw: session.cacheWrite,
     cr: session.cacheRead,
+    think: session.think,
     out: session.out
   };
 
