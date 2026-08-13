@@ -144,7 +144,7 @@ export const Insights = React.memo(({ insights, topPrompts, sessions, config, se
               const { isVague, isInputHeavy, isMarathon } = evaluatePromptFlags(
                 p.prompt, 
                 totalIn, 
-                p.out, 
+                p.out + (p.think || 0), 
                 sess?.turnCount || 1, 
                 config
               );
@@ -185,10 +185,11 @@ export const Insights = React.memo(({ insights, topPrompts, sessions, config, se
                   </div>
 
                 </div>
-                <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-xs font-mono w-full md:w-[60%] items-center">
+                <div className="grid grid-cols-3 md:grid-cols-7 gap-2 text-xs font-mono w-full md:w-[60%] items-center">
                   <span className="text-gray-400 truncate">In: <span className="text-blue-500">{formatCompact(p.in)}</span></span>
-                  <span className="text-gray-400 truncate">CR: <span className="text-purple-500">{formatCompact(p.cacheRead)}</span></span>
                   <span className="text-gray-400 truncate">CW: <span className="text-pink-500">{formatCompact(p.cacheWrite)}</span></span>
+                  <span className="text-gray-400 truncate">CR: <span className="text-purple-500">{formatCompact(p.cacheRead)}</span></span>
+                  <span className="text-gray-400 truncate">Think: <span className="text-emerald-400">{formatCompact(p.think)}</span></span>
                   <span className="text-gray-400 truncate">Out: <span className="text-amber-500">{formatCompact(p.out)}</span></span>
                   <span className="text-gray-400 font-bold truncate">Tot: <span className="text-secondary">{formatCompact(p.totalTokens)}</span></span>
                   <span className="text-gray-500 truncate">{p.model}</span>
