@@ -277,6 +277,23 @@ public sealed class BodyCapturePluginTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_EscapesNewlinesInBodyAndPath_SoACallerCannotForgeALogLine()
+    {
+        var lineSep = ((char)0x2028).ToString();
+        var (plugin, logs) = Build();
+        var context = SeekableRequest($"real\nINFO: forged entry{lineSep}and again");
+        context.Request.Path = "/api/\nINFO: forged path";
+
+        await plugin.ExecuteAsync(context, JsonDocument.Parse("""{"request":{}}""").RootElement, ForwardByDrainingBody);
+
+        var record = Assert.Single(logs.Records, r => r.Contains("Captured request body"));
+        Assert.DoesNotContain("\n", record);
+        Assert.DoesNotContain(lineSep, record);
+        Assert.Contains(@"real\nINFO: forged entry\u" + "2028and again", record);
+        Assert.Contains(@"/api/\nINFO: forged path", record);
+    }
+
+    [Fact]
     [Trait("Contract", "PluginIsolation")]
     public async Task ExecuteAsync_ConcurrentRoutes_EachRecordPairsItsOwnRouteAndBody()
     {

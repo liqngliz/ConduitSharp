@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Text;
 using System.Text.Json;
+using ConduitSharp.Core.Logging;
 using ConduitSharp.Core.Pipeline;
 using ConduitSharp.Core.Routing;
 using Microsoft.AspNetCore.Builder;
@@ -193,7 +194,7 @@ public sealed class BodyCapturePlugin : IPipelinePlugin
                 if (truncated) body += "... (truncated)";
                 _logger.LogInformation(
                     "Captured request body for path {Path} route {RouteId}: {Body}",
-                    context.Request.Path.Value ?? "", RouteId(context), body);
+                    context.Request.Path.Value.ForLog(), RouteId(context), body.ForLog());
             }
         }
         finally
@@ -212,7 +213,7 @@ public sealed class BodyCapturePlugin : IPipelinePlugin
         if (tee.Truncated) body += "... (truncated)";
         _logger.LogInformation(
             "Captured response body for path {Path} route {RouteId}: {Body}",
-            context.Request.Path.Value ?? "", RouteId(context), body);
+            context.Request.Path.Value.ForLog(), RouteId(context), body.ForLog());
     }
 
     private static string RouteId(HttpContext context) =>

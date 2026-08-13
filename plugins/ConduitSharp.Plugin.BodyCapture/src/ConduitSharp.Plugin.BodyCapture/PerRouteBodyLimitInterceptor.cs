@@ -1,3 +1,4 @@
+using ConduitSharp.Core.Logging;
 using Microsoft.AspNetCore.HttpLogging;
 
 namespace ConduitSharp.Plugin.BodyCapture;
@@ -20,7 +21,7 @@ internal sealed class PerRouteBodyLimitInterceptor : IHttpLoggingInterceptor
 
         if (logging.HttpContext.Items.TryGetValue("ConduitSharp.RouteId", out var routeId) && routeId is string id)
             logging.AddParameter("conduitsharp.route_id", id);
-        logging.AddParameter("conduitsharp.path", logging.HttpContext.Request.Path.Value ?? "");
+        logging.AddParameter("conduitsharp.path", logging.HttpContext.Request.Path.Value.ForLog());
 
         return default;
     }
