@@ -3,11 +3,11 @@ import React from 'react';
 import type { InsightsData, MetricsData, InsightsConfig } from '../utils/parser';
 import { evaluatePromptFlags, DEFAULT_INSIGHTS_CONFIG } from '../utils/parser';
 import { AnimatedNumber } from './AnimatedNumber';
-import { MessageCircleQuestion, SportShoe, Dumbbell, Wrench, Settings2, RotateCcw } from 'lucide-react';
+import { MessageCircleQuestion, SportShoe, Dumbbell, Wrench, Brain, Settings2, RotateCcw } from 'lucide-react';
 
 const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
 
-export const Insights = React.memo(({ insights, topPrompts, sessions, config, setConfig, onSessionSelect }: { insights: InsightsData; topPrompts: MetricsData['topPrompts']; sessions: MetricsData['sessions']; config: InsightsConfig; setConfig: (c: InsightsConfig) => void; onSessionSelect?: (sessionId: string) => void }) => {
+export const Insights = React.memo(({ insights, topPrompts, sessions, config, setConfig, onSessionSelect }: { insights: InsightsData; topPrompts: MetricsData['topPrompts']; sessions: MetricsData['sessions']; config: InsightsConfig; setConfig: (c: InsightsConfig) => void; onSessionSelect?: (sessionId: string, traceId?: string, ts?: string, turn?: number) => void }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -158,6 +158,9 @@ export const Insights = React.memo(({ insights, topPrompts, sessions, config, se
                 prefixIcons.push(<Wrench key="wrench" size={14} className="text-emerald-500 shrink-0" />);
                 promptColor = 'text-success';
               }
+              if (p.think > 0) {
+                prefixIcons.push(<Brain key="brain" size={14} className="text-emerald-400 shrink-0" />);
+              }
               if (isInputHeavy) {
                 prefixIcons.push(<Dumbbell key="dumbbell" size={14} className="text-cyan-500 shrink-0" />);
                 promptColor = 'text-secondary';
@@ -172,7 +175,7 @@ export const Insights = React.memo(({ insights, topPrompts, sessions, config, se
                 key={idx} 
                 className="bg-white/5 rounded-lg p-3 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 hover:bg-white/10 transition-colors cursor-pointer" 
                 data-testid={`top-prompt-${idx}`}
-                onClick={() => onSessionSelect?.(p.session)}
+                onClick={() => onSessionSelect?.(p.session, p.trace, p.ts, p.turn)}
               >
                 <div className="flex flex-col w-full md:w-[40%] overflow-hidden pr-4">
                   <div className={`flex items-center gap-1.5 truncate font-medium ${promptColor}`} title={p.prompt}>

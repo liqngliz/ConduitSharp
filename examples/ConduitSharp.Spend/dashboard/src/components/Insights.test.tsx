@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { Insights } from './Insights';
 import type { InsightsData } from '../utils/parser';
 import { DEFAULT_INSIGHTS_CONFIG } from '../utils/parser';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 const mockInsights: InsightsData = {
   vaguePrompts: 5,
@@ -50,5 +50,43 @@ describe('Insights Component', () => {
     expect(screen.getByText('Hello world')).toBeInTheDocument();
     expect(screen.getByText(/Tot:/)).toBeInTheDocument();
     expect(screen.getAllByText('1.5K').length).toBeGreaterThan(0);
+  });
+
+  it('calls onSessionSelect with session and trace when prompt is clicked', () => {
+    const onSelect = vi.fn();
+    const topPromptsWithTrace = [
+      { prompt: 'Hello trace', in: 500, cacheRead: 0, cacheWrite: 0, think: 0, out: 1000, totalTokens: 1500, session: 'sess1', turn: 1, model: 'claude-3-opus', trace: 'trace-xyz' },
+    ];
+    render(
+      <Insights 
+        insights={mockInsights} 
+        topPrompts={topPromptsWithTrace} 
+        sessions={mockSessions} 
+        config={DEFAULT_INSIGHTS_CONFIG} 
+        setConfig={() => {}} 
+        onSessionSelect={onSelect}
+      />
+    );
+    const item = screen.getByTestId('top-prompt-0');
+    item.click();
+    expect(onSelect).toHaveBeenCalledWith('sess1', 'trace-xyz', undefined, 1);
+  });
+
+  it('renders think and toolcall icons for top prompts', () => {
+    const topPromptsWithIcons = [
+      { prompt: 'Thinking prompt', in: 500, cacheRead: 0, cacheWrite: 0, think: 250, out: 1000, totalTokens: 1750, session: 'sess1', turn: 1, model: 'claude-3-opus', hasToolCall: true },
+    ];
+    const { container } = render(
+      <Insights 
+        insights={mockInsights} 
+        topPrompts={topPromptsWithIcons} 
+        sessions={mockSessions} 
+        config={DEFAULT_INSIGHTS_CONFIG} 
+        setConfig={() => {}} 
+      />
+    );
+    expect(screen.getByText('Thinking prompt')).toBeInTheDocument();
+    expect(container.querySelector('.lucide-brain')).toBeInTheDocument();
+    expect(container.querySelector('.lucide-wrench')).toBeInTheDocument();
   });
 });

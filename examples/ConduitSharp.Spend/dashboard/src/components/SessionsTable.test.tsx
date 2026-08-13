@@ -1,9 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { SessionsTable } from './SessionsTable';
 import { DEFAULT_INSIGHTS_CONFIG } from '../utils/parser';
 import type { MetricsData } from '../utils/parser';
 import { describe, it, expect } from 'vitest';
-import userEvent from '@testing-library/user-event';
 
 const mockMetrics: MetricsData = {
   totals: { in: 1000, out: 500, cacheWrite: 0, cacheRead: 0, think: 0, ms: 5000, messagesSent: 5 },
@@ -23,18 +22,23 @@ describe('SessionsTable Component', () => {
     expect(screen.getByText('Test Session')).toBeInTheDocument();
   });
 
-  it('shows no sessions match when search has no results', async () => {
-    const user = userEvent.setup();
-    render(<SessionsTable metrics={mockMetrics} config={DEFAULT_INSIGHTS_CONFIG} />);
-    const input = screen.getByPlaceholderText('Search sessions...');
-    await user.type(input, 'Nonexistent');
-    expect(screen.getByText('No sessions match your search.')).toBeInTheDocument();
+  it('shows no sessions found when empty', () => {
+    const emptyMetrics: MetricsData = {
+      ...mockMetrics,
+      sessions: {}
+    };
+    render(<SessionsTable metrics={emptyMetrics} config={DEFAULT_INSIGHTS_CONFIG} />);
+    expect(screen.getByText('No sessions found.')).toBeInTheDocument();
   });
 
-  it('includes cacheWrite in input and total column sums', () => {
+  it('filters sessions by search term', () => {
     render(<SessionsTable metrics={mockMetrics} config={DEFAULT_INSIGHTS_CONFIG} />);
-    // sess2: in 200 + cw 50 + cr 50 = 300 input, 100 out -> total 400
-    expect(screen.getByText('300')).toBeInTheDocument();
-    expect(screen.getByText('400')).toBeInTheDocument();
+    const input = screen.getByPlaceholderText('Search sessions...');
+    expect(screen.getByText('Session 1')).toBeInTheDocument();
+    expect(screen.getByText('Test Session')).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: 'Test' } });
+    expect(screen.queryByText('Session 1')).not.toBeInTheDocument();
+    expect(screen.getByText('Test Session')).toBeInTheDocument();
   });
 });

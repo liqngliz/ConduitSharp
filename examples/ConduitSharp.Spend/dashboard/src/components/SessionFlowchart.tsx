@@ -20,6 +20,9 @@ export interface FlowchartPrompt {
   model: string;
   sessionId: string;
   turnCount: number;
+  turn?: number;
+  trace?: string;
+  traces?: string[];
 }
 
 export const Flowchart: React.FC<{
@@ -27,10 +30,11 @@ export const Flowchart: React.FC<{
   totals: { in: number; cw: number; cr: number; think: number; out: number };
   title: string;
   headerTitle?: React.ReactNode;
-  onPromptClick?: (sessionId: string) => void;
+  onPromptClick?: (sessionId: string, traceId?: string, ts?: string, turn?: number) => void;
   isExpanded?: boolean;
   config: InsightsConfig;
-}> = ({ prompts, totals, title, headerTitle, onPromptClick, isExpanded = true, config }) => {
+  highlightTraceId?: string;
+}> = ({ prompts, totals, title, headerTitle, onPromptClick, isExpanded = true, config, highlightTraceId }) => {
   const [sortOrder, setSortOrder] = useState<SortOrder>('latest');
 
   const totalTokens = (totals.in || 0) + (totals.out || 0) + (totals.think || 0) + (totals.cr || 0) + (totals.cw || 0);
@@ -310,24 +314,24 @@ export const Flowchart: React.FC<{
           let iconX = 12;
           
           if (p.hasToolCall) {
-            prefixIcons.push(<Wrench key="wrench" x={iconX} y={32} width={14} height={14} className="text-emerald-500" />);
+            prefixIcons.push(<Wrench key="wrench" x={iconX} y={36} width={13} height={13} className="text-emerald-500" />);
             iconX += 18;
             shortenLength -= 3;
             promptColor = '#10B981';
           }
           if (isInputHeavy) {
-            prefixIcons.push(<Dumbbell key="dumbbell" x={iconX} y={32} width={14} height={14} className="text-cyan-500" />);
+            prefixIcons.push(<Dumbbell key="dumbbell" x={iconX} y={36} width={13} height={13} className="text-cyan-500" />);
             iconX += 18;
             shortenLength -= 3;
             promptColor = '#06B6D4';
           }
           if (p.think > 0) {
-            prefixIcons.push(<Brain key="brain" x={iconX} y={32} width={14} height={14} className="text-emerald-400" />);
+            prefixIcons.push(<Brain key="brain" x={iconX} y={36} width={13} height={13} className="text-emerald-400" />);
             iconX += 18;
             shortenLength -= 3;
           }
           if (isVague) {
-            prefixIcons.push(<MessageCircleQuestion key="vague" x={iconX} y={32} width={14} height={14} className="text-rose-500" />);
+            prefixIcons.push(<MessageCircleQuestion key="vague" x={iconX} y={36} width={13} height={13} className="text-rose-500" />);
             iconX += 18;
             shortenLength -= 3;
             promptColor = '#F43F5E';
@@ -341,48 +345,65 @@ export const Flowchart: React.FC<{
             timeStr = d.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
           }
 
+          const isHighlighted = highlightTraceId && (p.trace === highlightTraceId || (p.traces && p.traces.includes(highlightTraceId)));
+
           return (
             <g 
               key={`node-${p.sessionId}-${p.firstTs || p.ts}`} 
+              data-trace={p.trace}
+              data-traces={p.traces?.join(',')}
               transform={`translate(0, ${y})`}
               style={{ transition: 'transform 0.8s ease-in-out' }}
             >
-              <rect width="350" height={nodeHeight} rx="8" fill="#1f2937" stroke="#374151" strokeWidth="1" />
-              <text x="12" y="25" fill="#f3f4f6" fontSize="14" fontWeight="600">
+              <rect 
+                width="350" 
+                height={nodeHeight} 
+                rx="8" 
+                fill={isHighlighted ? "#1e293b" : "#1f2937"} 
+                stroke={isHighlighted ? "#06b6d4" : "#374151"} 
+                strokeWidth={isHighlighted ? "2" : "1"} 
+                className={isHighlighted ? "animate-pulse" : undefined}
+              />
+              <text x="12" y="19" fill="#f3f4f6" fontSize="13" fontWeight="600">
                 {timeStr}
               </text>
-              <text x={350 - 12} y="25" fill="#f3f4f6" fontSize="15" textAnchor="end" fontWeight="bold">
+              <text x={350 - 12} y="19" fill="#f3f4f6" fontSize="14" textAnchor="end" fontWeight="bold">
                 <AnimatedNumber value={p.total} compact as="tspan" disableAnimation={!isExpanded && i >= 4} />
               </text>
+              {p.trace ? (
+                <text x="12" y="33" fill="#6b7280" fontSize="10" className="font-mono">
+                  Trace: <tspan fill="#9ca3af">{p.trace}</tspan>
+                </text>
+              ) : null}
               {prefixIcons.length > 0 ? (
                 <g>
                   {prefixIcons}
-                  <text x={iconX} y={43} fill={promptColor} fontSize="14">
+                  <text x={iconX} y={48} fill={promptColor} fontSize="13">
                     {truncated}
                   </text>
                 </g>
               ) : (
-                <text x="12" y="43" fill={promptColor} fontSize="14">
+                <text x="12" y={48} fill={promptColor} fontSize="13">
                   {truncated}
                 </text>
               )}
-              <text x="12" y="65" fill="#9ca3af" fontSize="12" className="font-mono">
+              <text x="12" y="67" fill="#9ca3af" fontSize="11" className="font-mono">
                 {p.model || 'Unknown'}
               </text>
               
               {p.turnCount > config.marathonMinTurns ? (
                 <g>
-                  <text x="12" y="85" fill="#6D28D9" fontSize="10" fontWeight="bold" className="font-mono">
+                  <text x="12" y="86" fill="#6D28D9" fontSize="10" fontWeight="bold" className="font-mono">
                     {p.sessionId}
                   </text>
-                  <SportShoe x={12 + p.sessionId.length * 6 + 6} y={75} width={12} height={12} className="text-purple-600" />
+                  <SportShoe x={12 + p.sessionId.length * 6 + 6} y={76} width={12} height={12} className="text-purple-600" />
                 </g>
               ) : (
-                <text x="12" y="85" fill="#6b7280" fontSize="10" className="font-mono font-bold">
+                <text x="12" y="86" fill="#6b7280" fontSize="10" className="font-mono font-bold">
                   {p.sessionId}
                 </text>
               )}
-              <text x="12" y="105" fill="#9ca3af" fontSize="11" className="font-mono">
+              <text x="12" y="106" fill="#9ca3af" fontSize="11" className="font-mono">
                 In:<tspan fill="#3b82f6"><AnimatedNumber value={p.in} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>|
                 CW:<tspan fill="#ec4899"><AnimatedNumber value={p.cacheWrite} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>|
                 CR:<tspan fill="#8b5cf6"><AnimatedNumber value={p.cacheRead} compact as="tspan" disableAnimation={!isExpanded && i >= 4} /></tspan>|
@@ -395,7 +416,7 @@ export const Flowchart: React.FC<{
                   width="350" height={nodeHeight} rx="8" 
                   fill="transparent" 
                   className="cursor-pointer hover:fill-white/5 transition-colors"
-                  onClick={() => onPromptClick(p.sessionId)}
+                  onClick={() => onPromptClick(p.sessionId, p.trace, p.ts, p.turn)}
                 />
               )}
             </g>
@@ -410,7 +431,9 @@ export const SessionFlowchart: React.FC<{
   session: MetricsData['sessions'][string];
   sessionId: string;
   config: InsightsConfig;
-}> = ({ session, sessionId, config }) => {
+  highlightTraceId?: string;
+  onPromptClick?: (sessionId: string, traceId?: string, ts?: string, turn?: number) => void;
+}> = ({ session, sessionId, config, highlightTraceId, onPromptClick }) => {
   const flowchartPrompts: FlowchartPrompt[] = session.prompts.map(p => ({
     ...p,
     sessionId,
@@ -425,6 +448,12 @@ export const SessionFlowchart: React.FC<{
     out: session.out
   };
 
-  return <Flowchart prompts={flowchartPrompts} totals={totals} title="TOTAL SESSION BUDGET" config={config} />;
+  return <Flowchart 
+      prompts={flowchartPrompts} 
+      totals={totals} 
+      title="TOTAL SESSION BUDGET" 
+      config={config}
+      highlightTraceId={highlightTraceId}
+      onPromptClick={onPromptClick}
+    />;
 };
-

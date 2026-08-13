@@ -6,7 +6,9 @@ import { Insights } from './Insights';
 import { ActiveFlow } from './ActiveFlow';
 import { Charts } from './Charts';
 import { SessionsTable } from './SessionsTable';
+import { PromptPanel } from './PromptPanel';
 import { WeightsControl } from './WeightsControl';
+import type { PromptSelectionTarget } from '../utils/promptHelpers';
 
 const formatDateDisplay = (ds: string) => {
   if (!ds) return '';
@@ -113,9 +115,15 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('conduit_sma_config', JSON.stringify(smaConfig));
   }, [smaConfig]);
-  const [focusedSession, setFocusedSession] = useState<string | null>(null);
+  const [selectedPrompt, setSelectedPrompt] = useState<PromptSelectionTarget | null>(null);
 
-  const clearFocus = useCallback(() => setFocusedSession(null), []);
+  const handlePromptSelect = useCallback((sessionId: string, traceId?: string, ts?: string, turn?: number) => {
+    setSelectedPrompt({ sessionId, traceId, ts, turn });
+  }, []);
+
+  const closePromptPanel = useCallback(() => {
+    setSelectedPrompt(null);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -363,16 +371,32 @@ export const Dashboard: React.FC = () => {
         </div>
       </header>
       <Metrics metrics={metrics} routeName={activeRoute === 'all' ? 'All Agents' : activeRoute} />
-      <ActiveFlow metrics={metrics} config={insightsConfig} onSessionSelect={setFocusedSession} />
-      <Insights insights={insights} topPrompts={metrics.topPrompts} sessions={metrics.sessions} config={insightsConfig} setConfig={setInsightsConfig} onSessionSelect={setFocusedSession} />
+      <ActiveFlow 
+        metrics={metrics} 
+        config={insightsConfig} 
+        onSessionSelect={handlePromptSelect} 
+        highlightTraceId={selectedPrompt?.traceId} 
+      />
+      <Insights insights={insights} topPrompts={metrics.topPrompts} sessions={metrics.sessions} config={insightsConfig} setConfig={setInsightsConfig} onSessionSelect={handlePromptSelect} />
       <Charts metrics={metrics} smaConfig={smaConfig} setSmaConfig={setSmaConfig} />
-      <SessionsTable metrics={metrics} config={insightsConfig} focusedSession={focusedSession} onSessionClear={clearFocus} />
+      <SessionsTable 
+        metrics={metrics} 
+        config={insightsConfig} 
+        onPromptClick={handlePromptSelect} 
+        highlightTraceId={selectedPrompt?.traceId} 
+      />
       <WeightsControl 
         models={Object.keys(metrics.modelBreakdown)}
         weightsConfig={weightsConfig}
         setWeightsConfig={setWeightsConfig}
         useWeights={useWeights}
         setUseWeights={setUseWeights}
+      />
+      <PromptPanel 
+        selected={selectedPrompt} 
+        sessions={metrics.sessions} 
+        config={insightsConfig}
+        onClose={closePromptPanel} 
       />
     </div>
   );

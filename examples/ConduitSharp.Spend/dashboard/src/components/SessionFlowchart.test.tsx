@@ -41,4 +41,42 @@ describe('SessionFlowchart Component', () => {
     // Should find the text
     expect(screen.getByText('test prompt')).toBeInTheDocument();
   });
+
+  it('renders trace id when trace is present', () => {
+    const mockSession = {
+      turnCount: 1,
+      in: 100,
+      cacheRead: 0,
+      cacheWrite: 0,
+      think: 0,
+      out: 50,
+      sessionName: 'Test Session',
+      route: 'test',
+      models: new Set(['test-model']),
+      tools: 0,
+      prompts: [
+        {
+          prompt: 'test prompt with trace',
+          turn: 1,
+          model: 'test-model',
+          in: 100,
+          cacheRead: 0,
+          cacheWrite: 0,
+          think: 0,
+          out: 50,
+          total: 150,
+          ts: '2026-08-05T09:33:28.150Z',
+          tools: 0,
+          hasToolCall: false,
+          trace: 'trace-abc-123'
+        }
+      ]
+    };
+
+    render(
+      <SessionFlowchart session={mockSession as any} sessionId="sess1" config={DEFAULT_INSIGHTS_CONFIG} />
+    );
+
+    expect(screen.getByText('trace-abc-123')).toBeInTheDocument();
+  });
 });

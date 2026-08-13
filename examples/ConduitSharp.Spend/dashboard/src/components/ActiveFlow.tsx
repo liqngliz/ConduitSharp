@@ -5,8 +5,9 @@ import { Flowchart, type FlowchartPrompt } from './SessionFlowchart';
 export const ActiveFlow = React.memo<{ 
   metrics: MetricsData; 
   config: InsightsConfig;
-  onSessionSelect?: (sessionId: string) => void;
-}>(({ metrics, config, onSessionSelect }) => {
+  onSessionSelect?: (sessionId: string, traceId?: string, ts?: string, turn?: number) => void;
+  highlightTraceId?: string;
+}>(({ metrics, config, onSessionSelect, highlightTraceId }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Extract and sort all prompts globally
@@ -76,6 +77,7 @@ export const ActiveFlow = React.memo<{
             onPromptClick={onSessionSelect}
             isExpanded={isExpanded}
             config={config}
+            highlightTraceId={highlightTraceId}
           />
         </div>
         

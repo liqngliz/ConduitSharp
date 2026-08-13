@@ -1,13 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import type { MetricsData, InsightsConfig } from '../utils/parser';
 import { SessionFlowchart } from './SessionFlowchart';
 import { SportShoe, Wrench, Brain } from 'lucide-react';
 
 const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
 
-export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSessionClear }: { metrics: MetricsData; config: InsightsConfig; focusedSession?: string | null; onSessionClear?: () => void }) => {
-  const [searchTerm, setSearchTerm] = useState('');
+export const SessionsTable = React.memo(({ 
+  metrics, 
+  config, 
+  onPromptClick,
+  highlightTraceId 
+}: { 
+  metrics: MetricsData; 
+  config: InsightsConfig; 
+  onPromptClick?: (sessionId: string, traceId?: string, ts?: string, turn?: number) => void;
+  highlightTraceId?: string;
+}) => {
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   type SortColumn = 'name' | 'lastActive' | 'read' | 'think' | 'written' | 'total';
   const [sortColumn, setSortColumn] = useState<SortColumn>('total');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -30,24 +40,6 @@ export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSe
     return sortDirection === 'asc' ? <span className="text-primary ml-1">↑</span> : <span className="text-primary ml-1">↓</span>;
   };
 
-  useEffect(() => {
-    if (focusedSession) {
-      setExpandedSessionId(focusedSession);
-      setTimeout(() => {
-        const row = document.getElementById(`session-row-${focusedSession}`);
-        if (row) {
-          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          row.classList.add('bg-white/20');
-          row.style.transition = 'background-color 0.5s ease-out';
-          setTimeout(() => {
-            row.classList.remove('bg-white/20');
-          }, 1500);
-        }
-      }, 100);
-      onSessionClear?.();
-    }
-  }, [focusedSession, onSessionClear]);
-
   // Format sessions data
   const sessions = Object.entries(metrics.sessions).map(([sessionId, session]) => {
     const lastActive = Math.max(...session.prompts.map(p => new Date(p.ts || 0).getTime()), 0);
@@ -68,8 +60,12 @@ export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSe
     };
   });
 
-  const filteredSessions = sessions
-    .filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.id.toLowerCase().includes(searchTerm.toLowerCase()))
+  const sortedSessions = sessions
+    .filter(s => {
+      if (!searchTerm) return true;
+      const term = searchTerm.toLowerCase();
+      return s.name.toLowerCase().includes(term) || s.id.toLowerCase().includes(term);
+    })
     .sort((a, b) => {
       let valA, valB;
       if (sortColumn === 'name') {
@@ -136,8 +132,8 @@ export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSe
               </tr>
             </thead>
             <tbody>
-              {filteredSessions.length > 0 ? (
-                filteredSessions.map((s) => {
+              {sortedSessions.length > 0 ? (
+                sortedSessions.map((s) => {
                   const isMarathon = s.name === s.id && s.turns > config.marathonMinTurns;
                   const isTool = s.session.isToolHeavy;
                   const nameColor = isTool ? 'text-success font-bold' : (isMarathon ? 'text-primary font-bold' : 'text-white');
@@ -187,16 +183,19 @@ export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSe
                       </td>
                       <td className="p-4 text-right">
                         <div className="font-mono text-gray-300">{formatCompact(s.written)}</div>
-                        <div className="text-[10px] text-gray-500 font-mono mt-1 flex justify-end">
-                          <span>Out:<span className="text-amber-500">{formatCompact(s.rawOut)}</span></span>
-                        </div>
                       </td>
                       <td className="p-4 text-right font-mono text-secondary font-bold">{formatCompact(s.read + s.think + s.written)}</td>
                     </tr>
                     {expandedSessionId === s.id && (
                       <tr className="bg-black/20 border-b border-white/5">
                         <td colSpan={6} className="p-0">
-                          <SessionFlowchart session={metrics.sessions[s.id]} sessionId={s.id} config={config} />
+                          <SessionFlowchart 
+                            session={metrics.sessions[s.id]} 
+                            sessionId={s.id} 
+                            config={config} 
+                            onPromptClick={onPromptClick}
+                            highlightTraceId={highlightTraceId}
+                          />
                         </td>
                       </tr>
                     )}
@@ -206,7 +205,7 @@ export const SessionsTable = React.memo(({ metrics, config, focusedSession, onSe
               ) : (
                 <tr>
                   <td colSpan={6} className="p-6 text-center text-gray-500">
-                    No sessions match your search.
+                    No sessions found.
                   </td>
                 </tr>
               )}
