@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { calculateSMA, type MetricsData } from '../utils/parser';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, Brush } from 'recharts';
 import { Infinity as InfinityIcon, RotateCcw } from 'lucide-react';
 
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
@@ -16,6 +16,7 @@ export const Charts: React.FC<{
     d.setHours(d.getHours() - 6);
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   });
+  const [brushStartRatio, setBrushStartRatio] = React.useState(0.75);
 
   const allPrompts = useMemo(() => {
     return Object.values(metrics.sessions).flatMap(s => s.prompts);
@@ -24,6 +25,12 @@ export const Charts: React.FC<{
   const smaData = useMemo(() => {
     return calculateSMA(allPrompts, smaConfig.intervalMinutes, smaConfig.smaPeriod, startDate);
   }, [allPrompts, smaConfig.intervalMinutes, smaConfig.smaPeriod, startDate]);
+
+  const brushStartIndex = useMemo(() => {
+    if (smaData.length === 0) return 0;
+    const maxIdx = smaData.length - 1;
+    return Math.max(0, Math.min(maxIdx, Math.round(maxIdx * brushStartRatio)));
+  }, [smaData.length, brushStartRatio]);
   // Format daily usage data
   const dailyData = Object.entries(metrics.dailyUsage)
     .map(([date, counts]) => ({
@@ -31,8 +38,9 @@ export const Charts: React.FC<{
       In: counts.in,
       CW: counts.cacheWrite,
       CR: counts.cacheRead,
+      Think: counts.think,
       Out: counts.out,
-      Total: counts.in + counts.cacheWrite + counts.cacheRead + counts.out
+      Total: counts.in + counts.cacheWrite + counts.cacheRead + counts.think + counts.out
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -43,8 +51,9 @@ export const Charts: React.FC<{
       In: counts.in,
       CW: counts.cacheWrite,
       CR: counts.cacheRead,
+      Think: counts.think,
       Out: counts.out,
-      Total: counts.in + counts.cacheWrite + counts.cacheRead + counts.out
+      Total: counts.in + counts.cacheWrite + counts.cacheRead + counts.think + counts.out
     }))
     .filter(d => d.Total > 0)
     .sort((a, b) => b.Total - a.Total);
@@ -66,6 +75,7 @@ export const Charts: React.FC<{
               <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>In</span>
               <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-pink-500 shadow-[0_0_8px_rgba(236,72,153,0.6)]"></div>CW</span>
               <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(139,92,246,0.6)]"></div>CR</span>
+              <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"></div>Think</span>
               <span className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]"></div>Out</span>
             </div>
           </div>
@@ -84,6 +94,7 @@ export const Charts: React.FC<{
                     <div className="flex justify-between gap-4 mb-1"><span className="text-gray-400">In:</span> <span className="text-blue-400 font-mono">{formatCompact(d.In || 0)}</span></div>
                     <div className="flex justify-between gap-4 mb-1"><span className="text-gray-400">CW:</span> <span className="text-pink-400 font-mono">{formatCompact(d.CW || 0)}</span></div>
                     <div className="flex justify-between gap-4 mb-1"><span className="text-gray-400">CR:</span> <span className="text-purple-400 font-mono">{formatCompact(d.CR || 0)}</span></div>
+                    <div className="flex justify-between gap-4 mb-1"><span className="text-gray-400">Think:</span> <span className="text-emerald-400 font-mono">{formatCompact(d.Think || 0)}</span></div>
                     <div className="flex justify-between gap-4 mb-2"><span className="text-gray-400">Out:</span> <span className="text-amber-400 font-mono">{formatCompact(d.Out || 0)}</span></div>
                     <div className="flex justify-between gap-4 pt-2 border-t border-white/10"><span className="text-gray-300 font-bold">Total:</span> <span className="text-secondary font-mono font-bold">{formatCompact(d.Total || 0)}</span></div>
                   </div>
@@ -91,6 +102,7 @@ export const Charts: React.FC<{
                   {/* Stacked Bar */}
                   <div className="w-full max-w-[40px] flex flex-col justify-end rounded-t-md overflow-hidden relative group-hover:brightness-125 transition-all cursor-pointer shadow-[0_0_15px_rgba(0,0,0,0.2)] group-hover:shadow-[0_0_20px_rgba(255,255,255,0.1)]" style={{ height: `${heightPct}%`, minHeight: heightPct > 0 ? '4px' : '0' }}>
                     <div className="w-full bg-amber-500/90 transition-all duration-1000 hover:bg-amber-400" style={{ height: `${((d.Out || 0) / safeTotal) * 100}%` }}></div>
+                    <div className="w-full bg-emerald-500/90 transition-all duration-1000 hover:bg-emerald-400" style={{ height: `${((d.Think || 0) / safeTotal) * 100}%` }}></div>
                     <div className="w-full bg-purple-500/90 transition-all duration-1000 hover:bg-purple-400" style={{ height: `${((d.CR || 0) / safeTotal) * 100}%` }}></div>
                     <div className="w-full bg-pink-500/90 transition-all duration-1000 hover:bg-pink-400" style={{ height: `${((d.CW || 0) / safeTotal) * 100}%` }}></div>
                     <div className="w-full bg-blue-500/90 transition-all duration-1000 hover:bg-blue-400" style={{ height: `${((d.In || 0) / safeTotal) * 100}%` }}></div>
@@ -186,6 +198,7 @@ export const Charts: React.FC<{
                     intervalMinutes: 1, 
                     smaPeriod: 5
                   });
+                  setBrushStartRatio(0.75);
                 }}
                 className="p-1.5 ml-1 bg-black/40 border border-white/10 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
                 title="Reset to Defaults"
@@ -195,7 +208,7 @@ export const Charts: React.FC<{
             </div>
           </div>
           
-          <div className="w-full h-80 relative flex items-center justify-center">
+          <div className="w-full h-96 relative flex items-center justify-center">
             {smaData.length === 0 ? (
               <div className="flex flex-col items-center justify-center text-gray-500 gap-3">
                 <InfinityIcon size={48} className="text-gray-600 animate-pulse" />
@@ -203,7 +216,7 @@ export const Charts: React.FC<{
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={smaData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                <LineChart data={smaData} margin={{ top: 5, right: 55, bottom: 5, left: 10 }}>
                   <XAxis 
                     dataKey="time" 
                     tickFormatter={(tick) => new Date(tick).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} 
@@ -211,6 +224,7 @@ export const Charts: React.FC<{
                     tick={{ fill: '#9ca3af', fontSize: 12 }}
                   />
                   <YAxis 
+                    width={45}
                     stroke="#4b5563" 
                     tick={{ fill: '#9ca3af', fontSize: 12 }}
                     tickFormatter={formatCompact}
@@ -226,7 +240,23 @@ export const Charts: React.FC<{
                   <Line type="monotone" dataKey="In" stroke="#3b82f6" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="CW" stroke="#ec4899" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="CR" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="Think" stroke="#10b981" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="Out" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                  <Brush 
+                    dataKey="time" 
+                    height={28} 
+                    stroke="#06b6d4" 
+                    fill="#111827"
+                    startIndex={brushStartIndex}
+                    onChange={(e) => {
+                      if (e && e.startIndex !== undefined && smaData.length > 1) {
+                        const maxIdx = smaData.length - 1;
+                        setBrushStartRatio(Math.max(0, Math.min(1, e.startIndex / maxIdx)));
+                      }
+                    }}
+                    tickFormatter={(tick) => new Date(tick).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    travellerWidth={8}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             )}
