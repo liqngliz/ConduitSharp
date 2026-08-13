@@ -6,6 +6,18 @@ import { Infinity as InfinityIcon, RotateCcw } from 'lucide-react';
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1'];
 const formatCompact = (num: number) => Intl.NumberFormat('en-US', { notation: 'compact', maximumSignificantDigits: 3 }).format(num);
 
+export function calculateBrushStartIndex(dataLength: number, startRatio: number): number {
+  if (dataLength <= 0) return 0;
+  const maxIdx = dataLength - 1;
+  return Math.max(0, Math.min(maxIdx, Math.round(maxIdx * startRatio)));
+}
+
+export function calculateBrushStartRatio(startIndex: number, dataLength: number): number {
+  if (dataLength <= 1) return 0;
+  const maxIdx = dataLength - 1;
+  return Math.max(0, Math.min(1, startIndex / maxIdx));
+}
+
 export const Charts: React.FC<{ 
   metrics: MetricsData; 
   smaConfig: { intervalMinutes: number; smaPeriod: number };
@@ -27,9 +39,7 @@ export const Charts: React.FC<{
   }, [allPrompts, smaConfig.intervalMinutes, smaConfig.smaPeriod, startDate]);
 
   const brushStartIndex = useMemo(() => {
-    if (smaData.length === 0) return 0;
-    const maxIdx = smaData.length - 1;
-    return Math.max(0, Math.min(maxIdx, Math.round(maxIdx * brushStartRatio)));
+    return calculateBrushStartIndex(smaData.length, brushStartRatio);
   }, [smaData.length, brushStartRatio]);
   // Format daily usage data
   const dailyData = Object.entries(metrics.dailyUsage)
@@ -250,8 +260,7 @@ export const Charts: React.FC<{
                     startIndex={brushStartIndex}
                     onChange={(e) => {
                       if (e && e.startIndex !== undefined && smaData.length > 1) {
-                        const maxIdx = smaData.length - 1;
-                        setBrushStartRatio(Math.max(0, Math.min(1, e.startIndex / maxIdx)));
+                        setBrushStartRatio(calculateBrushStartRatio(e.startIndex, smaData.length));
                       }
                     }}
                     tickFormatter={(tick) => new Date(tick).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
