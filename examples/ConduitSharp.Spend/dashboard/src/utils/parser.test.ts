@@ -61,6 +61,16 @@ describe('Metrics Computation', () => {
     expect(metrics.topPrompts[0].prompt).toBe('test prompt 2');
     expect(metrics.topPrompts[0].totalTokens).toBe(220);
   });
+
+  it('splits out and think tokens correctly (out = rawOut - rawThink)', () => {
+    const thinkRecords: SpendRecord[] = [
+      { ts: "2026-08-01T10:00:00Z", route: "claude", model: "claude-3-7-sonnet", servedModel: "claude-3-7-sonnet", caller: "a", in: 100, out: 500, think: 125, cacheWrite: 0, cacheRead: 0, session: "sess-think", turn: 1, tools: 0, ms: 1000, streamed: true, prompt: "solve this" }
+    ];
+    const metrics = computeMetrics(thinkRecords);
+    expect(metrics.totals.out).toBe(375);
+    expect(metrics.totals.think).toBe(125);
+    expect(metrics.totals.out + metrics.totals.think).toBe(500);
+  });
 });
 
 describe('Insights Computation', () => {

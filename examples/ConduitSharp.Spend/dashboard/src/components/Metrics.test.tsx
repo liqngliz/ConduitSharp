@@ -14,13 +14,13 @@ const mockMetrics: MetricsData = {
     messagesSent: 5,
   },
   sessions: {
-    sess1: { turnCount: 1, in: 1000, cacheRead: 0, cacheWrite: 0, out: 500, sessionName: 'Test', route: 'claude', models: new Set(), tools: 0, prompts: [] }
+    sess1: { turnCount: 1, in: 1000, cacheRead: 0, cacheWrite: 0, think: 0, out: 500, sessionName: 'Test', route: 'claude', models: new Set(), tools: 0, prompts: [] }
   },
   dailyUsage: {},
   modelBreakdown: {},
   routeBreakdown: {},
   topPrompts: [
-    { prompt: 'Hello world', in: 500, cacheRead: 0, cacheWrite: 0, out: 1000, totalTokens: 1500, session: 'sess1', turn: 1, model: 'claude-3-opus' },
+    { prompt: 'Hello world', in: 500, cacheRead: 0, cacheWrite: 0, think: 0, out: 1000, totalTokens: 1500, session: 'sess1', turn: 1, model: 'claude-3-opus' },
   ],
 };
 

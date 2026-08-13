@@ -50,18 +50,19 @@ export interface MetricsData {
     in: number;
     cacheRead: number;
     cacheWrite: number;
+    think: number;
     out: number;
     sessionName: string;
     route: string;
     models: Set<string>;
     tools: number;
     isToolHeavy?: boolean;
-    prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; out: number; total: number; ts: string; firstTs?: string; tools: number; hasToolCall: boolean; }[];
+    prompts: { prompt: string; turn: number; model: string; in: number; cacheRead: number; cacheWrite: number; think: number; out: number; total: number; ts: string; firstTs?: string; tools: number; hasToolCall: boolean; }[];
   }>;
-  dailyUsage: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
-  modelBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
-  routeBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number }>;
-  topPrompts: { prompt: string; in: number; cacheRead: number; cacheWrite: number; out: number; totalTokens: number; session: string; turn: number; model: string; hasToolCall?: boolean }[];
+  dailyUsage: Record<string, { in: number; cacheRead: number; cacheWrite: number; think: number; out: number }>;
+  modelBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; think: number; out: number }>;
+  routeBreakdown: Record<string, { in: number; cacheRead: number; cacheWrite: number; think: number; out: number }>;
+  topPrompts: { prompt: string; in: number; cacheRead: number; cacheWrite: number; think: number; out: number; totalTokens: number; session: string; turn: number; model: string; hasToolCall?: boolean }[];
 }
 
 export interface TokenWeights {
@@ -83,10 +84,14 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
     topPrompts: [],
   };
 
-  const promptsMap: Record<string, { in: number; cacheRead: number; cacheWrite: number; out: number; total: number; session: string; turn: number; model: string; hasToolCall?: boolean }> = {};
+  const promptsMap: Record<string, { in: number; cacheRead: number; cacheWrite: number; think: number; out: number; total: number; session: string; turn: number; model: string; hasToolCall?: boolean }> = {};
 
   for (const rawRecord of records) {
     let record = rawRecord;
+    
+    // Split out think tokens before applying any weights; clamp if think exceeds out
+    const rawThink = Math.min(record.think ?? 0, record.out);
+    const rawOut = record.out - rawThink;
     
     // Apply token weights before any calculations
     if (useWeights && record.model) {
@@ -96,9 +101,14 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
         in: record.in * (w.in ?? 1),
         cacheWrite: record.cacheWrite * (w.cw ?? 1.25),
         cacheRead: record.cacheRead * (w.cr ?? 0.1),
-        out: record.out * (w.out ?? 5),
-        // think is billed inside out, so it carries out's weight or it stops being a subset
-        think: (record.think ?? 0) * (w.out ?? 5)
+        out: rawOut * (w.out ?? 5),
+        think: rawThink * (w.out ?? 5)
+      };
+    } else {
+      record = {
+        ...record,
+        out: rawOut,
+        think: rawThink
       };
     }
 
@@ -111,7 +121,7 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
     metrics.totals.ms += record.ms;
     
     // Only count messages that actually consumed tokens
-    if (record.in + record.out + record.cacheRead + record.cacheWrite > 0) {
+    if (record.in + record.out + record.cacheRead + record.cacheWrite + (record.think ?? 0) > 0) {
       metrics.totals.messagesSent += 1;
     }
 
@@ -123,6 +133,7 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
           in: 0,
           cacheRead: 0,
           cacheWrite: 0,
+          think: 0,
           out: 0,
           sessionName: record.sessionName || record.session,
           route: record.route,
@@ -137,6 +148,7 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
       sess.in += record.in;
       sess.cacheRead += record.cacheRead;
       sess.cacheWrite += record.cacheWrite;
+      sess.think += record.think ?? 0;
       sess.out += record.out;
       if (record.sessionName) sess.sessionName = record.sessionName;
       sess.models.add(record.model);
@@ -152,56 +164,58 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
         in: record.in,
         cacheRead: record.cacheRead,
         cacheWrite: record.cacheWrite,
+        think: record.think ?? 0,
         out: record.out,
-        total: record.in + record.out + record.cacheRead + record.cacheWrite,
+        total: record.in + record.out + record.cacheRead + record.cacheWrite + (record.think ?? 0),
         tools: record.tools || 0,
         hasToolCall: false
       });
     }
 
-    // Daily
     const day = record.ts.split('T')[0];
-    if (!metrics.dailyUsage[day]) metrics.dailyUsage[day] = { in: 0, cacheRead: 0, cacheWrite: 0, out: 0 };
+    if (!metrics.dailyUsage[day]) metrics.dailyUsage[day] = { in: 0, cacheRead: 0, cacheWrite: 0, think: 0, out: 0 };
     metrics.dailyUsage[day].in += record.in;
     metrics.dailyUsage[day].cacheRead += record.cacheRead;
     metrics.dailyUsage[day].cacheWrite += record.cacheWrite;
+    metrics.dailyUsage[day].think += record.think ?? 0;
     metrics.dailyUsage[day].out += record.out;
 
-    // Model
     const model = (record.model && record.model.trim() !== '') ? record.model : 'unknown';
     if (model.toLowerCase() !== 'unknown') {
-      if (!metrics.modelBreakdown[model]) metrics.modelBreakdown[model] = { in: 0, cacheRead: 0, cacheWrite: 0, out: 0 };
+      if (!metrics.modelBreakdown[model]) metrics.modelBreakdown[model] = { in: 0, cacheRead: 0, cacheWrite: 0, think: 0, out: 0 };
       metrics.modelBreakdown[model].in += record.in;
       metrics.modelBreakdown[model].cacheRead += record.cacheRead;
       metrics.modelBreakdown[model].cacheWrite += record.cacheWrite;
+      metrics.modelBreakdown[model].think += record.think ?? 0;
       metrics.modelBreakdown[model].out += record.out;
     }
 
-    // Route
     const route = record.route || 'unknown';
-    if (!metrics.routeBreakdown[route]) metrics.routeBreakdown[route] = { in: 0, cacheRead: 0, cacheWrite: 0, out: 0 };
+    if (!metrics.routeBreakdown[route]) metrics.routeBreakdown[route] = { in: 0, cacheRead: 0, cacheWrite: 0, think: 0, out: 0 };
     metrics.routeBreakdown[route].in += record.in;
     metrics.routeBreakdown[route].cacheRead += record.cacheRead;
     metrics.routeBreakdown[route].cacheWrite += record.cacheWrite;
+    metrics.routeBreakdown[route].think += record.think ?? 0;
     metrics.routeBreakdown[route].out += record.out;
 
     // Prompts
-    if (record.prompt && (record.in + record.out + record.cacheRead + record.cacheWrite > 0)) {
+    if (record.prompt && (record.in + record.out + record.cacheRead + record.cacheWrite + (record.think ?? 0) > 0)) {
       if (!promptsMap[record.prompt]) {
-        promptsMap[record.prompt] = { in: 0, cacheRead: 0, cacheWrite: 0, out: 0, total: 0, session: record.session || '', turn: record.turn || 0, model: record.model || '', hasToolCall: false };
+        promptsMap[record.prompt] = { in: 0, cacheRead: 0, cacheWrite: 0, think: 0, out: 0, total: 0, session: record.session || '', turn: record.turn || 0, model: record.model || '', hasToolCall: false };
       }
       const p = promptsMap[record.prompt];
       p.in += record.in;
       p.cacheRead += record.cacheRead;
       p.cacheWrite += record.cacheWrite;
+      p.think += record.think ?? 0;
       p.out += record.out;
-      p.total += (record.in + record.cacheRead + record.cacheWrite + record.out);
+      p.total += (record.in + record.cacheRead + record.cacheWrite + (record.think ?? 0) + record.out);
     }
   }
 
   // Sort prompts by timestamp for all sessions, remove 0-token sessions, and fold identical consecutive prompts
   for (const [id, sess] of Object.entries(metrics.sessions)) {
-    if (sess.in + sess.out + sess.cacheRead + sess.cacheWrite === 0) {
+    if (sess.in + sess.out + sess.think + sess.cacheRead + sess.cacheWrite === 0) {
       delete metrics.sessions[id];
       continue;
     }
@@ -260,6 +274,7 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
       if (curDate >= preOrigDate && cur.prompt === pre.prompt) {
         pre.in += cur.in;
         pre.out += cur.out;
+        pre.think += cur.think;
         pre.cacheRead += cur.cacheRead;
         pre.cacheWrite += cur.cacheWrite;
         pre.total += cur.total;
@@ -290,7 +305,7 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
   }
 
   metrics.topPrompts = Object.entries(promptsMap)
-    .map(([prompt, stats]) => ({ prompt, in: stats.in, cacheRead: stats.cacheRead, cacheWrite: stats.cacheWrite, out: stats.out, totalTokens: stats.total, session: stats.session, turn: stats.turn, model: stats.model, hasToolCall: stats.hasToolCall }))
+    .map(([prompt, stats]) => ({ prompt, in: stats.in, cacheRead: stats.cacheRead, cacheWrite: stats.cacheWrite, think: stats.think, out: stats.out, totalTokens: stats.total, session: stats.session, turn: stats.turn, model: stats.model, hasToolCall: stats.hasToolCall }))
     .sort((a, b) => b.totalTokens - a.totalTokens)
     .slice(0, 10);
 
@@ -349,6 +364,9 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, co
   for (const rawRecord of records) {
     let record = rawRecord;
     
+    const rawThink = Math.min(record.think ?? 0, record.out);
+    const rawOut = record.out - rawThink;
+
     if (useWeights && record.model) {
       const w = weightsConfig[record.model] || DEFAULT_WEIGHTS;
       record = {
@@ -356,12 +374,19 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, co
         in: record.in * (w.in ?? 1),
         cacheWrite: record.cacheWrite * (w.cw ?? 1.25),
         cacheRead: record.cacheRead * (w.cr ?? 0.1),
-        out: record.out * (w.out ?? 5)
+        out: rawOut * (w.out ?? 5),
+        think: rawThink * (w.out ?? 5)
+      };
+    } else {
+      record = {
+        ...record,
+        out: rawOut,
+        think: rawThink
       };
     }
 
     const totalIn = record.in + record.cacheWrite + record.cacheRead;
-    const total = totalIn + record.out;
+    const total = totalIn + record.out + (record.think ?? 0);
     
     const isVague = record.prompt && record.prompt.length < config.vaguePromptLength && totalIn > config.vagueMinInput;
     if (isVague) {
@@ -372,7 +397,7 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, co
       nonVagueTokensSum += total;
     }
     
-    const isInputHeavy = totalIn > config.inputHeavyMinInput && record.out < config.inputHeavyMaxOutput;
+    const isInputHeavy = totalIn > config.inputHeavyMinInput && (record.out + (record.think ?? 0)) < config.inputHeavyMaxOutput;
     if (isInputHeavy) {
       inputHeavy++;
       inputHeavyTokensSum += total;
@@ -435,10 +460,10 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, co
   const avgNonMarathonPromptTokens = nonMarathonPromptsCount > 0 ? Math.round(nonMarathonTokensSum / nonMarathonPromptsCount) : 0;
 
   let modelDominance: { model: string; percent: number } | null = null;
-  const totalTokens = metrics.totals.in + metrics.totals.out + metrics.totals.cacheRead + metrics.totals.cacheWrite;
+  const totalTokens = metrics.totals.in + metrics.totals.out + metrics.totals.cacheRead + metrics.totals.cacheWrite + metrics.totals.think;
   if (totalTokens > 0) {
     for (const [model, counts] of Object.entries(metrics.modelBreakdown)) {
-      const pct = (counts.in + counts.out + counts.cacheRead + counts.cacheWrite) / totalTokens;
+      const pct = (counts.in + counts.out + counts.cacheRead + counts.cacheWrite + counts.think) / totalTokens;
       if (pct > 0.6) {
         modelDominance = { model, percent: Math.round(pct * 100) };
         break;
@@ -481,6 +506,7 @@ export interface SMAPrompt {
   ts: string;
   in: number;
   out: number;
+  think: number;
   cacheRead: number;
   cacheWrite: number;
   total: number;
@@ -521,6 +547,7 @@ export function calculateSMA(prompts: SMAPrompt[], intervalMinutes: number, peri
     in: 0,
     cw: 0,
     cr: 0,
+    think: 0,
     out: 0,
     total: 0
   }));
@@ -532,6 +559,7 @@ export function calculateSMA(prompts: SMAPrompt[], intervalMinutes: number, peri
       buckets[bucketIdx].in += p.in;
       buckets[bucketIdx].cw += p.cacheWrite;
       buckets[bucketIdx].cr += p.cacheRead;
+      buckets[bucketIdx].think += p.think ?? 0;
       buckets[bucketIdx].out += p.out;
       buckets[bucketIdx].total += p.total;
     }
@@ -540,12 +568,13 @@ export function calculateSMA(prompts: SMAPrompt[], intervalMinutes: number, peri
   const smaData = [];
   for (let i = 0; i < buckets.length; i++) {
     if (i >= period - 1) {
-      let sumIn = 0, sumCw = 0, sumCr = 0, sumOut = 0, sumTotal = 0;
+      let sumIn = 0, sumCw = 0, sumCr = 0, sumThink = 0, sumOut = 0, sumTotal = 0;
       for (let j = 0; j < period; j++) {
         const b = buckets[i - j];
         sumIn += b.in;
         sumCw += b.cw;
         sumCr += b.cr;
+        sumThink += b.think;
         sumOut += b.out;
         sumTotal += b.total;
       }
@@ -554,6 +583,7 @@ export function calculateSMA(prompts: SMAPrompt[], intervalMinutes: number, peri
         In: Math.round(sumIn / period),
         CW: Math.round(sumCw / period),
         CR: Math.round(sumCr / period),
+        Think: Math.round(sumThink / period),
         Out: Math.round(sumOut / period),
         Total: Math.round(sumTotal / period)
       });
