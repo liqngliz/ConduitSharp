@@ -1,0 +1,239 @@
+{
+  "routes": [
+    {
+      "id": "claude",
+      "description": "claude through the spend meter",
+      "route": {
+        "match": {
+          "path": "/llm/claude/{**rest}"
+        },
+        "transforms": [
+          {
+            "PathRemovePrefix": "/llm/claude"
+          }
+        ]
+      },
+      "cluster": {
+        "destinations": {
+          "node-0": {
+            "address": "https://api.anthropic.com"
+          }
+        }
+      },
+      "plugins": [
+        {
+          "name": "custom",
+          "variant": "token-spend",
+          "order": 4,
+          "enabled": true,
+          "config": {
+            "inputFields": [
+              "usage.input_tokens"
+            ],
+            "outputFields": [
+              "usage.output_tokens"
+            ],
+            "cacheWriteFields": [
+              "usage.cache_creation_input_tokens"
+            ],
+            "cacheReadFields": [
+              "usage.cache_read_input_tokens"
+            ],
+            "thinkingFields": [
+              "usage.output_tokens_details.thinking_tokens"
+            ],
+            "keyHeader": "x-api-key",
+            "maxResponseBytes": 33554432,
+            "maxRequestBytes": 33554432,
+            "capturePrompts": true,
+            "maxPromptChars": 200,
+            "sessionField": "metadata.user_id.session_id",
+            "preambleTags": [
+              "system-reminder",
+              "ide_opened_file",
+              "ide_selection"
+            ],
+            "preamblePrefixes": [
+              "<transcript>",
+              "The following is the user's CLAUDE"
+            ]
+          }
+        },
+        {
+          "name": "custom",
+          "variant": "body-capture-file",
+          "order": 5,
+          "enabled": true,
+          "config": {
+            "request": {
+              "maxSize": 3145728
+            },
+            "response": {
+              "maxSize": 262144
+            },
+            "logPath": "%CONDUIT_SPEND_DATA%/conduit-wire.jsonl",
+            "maxFileBytes": 1073741824,
+            "decompress": true
+          }
+        },
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "local",
+      "description": "local through the spend meter",
+      "route": {
+        "match": {
+          "path": "/llm/local/{**rest}"
+        },
+        "transforms": [
+          {
+            "PathRemovePrefix": "/llm/local"
+          }
+        ]
+      },
+      "cluster": {
+        "destinations": {
+          "node-0": {
+            "address": "http://127.0.0.1:1234"
+          }
+        }
+      },
+      "plugins": [
+        {
+          "name": "custom",
+          "variant": "token-spend",
+          "order": 4,
+          "enabled": true,
+          "config": {
+            "inputFields": [
+              "usage.prompt_tokens"
+            ],
+            "outputFields": [
+              "usage.completion_tokens"
+            ],
+            "thinkingFields": [
+              "usage.completion_tokens_details.reasoning_tokens"
+            ],
+            "keyHeader": "authorization",
+            "maxResponseBytes": 33554432,
+            "maxRequestBytes": 33554432,
+            "capturePrompts": true,
+            "maxPromptChars": 200
+          }
+        },
+        {
+          "name": "custom",
+          "variant": "body-capture-file",
+          "order": 5,
+          "enabled": true,
+          "config": {
+            "request": {
+              "maxSize": 3145728
+            },
+            "response": {
+              "maxSize": 262144
+            },
+            "logPath": "%CONDUIT_SPEND_DATA%/conduit-wire.jsonl",
+            "maxFileBytes": 1073741824
+          }
+        },
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "description": "Codex via the ChatGPT backend (works on a ChatGPT plan, no API key)",
+      "route": {
+        "match": {
+          "path": "/llm/codex/{**rest}"
+        },
+        "transforms": [
+          {
+            "PathRemovePrefix": "/llm/codex"
+          }
+        ]
+      },
+      "cluster": {
+        "destinations": {
+          "node-0": {
+            "address": "https://chatgpt.com"
+          }
+        }
+      },
+      "plugins": [
+        {
+          "name": "custom",
+          "variant": "token-spend",
+          "order": 4,
+          "enabled": true,
+          "config": {
+            "inputFields": [
+              "usage.input_tokens"
+            ],
+            "subtractInputFields": [
+              "usage.input_tokens_details.cached_tokens"
+            ],
+            "outputFields": [
+              "usage.output_tokens"
+            ],
+            "cacheReadFields": [
+              "usage.input_tokens_details.cached_tokens"
+            ],
+            "cacheWriteFields": [
+              "usage.input_tokens_details.cache_write_tokens"
+            ],
+            "thinkingFields": [
+              "usage.output_tokens_details.reasoning_tokens"
+            ],
+            "keyHeader": "authorization",
+            "maxResponseBytes": 33554432,
+            "maxRequestBytes": 33554432,
+            "capturePrompts": true,
+            "maxPromptChars": 200,
+            "sessionField": "client_metadata.thread_id",
+            "preamblePrefixes": [
+              "<environment_context>",
+              "You are a helpful assistant"
+            ],
+            "metadataFields": {
+              "source": "client_metadata.x-codex-turn-metadata.thread_source",
+              "kind": "client_metadata.x-codex-turn-metadata.request_kind",
+              "thread": "client_metadata.thread_id",
+              "turn": "client_metadata.turn_id"
+            }
+          }
+        },
+        {
+          "name": "custom",
+          "variant": "body-capture-file",
+          "order": 5,
+          "enabled": true,
+          "config": {
+            "request": {
+              "maxSize": 3145728
+            },
+            "response": {
+              "maxSize": 262144
+            },
+            "logPath": "%CONDUIT_SPEND_DATA%/conduit-wire.jsonl",
+            "maxFileBytes": 1073741824
+          }
+        },
+        {
+          "name": "http-proxy",
+          "order": 99,
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}

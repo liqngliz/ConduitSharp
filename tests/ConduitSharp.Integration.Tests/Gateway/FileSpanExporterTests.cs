@@ -16,7 +16,6 @@ public sealed class FileSpanExporterTests
 
     static FileSpanExporterTests()
     {
-        // A listener is required for StartActivity to return a live (recorded) Activity.
         ActivitySource.AddActivityListener(new ActivityListener
         {
             ShouldListenTo = s => s.Name == "FileSpanExporterTests",

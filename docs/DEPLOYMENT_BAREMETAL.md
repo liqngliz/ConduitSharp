@@ -1,12 +1,12 @@
-# Bare Metal / VMs — the legacy estate
+# Bare Metal / VMs
 
 _Part of the [ConduitSharp documentation](../README.md)._
 
 
-The reason ConduitSharp runs where Kong and APISIX cannot: on the AD-joined, ERP, and IIS boxes the
-target workloads actually live on. No .NET runtime required — the runtime is bundled inside the binaries.
+Runs on AD-joined, ERP, and IIS boxes, where Kong and APISIX cannot. No .NET runtime install; the
+binaries bundle it.
 
-#### Linux — self-contained binary
+#### Linux (self-contained binary)
 
 Download `conduitsharp-vX.X.X-linux-x64.tar.gz` from the [releases page](https://github.com/liqngliz/ConduitSharp/releases).
 
@@ -31,7 +31,7 @@ C:\conduitsharp\ConduitSharp.Host.exe
 
 **Run as a Windows Service:**
 
-For always-on deployments. The Service Control Manager restarts the process automatically on failure.
+Service Control Manager restarts the process on failure.
 
 ```powershell
 Expand-Archive conduitsharp-win-x64.zip C:\conduitsharp
@@ -44,18 +44,18 @@ To update: `sc.exe stop ConduitSharp` → replace the exe → `sc.exe start Cond
 
 **Host under IIS (in-process):**
 
-IIS manages the process lifecycle and handles port 80/443 binding. The gateway runs inside the IIS worker process.
+Gateway runs inside the IIS worker process. IIS owns the lifecycle and the 80/443 binding.
 
 1. Install the [ASP.NET Core Hosting Bundle](https://dotnet.microsoft.com/permalink/dotnetcore-current-windows-runtime-bundle-installer) on the server (one-time).
-2. Extract the zip to e.g. `C:\inetpub\conduitsharp\` — it contains the exe, `web.config`, and `Configuration\routes.json`.
+2. Extract the zip to e.g. `C:\inetpub\conduitsharp\` (exe, `web.config`, `Configuration\routes.json`).
 3. In IIS Manager: **Add Website** → Physical path: `C:\inetpub\conduitsharp` → Application Pool → `.NET CLR Version: No Managed Code`.
 4. Edit `Configuration\routes.json` and start the site.
 
-The `web.config` is generated automatically in the zip. IIS reads it and launches the exe via `AspNetCoreModuleV2`; you do not need to configure anything else.
+`web.config` ships in the zip. IIS reads it and launches the exe via `AspNetCoreModuleV2`. Nothing else to configure.
 
 **Host under IIS (reverse proxy):**
 
-IIS listens on port 80/443 and forwards traffic to ConduitSharp running on a local port. Useful when IIS is already managing other sites on the same machine and you want to share port 443 with an SNI-based binding.
+IIS listens on 80/443 and forwards to ConduitSharp on a local port. Use when IIS already serves other sites on the box and 443 must be shared via an SNI binding.
 
 Run ConduitSharp as a Windows Service on a private port (e.g. 5000), then add an IIS site with an **Application Request Routing** (ARR) reverse proxy rule pointing at it:
 
@@ -72,7 +72,7 @@ sc.exe start ConduitSharp
 #      Rewrite URL:  http://localhost:5000/{R:1}
 ```
 
-With this setup IIS handles TLS termination and certificate management, and ConduitSharp runs over plain HTTP on the loopback interface.
+IIS terminates TLS and owns the certificates. ConduitSharp runs plain HTTP on loopback.
 
 ---
 

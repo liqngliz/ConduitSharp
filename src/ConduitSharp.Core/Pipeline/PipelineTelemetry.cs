@@ -13,10 +13,6 @@ public static class PipelineTelemetry
     /// <summary>Activity source name — pass to <c>AddSource</c> in the host to activate pipeline spans.</summary>
     public const string SourceName = "ConduitSharp.Pipeline";
 
-    // The instrumentation-scope version tracks the package version (Directory.Build.props
-    // <Version>) automatically: MSBuild bakes it into AssemblyInformationalVersion, and we
-    // read it back here so telemetry never drifts from the release. Split('+') drops the
-    // "+<gitcommit>" SourceLink appends, leaving a clean SemVer like "1.0.0-rc.1".
     internal static readonly string Version =
         typeof(PipelineTelemetry).Assembly
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?

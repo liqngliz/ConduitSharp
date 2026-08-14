@@ -17,10 +17,6 @@ public sealed class JwtAuthPluginTests
     private static System.Text.Json.JsonElement Configured(JwtAuthConfig? config = null) =>
         System.Text.Json.JsonSerializer.SerializeToElement(config ?? DefaultConfig);
 
-    // -------------------------------------------------------------------------
-    // Bearer extraction failures — no handler involvement
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_NoAuthHeader_ShortCircuits401()
     {
@@ -40,10 +36,6 @@ public sealed class JwtAuthPluginTests
 
         Assert.Equal(401, context.Response.StatusCode);
     }
-
-    // -------------------------------------------------------------------------
-    // Token validation failures
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ExecuteAsync_MalformedToken_ShortCircuits401()
@@ -99,10 +91,6 @@ public sealed class JwtAuthPluginTests
         Assert.Equal(401, context.Response.StatusCode);
     }
 
-    // -------------------------------------------------------------------------
-    // Happy path
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ValidateConfig_MissingSigningKey_Throws()
     {
@@ -112,10 +100,6 @@ public sealed class JwtAuthPluginTests
         var ex = Assert.Throws<InvalidOperationException>(() => plugin.ValidateConfig(config));
         Assert.Contains("signingKey", ex.Message);
     }
-
-    // -------------------------------------------------------------------------
-    // Multiple Providers
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ExecuteAsync_MultipleProviders_SucceedsIfAnyProviderValidates()
@@ -197,10 +181,6 @@ public sealed class JwtAuthPluginTests
         Assert.True(wasCalled());
     }
 
-    // -------------------------------------------------------------------------
-    // requiredClaims (RBAC) — 403, not 401, on a valid token lacking permission
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_ValidTokenMissingRequiredRole_ShortCircuits403()
     {
@@ -236,7 +216,6 @@ public sealed class JwtAuthPluginTests
     [Fact]
     public async Task ExecuteAsync_InvalidSignatureWithRequiredClaims_StillReturns401NotChecked()
     {
-        // A bad signature must short-circuit 401 before requiredClaims is ever evaluated.
         var config = DefaultConfig with
         {
             RequiredClaims = [new RequiredClaim { Claim = "roles", AnyOf = ["Admin"] }]
@@ -248,14 +227,9 @@ public sealed class JwtAuthPluginTests
         Assert.Equal(401, context.Response.StatusCode);
     }
 
-    // -------------------------------------------------------------------------
-    // ValidateConfig — fails fast on a malformed requiredClaims block
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void ValidateConfig_MalformedRequiredClaims_Throws()
     {
-        // Exercises the fail-fast path a route reload would hit.
         var plugin = new JwtAuthPlugin(new JwtAuthHandler());
         var config = System.Text.Json.JsonDocument.Parse("""
             { "signingKey": "ZGVtby1zaWduaW5nLWtleS1jb25kdWl0c2hhcnAtZXhhbXBsZS0zMmNo", "requiredClaims": [ { "claim": "" } ] }
@@ -275,15 +249,9 @@ public sealed class JwtAuthPluginTests
         plugin.ValidateConfig(config);
     }
 
-    // -------------------------------------------------------------------------
-    // Config comes from context.PluginConfig (routes.json round-trip)
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_ReadsConfigFromContextPluginConfig()
     {
-        // The issuer constraint only exists in the JSON placed on the context — proving
-        // ExecuteAsync parses context.PluginConfig rather than any ambient default.
         var token   = JwtTokenBuilder.ValidToken(issuer: "https://other.example.com");
         var context = HttpContextBuilder.WithAuth($"Bearer {token}");
         var config = Configured(DefaultConfig with { Issuer = "https://auth.example.com" });

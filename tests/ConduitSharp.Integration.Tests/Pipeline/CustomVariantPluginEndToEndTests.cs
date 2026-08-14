@@ -43,8 +43,6 @@ public sealed class CustomVariantPluginEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task Same_variant_on_four_routes_keeps_separate_configs()
     {
-        // One singleton plugin instance serves all four routes — same widening matrix
-        // as the built-in api-key-auth test.
         var routes = GatewayTestHelpers.RoutesWithPlugin(_upstream.BaseUrl, "custom",
             ("key-auth", (object)new { keys = new[] { "key-a" } }),
             ("key-auth", new { keys = new[] { "key-b" } }),
@@ -80,8 +78,6 @@ public sealed class CustomVariantPluginEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task Two_variants_resolve_independently_per_route()
     {
-        // Both plugins share PluginName.Custom — routes must bind by variant, and each
-        // variant must see only its own route's config.
         var routes = GatewayTestHelpers.RoutesWithPlugin(_upstream.BaseUrl, "custom",
             ("key-auth-one", (object)new { keys = new[] { "key-a" } }),
             ("key-auth-two", new { keys = new[] { "key-b" } }));

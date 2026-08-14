@@ -23,10 +23,6 @@ public sealed class JwtAuthHandlerTests
             Audience   = audience
         };
 
-    // -------------------------------------------------------------------------
-    // Structure / malformed input — must fail validation, never throw
-    // -------------------------------------------------------------------------
-
     [Theory]
     [InlineData("notavalidtoken")]
     [InlineData("header.payload")]
@@ -43,8 +39,6 @@ public sealed class JwtAuthHandlerTests
     [Fact]
     public void ValidBase64ButInvalidJsonPayload_ReturnsFalse()
     {
-        // Valid Base64Url that decodes to non-JSON must fail validation, not throw
-        // (used to bubble up as a 500).
         var garbage = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes("not json"));
         var header  = Base64UrlEncoder.Encode(Encoding.UTF8.GetBytes("""{"alg":"HS256","typ":"JWT"}"""));
 
@@ -64,10 +58,6 @@ public sealed class JwtAuthHandlerTests
         Assert.False(result);
     }
 
-    // -------------------------------------------------------------------------
-    // Algorithm / signature checks
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void UnsupportedConfigAlgorithm_ReturnsFalse()
     {
@@ -81,7 +71,6 @@ public sealed class JwtAuthHandlerTests
     [Fact]
     public void AlgNoneToken_ReturnsFalse()
     {
-        // alg-confusion guard: an unsigned "none" token must never validate.
         var result = _handler.TryValidate(
             AsymmetricTokenKit.UnsignedToken("none"), ConfigFor(), out _, out _);
 
@@ -120,10 +109,6 @@ public sealed class JwtAuthHandlerTests
         Assert.Equal("test-subject", claims.GetProperty("sub").GetString());
     }
 
-    // -------------------------------------------------------------------------
-    // Lifetime
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void ExpiredToken_ReturnsFalse()
     {
@@ -147,15 +132,10 @@ public sealed class JwtAuthHandlerTests
     [Fact]
     public void TokenWithoutExp_IsValid()
     {
-        // Pre-existing gateway behavior: exp is honored when present but not required.
         var token = JwtTokenBuilder.Build(JwtTokenBuilder.DefaultSecretBase64);
 
         Assert.True(_handler.TryValidate(token, ConfigFor(), out _, out _));
     }
-
-    // -------------------------------------------------------------------------
-    // Issuer / audience
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void WrongIssuer_ReturnsFalse()

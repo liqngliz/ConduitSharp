@@ -5,9 +5,6 @@ namespace ConduitSharp.Security.Tests.ApiKey;
 
 public sealed class ApiKeyAuthHandlerTests
 {
-    // -------------------------------------------------------------------------
-    // Match
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void IsValid_KeyInList_ReturnsTrue()
@@ -24,10 +21,6 @@ public sealed class ApiKeyAuthHandlerTests
 
         Assert.True(result);
     }
-
-    // -------------------------------------------------------------------------
-    // No match
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void IsValid_WrongKey_ReturnsFalse()
@@ -53,10 +46,6 @@ public sealed class ApiKeyAuthHandlerTests
         Assert.False(result);
     }
 
-    // -------------------------------------------------------------------------
-    // Case sensitivity — keys are compared byte-for-byte
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void IsValid_WrongCase_ReturnsFalse()
     {
@@ -64,10 +53,6 @@ public sealed class ApiKeyAuthHandlerTests
 
         Assert.False(result);
     }
-
-    // -------------------------------------------------------------------------
-    // Different lengths cannot match (FixedTimeEquals requires same length)
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void IsValid_PrefixOfAllowedKey_ReturnsFalse()

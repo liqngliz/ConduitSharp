@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>ConduitSharp.Spend</RootNamespace>
+
+    <!--
+      Ships as `dotnet tool install -g ConduitSharp.TokenFlow`, the same shape ConduitSharp.Host
+      uses for the gateway itself. .NET 10 packs tools from Publish rather than Build, so the
+      dashboard's wwwroot rides along without an explicit item (it would 404 on .NET 8/9).
+      Versioned on the tokenflow-v* tag, not the library's Version, so CI passes -p:Version.
+    -->
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>tokenflow</ToolCommandName>
+    <PackageId>ConduitSharp.TokenFlow</PackageId>
+    <Description>Live token spend dashboard and LLM gateway. Point an AI SDK at it and watch what every call spends.</Description>
+    <PackageTags>llm;tokens;claude;openai;gateway;dashboard;observability;dotnet-tool</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ConduitSharp.Gateway.AspNetCore\ConduitSharp.Gateway.AspNetCore.csproj" />
+    <!--
+      PrivateAssets=all: both plugins are now packable in their own right, and without this the
+      tool package would carry a nuspec <dependency> on each, so `dotnet tool install` would
+      resolve them from nuget.org at their Directory.Build.props version rather than using the
+      copies published into tools/. The tool ships self-contained; the packages exist for anyone
+      adding these to a standalone ConduitSharp.Gateway install.
+    -->
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.TokenSpend\src\ConduitSharp.Plugin.TokenSpend\ConduitSharp.Plugin.TokenSpend.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\..\plugins\ConduitSharp.Plugin.BodyCaptureToFile\src\ConduitSharp.Plugin.BodyCaptureToFile\ConduitSharp.Plugin.BodyCaptureToFile.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The Web SDK globs every **/*.json as Content, which drags the dashboard's package-lock.json
+         and coverage-final.json into the package as content/ (~340 KB). Nothing consumes content/
+         from a tool package. -->
+    <Content Remove="dashboard\**" />
+
+    <!-- CopyToPublishDirectory is explicit: publish output is what both the image and the
+         tool package are built from, and it does not always follow CopyToOutputDirectory.
+         Pack="false" because the app reads these from tools/net10.0/any/Configuration/ instead. -->
+    <Content Update="Configuration\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Pack="false" />
+  </ItemGroup>
+
+</Project>

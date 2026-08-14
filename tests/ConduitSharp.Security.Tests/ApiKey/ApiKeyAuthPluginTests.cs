@@ -23,10 +23,6 @@ public sealed class ApiKeyAuthPluginTests
             Keys   = keys ?? AllowedKeys
         });
 
-    // -------------------------------------------------------------------------
-    // Missing / empty header
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_NoHeader_ShortCircuits401()
     {
@@ -49,10 +45,6 @@ public sealed class ApiKeyAuthPluginTests
         Assert.Equal(401, context.Response.StatusCode);
     }
 
-    // -------------------------------------------------------------------------
-    // Invalid key
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_InvalidKey_ShortCircuits401()
     {
@@ -63,10 +55,6 @@ public sealed class ApiKeyAuthPluginTests
 
         Assert.Equal(401, context.Response.StatusCode);
     }
-
-    // -------------------------------------------------------------------------
-    // Valid key
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ExecuteAsync_ValidKey_CallsNext()
@@ -127,10 +115,6 @@ public sealed class ApiKeyAuthHashedPluginTests
             Keys   = keys ?? AllowedHashes
         });
 
-    // -------------------------------------------------------------------------
-    // Missing header
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_NoHeader_ShortCircuits401()
     {
@@ -142,10 +126,6 @@ public sealed class ApiKeyAuthHashedPluginTests
         Assert.Equal(401, context.Response.StatusCode);
     }
 
-    // -------------------------------------------------------------------------
-    // Invalid key
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_WrongKey_ShortCircuits401()
     {
@@ -156,10 +136,6 @@ public sealed class ApiKeyAuthHashedPluginTests
 
         Assert.Equal(401, context.Response.StatusCode);
     }
-
-    // -------------------------------------------------------------------------
-    // Valid key (supplied raw; hash is computed and compared)
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ExecuteAsync_ValidKey_CallsNext()

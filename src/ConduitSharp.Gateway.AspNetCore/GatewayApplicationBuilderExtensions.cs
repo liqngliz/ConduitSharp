@@ -39,6 +39,8 @@ public static class GatewayApplicationBuilderExtensions
         var gatewayOptions = app.Services.GetRequiredService<IOptions<GatewayOptions>>().Value;
         var gatewayRoutes  = app.Services.GetRequiredService<GatewayRoutesConfiguration>();
 
+        _ = app.Services.GetRequiredService<Middleware.RequestBodyBudget>();
+
         if (options.EnableAdminApi)
         {
             var routesPath = options.RoutesPath ?? gatewayOptions.RoutesPath;
@@ -48,16 +50,6 @@ public static class GatewayApplicationBuilderExtensions
         if (options.MapHealthEndpoints)
             MapHealthEndpoints(app);
 
-        // Aggregated Swagger UI is an optional add-on (ConduitSharp.Gateway.AspNetCore.Swagger):
-        // call app.UseConduitSharpGatewaySwagger() before this method to enable it.
-
-        // One gateway.request span per request the gateway handles — including the ones that match
-        // no route, so a 404 is still traceable. Sits after admin/health, which answer and return
-        // before reaching it. The route id is tagged on later, from inside the matched route's chain.
-        //
-        // The same finally notifies every IRequestObserver (structured request log, OTel request
-        // counter/duration/error metrics) — this is the only place per-request observability
-        // fan-out happens, so it must sit on the outermost path where timing covers everything.
         var observers = app.Services.GetServices<IRequestObserver>().ToArray();
         app.Use(async (ctx, next) =>
         {
@@ -91,11 +83,10 @@ public static class GatewayApplicationBuilderExtensions
                         ctx.Response.StatusCode,
                         (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds);
 
-                    // An observer must never be able to fail the request from inside a finally.
                     foreach (var observer in observers)
                     {
                         try { observer.OnRequestCompleted(observation); }
-                        catch { /* observers are fire-and-forget by contract */ }
+                        catch { }
                     }
                 }
             }
@@ -103,18 +94,12 @@ public static class GatewayApplicationBuilderExtensions
 
         ValidateRouteTable(app.Services, gatewayRoutes);
 
-        // The route table owns everything a hot reload must swap together: one compiled
-        // RequestDelegate per route (plugins resolved once, not per request), the route lookup,
-        // plugin-only endpoints, retry pipelines, and YARP's in-memory config.
         var table = app.Services.GetRequiredService<GatewayRouteTable>();
         table.Initialize(route => BuildRouteChain(app, route, gatewayOptions));
         table.Load(gatewayRoutes);
 
         app.MapReverseProxy(proxyPipeline =>
         {
-            // Plugins run inside YARP's per-proxy pipeline, so the forwarder always executes within
-            // their next() — a cache plugin's response tee therefore wraps the real forward, and a
-            // plugin that skips next() short-circuits before YARP forwards anything.
             proxyPipeline.Use(async (HttpContext context, RequestDelegate next) =>
             {
                 var routeId = context.GetReverseProxyFeature().Route.Config.RouteId;
@@ -127,34 +112,19 @@ public static class GatewayApplicationBuilderExtensions
             proxyPipeline.UseLoadBalancing();
             proxyPipeline.UsePassiveHealthChecks();
         })
-        // Custom MatcherPolicies dropped into the plugins root read the route off the endpoint.
         .ConfigureEndpoints((builder, route) => builder.WithMetadata(table.RouteFor(route.RouteId)));
 
-        // Plugin-only routes never reach YARP: it rejects a route with no cluster before any
-        // middleware runs, so the table serves them as ordinary endpoints running the same chain —
-        // through a mutable data source, so a hot reload can add and remove them like YARP routes.
         ((IEndpointRouteBuilder)app).DataSources.Add(table.PluginEndpoints);
 
-        // No catch-all fallback endpoint: one would match every path and so mask endpoint routing's
-        // own 405, turning "right path, wrong verb" into a 404. Unmatched requests get the
-        // framework's 404 (and, under a PathPrefix, fall through to the host).
         return app;
     }
 
-    // ---------------------------------------------------------------------------
-    // Route-table validation. Runs at startup and again against the incoming table on admin
-    // reload, so a reload can never swap in routes the gateway cannot serve.
-    // ---------------------------------------------------------------------------
     private static void ValidateRouteTable(IServiceProvider services, GatewayRoutesConfiguration gatewayRoutes)
     {
         ValidateLoadBalancingPolicies(services, gatewayRoutes);
         ValidatePluginChains(services, gatewayRoutes);
     }
 
-    // Every route's loadBalancingStrategy must name a registered ILoadBalancingPolicy — YARP's
-    // five built-ins plus anything dropped into the plugins root. Checking against the DI set
-    // rather than a hardcoded list means drop-in policies validate for free, and the error can
-    // name what is actually available. YARP would catch this too, but later and less usefully.
     private static void ValidateLoadBalancingPolicies(
         IServiceProvider services, GatewayRoutesConfiguration gatewayRoutes)
     {
@@ -174,8 +144,6 @@ public static class GatewayApplicationBuilderExtensions
         }
     }
 
-    // Every enabled plugin must resolve and its config must parse, and 'http-proxy' (when named
-    // explicitly) must sit last, because it is where the forward happens.
     private static void ValidatePluginChains(IServiceProvider services, GatewayRoutesConfiguration gatewayRoutes)
     {
         var allPlugins    = services.GetServices<IPipelinePlugin>().ToList();
@@ -193,7 +161,6 @@ public static class GatewayApplicationBuilderExtensions
 
             foreach (var pluginConfig in enabledPlugins)
             {
-                // 'http-proxy' is no longer a plugin — it names the forward step itself.
                 if (pluginConfig.Name == PluginName.HttpProxy) continue;
 
                 var plugin = ResolvePlugin(allPlugins, pluginConfig)
@@ -206,8 +173,6 @@ public static class GatewayApplicationBuilderExtensions
                         "the buffered body the gateway provides — it cannot run on a streamOnly route. " +
                         "Remove streamOnly from this route, or the body-reading plugin.");
 
-                // Key by id + variant so each custom variant logs its own winner; the source tag
-                // makes a silent last-registration-wins override visible at startup.
                 var pluginId = pluginConfig.Name == PluginName.Custom
                     ? $"custom:{pluginConfig.Variant}"
                     : pluginConfig.Name.ToId();
@@ -245,16 +210,11 @@ public static class GatewayApplicationBuilderExtensions
         return BuiltInPluginAssemblies.Contains(assembly) ? "built-in" : "host-di";
     }
 
-    // Last registration wins, so a drop-in DLL shadows the built-in of the same name.
     private static IPipelinePlugin? ResolvePlugin(IEnumerable<IPipelinePlugin> plugins, PluginConfig config) =>
         plugins.LastOrDefault(p =>
             p.Id == config.Name.ToString().ToLowerInvariant()
             || (p.Name == config.Name && p.Variant == config.Variant));
 
-    // ---------------------------------------------------------------------------
-    // Per-route chain: telemetry + error boundary → body budget → plugins → forward.
-    // Compiled once at startup into a single RequestDelegate.
-    // ---------------------------------------------------------------------------
     private static RequestDelegate BuildRouteChain(
         WebApplication app, GatewayRoute route, GatewayOptions gatewayOptions)
     {
@@ -283,10 +243,6 @@ public static class GatewayApplicationBuilderExtensions
             }
         });
 
-        // Resolved once when the chain is compiled, not per request: plugins are singletons and
-        // the route's plugin set is fixed until the next reload rebuilds the chain. Validation
-        // already proved they resolve, so a miss here is a bug worth throwing on. Resolving
-        // up front also lets the buffering decision below see ReadsRequestBody.
         var registeredPlugins = app.Services.GetServices<IPipelinePlugin>().ToList();
         var pluginChain = route.Plugins
             .Where(p => p.Enabled && p.Name != PluginName.HttpProxy)
@@ -296,34 +252,19 @@ public static class GatewayApplicationBuilderExtensions
                     $"Route '{route.Id}': no plugin registered for '{config.Name}'.")))
             .ToList();
 
-        // The buffer exists for exactly two consumers: the retry rewind and body-reading
-        // plugins. A route with neither streams by definition — same path as streamOnly,
-        // no config needed. (Explicit streamOnly still forces it, and is still validated
-        // against body-reading plugins / retry at startup.)
         var readsBody = pluginChain.Any(p => p.plugin.ReadsRequestBody);
         var canRetry  = route.Cluster is not null && route.Retry is { MaxAttempts: > 1 };
 
-        // Streaming-path plugins that capture (the body-capture tee) hold memory the body buffer
-        // never accounts for. Bounded per request, but it multiplies by concurrency with nothing to
-        // shed it — so reserve it against the same budget the buffered path uses, and 503 at the
-        // same ceiling. Summed once here because plugins are singletons and route config is fixed
-        // until the next reload rebuilds this chain.
         var captureBytes = pluginChain.Sum(p => (long)p.plugin.CaptureMemoryBytes(p.config.Config));
 
-        if (route.StreamOnly || (!readsBody && !canRetry))
+        if (captureBytes > 0)
         {
             chain.Use(async (context, next) =>
             {
                 SetMaxRequestBodySize(context, route, gatewayOptions);
 
-                if (captureBytes <= 0)
-                {
-                    await next(context);
-                    return;
-                }
-
                 var budget = context.RequestServices.GetRequiredService<Middleware.RequestBodyBudget>();
-                if (!budget.TryReserve(captureBytes))
+                if (!budget.TryReserveRam(captureBytes))
                 {
                     context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                     await context.Response.WriteAsync("The gateway is at capacity capturing request bodies. Retry shortly.");
@@ -336,10 +277,17 @@ public static class GatewayApplicationBuilderExtensions
                 }
                 finally
                 {
-                    // Released on every path — an abort or an upstream throw must not leak the
-                    // reservation, or the ceiling ratchets down until the gateway 503s permanently.
-                    budget.Release(captureBytes);
+                    budget.ReleaseRam(captureBytes);
                 }
+            });
+        }
+
+        if (route.StreamOnly || (!readsBody && !canRetry))
+        {
+            chain.Use(async (context, next) =>
+            {
+                SetMaxRequestBodySize(context, route, gatewayOptions);
+                await next(context);
             });
         }
         else
@@ -392,29 +340,12 @@ public static class GatewayApplicationBuilderExtensions
             feature.MaxRequestBodySize = maxBodyBytes == 0 ? null : maxBodyBytes;
     }
 
-    // ---------------------------------------------------------------------------
-    // Buffer the request body so the retry loop can rewind it and body-reading plugins get a
-    // seekable stream, enforcing the per-route size limit (413) and the gateway-wide buffering
-    // budget (503).
-    //
-    // Buffering degrades in two tiers rather than one cliff. While the memory tier
-    // (MaxMemoryBufferedBodyBytes) has headroom a body buffers in RAM, which measures ~3-5x faster
-    // than spilling. Once it is full, further bodies spill to a temp file from the first byte —
-    // slower, but still served — until the combined budget (MaxTotalBufferedBodyBytes) is gone and
-    // the gateway sheds with a 503.
-    //
-    // The per-request RAM ceiling can be generous (up to 1 MiB) precisely because the memory tier
-    // caps the aggregate. Above 1 MiB, FileBufferingReadStream stops renting from ArrayPool and
-    // grows a bare MemoryStream by doubling — ~2x the body allocated on the LOH — which is why the
-    // threshold is clamped there and not left to the operator.
-    //
-    // Non-idempotent methods on retry-only routes stream: the retry loop can never replay them,
-    // so their buffer would have no consumer.
-    // ---------------------------------------------------------------------------
     private static Func<HttpContext, RequestDelegate, Task> BufferRequestBody(
         GatewayRoute route, GatewayOptions gatewayOptions, bool readsBody) => async (context, next) =>
     {
-        if (!readsBody && !Proxy.UpstreamRetry.IsIdempotent(context.Request.Method))
+        if (!readsBody
+            && !Proxy.UpstreamRetry.IsIdempotent(context.Request.Method)
+            && route.Retry is not { MaxAttempts: > 1, RetryNonIdempotent: true })
         {
             SetMaxRequestBodySize(context, route, gatewayOptions);
             await next(context);
@@ -438,36 +369,28 @@ public static class GatewayApplicationBuilderExtensions
             await context.Response.WriteAsync("Request body exceeds the maximum allowed size.");
             return;
         }
-        if (budget.MaxTotalBytes > 0 && context.Request.ContentLength > budget.MaxTotalBytes)
+        var largestBudget = Math.Max(budget.MaxRamBytes, budget.MaxDiskBytes);
+        if (largestBudget > 0 && context.Request.ContentLength > largestBudget)
         {
             context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
             await context.Response.WriteAsync("The gateway is at capacity buffering request bodies. Retry shortly.");
             return;
         }
 
-        // Ask the memory tier for this body's RAM ceiling. The reservation covers the buffer's
-        // capacity, not its fill: FileBufferingReadStream rents the whole threshold from ArrayPool
-        // at construction and hands it back the instant it spills. A refusal is routine, not an
-        // error — threshold 0 means "spill from the first byte", which is the disk tier doing its
-        // job, and the request is still served.
-        var configuredThreshold = Math.Clamp(gatewayOptions.RequestLimits.MemoryBufferThresholdBytes, 4 * 1024, 1024 * 1024);
+        var configuredThreshold = Math.Clamp(
+            gatewayOptions.RequestLimits.RamBufferThresholdBytes, 4 * 1024, int.MaxValue);
 
-        // A body Content-Length already proves cannot fit the RAM tier gains nothing from a buffer:
-        // it would rent the threshold, fill it, then copy every one of those bytes to disk anyway.
-        // Spilling from the first byte skips that copy and leaves the tier for bodies that can
-        // actually be served out of it. Chunked bodies have no Content-Length, so they still try —
-        // being wrong there just costs the copy this branch avoids.
         var tooBigForMemory = context.Request.ContentLength > configuredThreshold;
 
         var memoryThreshold = tooBigForMemory
             ? 0
-            : (int)Math.Min(configuredThreshold, budget.MemoryHeadroom);
+            : (int)Math.Min(configuredThreshold, budget.RamHeadroom);
 
-        long memoryReserved = 0;
-        if (memoryThreshold >= 4 * 1024 && budget.TryReserveMemory(memoryThreshold))
-            memoryReserved = memoryThreshold;
+        long ramReserved = 0;
+        if (memoryThreshold >= 4 * 1024 && budget.TryReserveRam(memoryThreshold))
+            ramReserved = memoryThreshold;
         else
-            memoryThreshold = 0; // known too big, no headroom, or the tier is off — spill this one
+            memoryThreshold = 0;
 
         var spillDirectory = string.IsNullOrWhiteSpace(gatewayOptions.RequestLimits.SpillDirectory)
             ? Path.GetTempPath()
@@ -476,7 +399,8 @@ public static class GatewayApplicationBuilderExtensions
         var buffered = new Microsoft.AspNetCore.WebUtilities.FileBufferingReadStream(
             context.Request.Body, memoryThreshold, bufferLimit: null, spillDirectory);
         var scratch  = System.Buffers.ArrayPool<byte>.Shared.Rent(64 * 1024);
-        long reserved = 0;
+        long diskReserved = 0;
+        var  spilled      = false;
         try
         {
             long total = 0;
@@ -490,26 +414,32 @@ public static class GatewayApplicationBuilderExtensions
                     return;
                 }
 
-                // The budget bounds bytes buffered concurrently gateway-wide (memory + spill),
-                // keeping the 503 load-shed behavior as the backstop.
-                if (!budget.TryReserve(read))
-                {
-                    context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                    await context.Response.WriteAsync("The gateway is at capacity buffering request bodies. Retry shortly.");
-                    return;
-                }
-
-                reserved += read;
                 total += read;
 
-                // The body outgrew its RAM ceiling: FileBufferingReadStream has copied everything to
-                // the temp file and returned the rented buffer to the pool, so that RAM is genuinely
-                // free — hand it back to the tier so the next request can use it. The bytes stay
-                // counted against the total; only the tier holding them changed.
-                if (memoryReserved > 0 && !buffered.InMemory)
+                if (!spilled && !buffered.InMemory)
                 {
-                    budget.ReleaseMemory(memoryReserved);
-                    memoryReserved = 0;
+                    if (!budget.TryReserveDisk(total))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                        await context.Response.WriteAsync("The gateway is at capacity buffering request bodies. Retry shortly.");
+                        return;
+                    }
+
+                    spilled       = true;
+                    diskReserved  = total;
+                    budget.ReleaseRam(ramReserved);
+                    ramReserved   = 0;
+                }
+                else if (spilled)
+                {
+                    if (!budget.TryReserveDisk(read))
+                    {
+                        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                        await context.Response.WriteAsync("The gateway is at capacity buffering request bodies. Retry shortly.");
+                        return;
+                    }
+
+                    diskReserved += read;
                 }
             }
 
@@ -521,9 +451,9 @@ public static class GatewayApplicationBuilderExtensions
         finally
         {
             System.Buffers.ArrayPool<byte>.Shared.Return(scratch);
-            budget.Release(reserved);
-            budget.ReleaseMemory(memoryReserved); // no-op if the spill already handed it back
-            await buffered.DisposeAsync(); // deletes the spill file, if any
+            budget.ReleaseDisk(diskReserved);
+            budget.ReleaseRam(ramReserved);
+            await buffered.DisposeAsync();
         }
     };
 
@@ -546,20 +476,11 @@ public static class GatewayApplicationBuilderExtensions
     }
 #pragma warning restore CA2213
 
-    // ---------------------------------------------------------------------------
-    // Admin API — POST /admin/routes/reload, DELETE /admin/cache/{routeId}
-    // Registered as Use() middleware BEFORE the gateway's endpoints.
-    // Disabled entirely when Gateway:AdminKeyHash is null or empty.
-    // The incoming X-Admin-Key header value is SHA-256 hashed before comparison —
-    // the raw secret is never stored in config.
-    // ---------------------------------------------------------------------------
     private static void MapAdminApi(WebApplication app, string? adminKeyHash, string routesPath)
     {
         if (string.IsNullOrWhiteSpace(adminKeyHash))
             return;
 
-        // Decoded once at startup: a malformed Gateway:AdminKeyHash should fail the gateway, not
-        // every admin request. FixedTimeEquals also needs the raw bytes, not the hex text.
         byte[] expectedKeyHash;
         try
         {
@@ -584,9 +505,6 @@ public static class GatewayApplicationBuilderExtensions
                 return;
             }
 
-            // FixedTimeEquals, not string.Equals: this is the only endpoint that takes a secret,
-            // and an ordinary comparison returns as soon as two bytes differ. That timing signal
-            // is enough to recover the expected hash byte by byte over many requests.
             var authorized = ctx.Request.Headers.TryGetValue("X-Admin-Key", out var key)
                 && CryptographicOperations.FixedTimeEquals(
                        SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key.ToString())),
@@ -599,7 +517,6 @@ public static class GatewayApplicationBuilderExtensions
                 return;
             }
 
-            // DELETE /admin/cache/{routeId} — flush a route's cached responses.
             if (ctx.Request.Method == "DELETE"
                 && ctx.Request.Path.StartsWithSegments("/admin/cache", out var rest)
                 && rest.HasValue && rest.Value!.Trim('/') is { Length: > 0 } routeId)
@@ -615,7 +532,6 @@ public static class GatewayApplicationBuilderExtensions
                 return;
             }
 
-            // POST /admin/routes/reload — everything below handles the reload.
             if (ctx.Request.Method != "POST"
                 || !ctx.Request.Path.StartsWithSegments("/admin/routes/reload"))
             {
@@ -633,9 +549,6 @@ public static class GatewayApplicationBuilderExtensions
             {
                 parsedRoutes = GatewayRoutesConfiguration.Parse(body);
                 parsedRoutes.Validate();
-                // Same gate as startup: reject a table naming an unregistered load-balancing
-                // policy or plugin, or a plugin config that does not parse — nothing is swapped
-                // on failure.
                 ValidateRouteTable(ctx.RequestServices, parsedRoutes);
             }
             catch (Exception ex)
@@ -648,9 +561,6 @@ public static class GatewayApplicationBuilderExtensions
                 return;
             }
 
-            // Atomic swap (O4): write to a temp file in the same directory, then rename over
-            // the target. routes.json is therefore never left partially written — a crash
-            // mid-write leaves the old, valid file intact rather than corrupt config.
             var tempPath = routesPath + ".tmp-" + Guid.NewGuid().ToString("N");
             try
             {
@@ -663,8 +573,6 @@ public static class GatewayApplicationBuilderExtensions
                 throw;
             }
 
-            // Audit trail (O5): structured log + counter + span event, so who reloaded what
-            // and when is observable.
             var reloadLogger = ctx.RequestServices.GetRequiredService<ILoggerFactory>()
                 .CreateLogger("ConduitSharp.Gateway.Admin");
             var remoteIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -679,9 +587,6 @@ public static class GatewayApplicationBuilderExtensions
                     ["client.address"]           = remoteIp,
                 }));
 
-            // Hot swap: compile chains and rebuild YARP's route/cluster config in place — no host
-            // restart, in-flight requests unaffected. The shared GatewayRoutesConfiguration list
-            // is refreshed so /readyz and other readers see the new table.
             ctx.RequestServices.GetRequiredService<Proxy.GatewayRouteTable>().Load(parsedRoutes);
             ctx.RequestServices.GetRequiredService<GatewayRoutesConfiguration>()
                 .ReplaceRoutes(parsedRoutes.Routes);
@@ -691,13 +596,6 @@ public static class GatewayApplicationBuilderExtensions
         });
     }
 
-    // ---------------------------------------------------------------------------
-    // Gateway-owned health endpoints (answered by the gateway itself, never proxied):
-    //   /healthz — liveness: the process is up.
-    //   /readyz  — readiness: a route table is loaded and the gateway can serve.
-    // Deliberately independent of upstream reachability — a downstream blip must not
-    // pull every gateway replica out of rotation (correlated-failure anti-pattern).
-    // ---------------------------------------------------------------------------
     private static void MapHealthEndpoints(WebApplication app)
     {
         app.Use(async (ctx, next) =>

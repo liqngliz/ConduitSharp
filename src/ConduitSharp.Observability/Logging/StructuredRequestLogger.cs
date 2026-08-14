@@ -1,3 +1,4 @@
+using ConduitSharp.Core.Logging;
 using ConduitSharp.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -26,9 +27,9 @@ public sealed class StructuredRequestLogger(ILogger<StructuredRequestLogger> log
     {
         var log = observation.StatusCode >= 500 ? _logError : _logCompleted;
         log(logger,
-            observation.RequestId,
-            observation.Method,
-            observation.Path,
+            observation.RequestId.ForLog(),
+            observation.Method.ForLog(),
+            observation.Path.ForLog(),
             observation.RouteId,
             observation.StatusCode,
             observation.DurationMs,

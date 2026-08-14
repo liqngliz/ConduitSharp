@@ -23,12 +23,15 @@ packages/
 !.config/
 !.gitattributes
 !.github/
+!.dockerignore
 
 alt-*
 
 
 # Runtime artefacts
 logs/
+temp_*
+temp_clone_*
 examples/LegacyGateway/logs/
 examples/LegacyGateway/bin/
 examples/LegacyGateway/.pid-*
@@ -37,6 +40,7 @@ examples/EmbeddedGateway/gateway/plugins/
 # mTLS e2e generated certs (throwaway, regenerated each run)
 tests/mtls-e2e/certs/
 docs/planning/ENTERPRISE-Plan.md
+docs/planning/SPEND.MD
 BenchmarkDotNet.Artifacts/
 
 # Generated per-run by CertificateMaterial.Generate — throwaway test CA
@@ -44,3 +48,21 @@ tests/ConduitSharp.Mtls.E2E.Tests/assets/certs/
 /graph.json
 /lifeblood_context.md
 *.bak
+
+# React Dashboard & Spend Gateway
+node_modules/
+dist/
+dist-ssr/
+coverage/
+.env*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+examples/ConduitSharp.Spend/wwwroot/
+examples/ConduitSharp.Spend/logs/*
+!examples/ConduitSharp.Spend/logs/.gitkeep
+
+# npx wrapper: app/ is `dotnet publish` output, built by CI and by the local publish step
+npm/tokenflow/app/
+npm/tokenflow/*.tgz

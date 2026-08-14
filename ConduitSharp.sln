@@ -55,31 +55,31 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Mtls.E2E.Tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Gateway.AspNetCore.Swagger", "src\ConduitSharp.Gateway.AspNetCore.Swagger\ConduitSharp.Gateway.AspNetCore.Swagger.csproj", "{BF65693F-3C7B-4195-BA20-F9788F616A1E}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples-plugins", "examples-plugins", "{3C84A8F0-B9F0-4F6E-FCE9-8F763EA73978}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "plugins", "plugins", "{3C84A8F0-B9F0-4F6E-FCE9-8F763EA73978}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Cache.RedisProtocol", "examples\ConduitSharp.Cache.RedisProtocol\src\ConduitSharp.Cache.RedisProtocol\ConduitSharp.Cache.RedisProtocol.csproj", "{E4001814-A5A6-4D5E-94EA-143FEBA28293}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Cache.RedisProtocol", "plugins\ConduitSharp.Cache.RedisProtocol\src\ConduitSharp.Cache.RedisProtocol\ConduitSharp.Cache.RedisProtocol.csproj", "{E4001814-A5A6-4D5E-94EA-143FEBA28293}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Cache.RedisProtocol.Tests", "examples\ConduitSharp.Cache.RedisProtocol\tests\ConduitSharp.Cache.RedisProtocol.Tests\ConduitSharp.Cache.RedisProtocol.Tests.csproj", "{F5C46DE6-7090-4CB9-A781-440CD27BD8C6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Cache.RedisProtocol.Tests", "plugins\ConduitSharp.Cache.RedisProtocol\tests\ConduitSharp.Cache.RedisProtocol.Tests\ConduitSharp.Cache.RedisProtocol.Tests.csproj", "{F5C46DE6-7090-4CB9-A781-440CD27BD8C6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Cache.RedisProtocol.E2E.Tests", "examples\ConduitSharp.Cache.RedisProtocol\tests\ConduitSharp.Cache.RedisProtocol.E2E.Tests\ConduitSharp.Cache.RedisProtocol.E2E.Tests.csproj", "{94C1076D-6487-46FD-874E-1336A8B7474C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Cache.RedisProtocol.E2E.Tests", "plugins\ConduitSharp.Cache.RedisProtocol\tests\ConduitSharp.Cache.RedisProtocol.E2E.Tests\ConduitSharp.Cache.RedisProtocol.E2E.Tests.csproj", "{94C1076D-6487-46FD-874E-1336A8B7474C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.RateLimit.RedisProtocol", "examples\ConduitSharp.RateLimit.RedisProtocol\src\ConduitSharp.RateLimit.RedisProtocol\ConduitSharp.RateLimit.RedisProtocol.csproj", "{417249FE-94D9-4459-8185-A2318F7EAD7B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.RateLimit.RedisProtocol", "plugins\ConduitSharp.RateLimit.RedisProtocol\src\ConduitSharp.RateLimit.RedisProtocol\ConduitSharp.RateLimit.RedisProtocol.csproj", "{417249FE-94D9-4459-8185-A2318F7EAD7B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.RateLimit.RedisProtocol.Tests", "examples\ConduitSharp.RateLimit.RedisProtocol\tests\ConduitSharp.RateLimit.RedisProtocol.Tests\ConduitSharp.RateLimit.RedisProtocol.Tests.csproj", "{F6BB2891-46A6-481B-82D9-2C2CAE0F8F21}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.RateLimit.RedisProtocol.Tests", "plugins\ConduitSharp.RateLimit.RedisProtocol\tests\ConduitSharp.RateLimit.RedisProtocol.Tests\ConduitSharp.RateLimit.RedisProtocol.Tests.csproj", "{F6BB2891-46A6-481B-82D9-2C2CAE0F8F21}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.PowerShell", "examples\ConduitSharp.Plugin.PowerShell\src\ConduitSharp.Plugin.PowerShell\ConduitSharp.Plugin.PowerShell.csproj", "{E26485D8-BA86-4147-81E9-FFCB172D5DCC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.PowerShell", "plugins\ConduitSharp.Plugin.PowerShell\src\ConduitSharp.Plugin.PowerShell\ConduitSharp.Plugin.PowerShell.csproj", "{E26485D8-BA86-4147-81E9-FFCB172D5DCC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.PowerShell.Tests", "examples\ConduitSharp.Plugin.PowerShell\tests\ConduitSharp.Plugin.PowerShell.Tests\ConduitSharp.Plugin.PowerShell.Tests.csproj", "{6021BCC5-5DB0-4B21-B93F-717AAC50DB37}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.PowerShell.Tests", "plugins\ConduitSharp.Plugin.PowerShell\tests\ConduitSharp.Plugin.PowerShell.Tests\ConduitSharp.Plugin.PowerShell.Tests.csproj", "{6021BCC5-5DB0-4B21-B93F-717AAC50DB37}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ConduitSharp.Plugin.BodyCapture", "ConduitSharp.Plugin.BodyCapture", "{F3612979-AE75-9940-6C45-9B9BEED7042E}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{67FDA779-AAEE-1DF9-F180-1BC7F85F23E6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.BodyCapture", "examples\ConduitSharp.Plugin.BodyCapture\src\ConduitSharp.Plugin.BodyCapture\ConduitSharp.Plugin.BodyCapture.csproj", "{0D68E96A-0159-4458-9FE8-767E1077A6BD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.BodyCapture", "plugins\ConduitSharp.Plugin.BodyCapture\src\ConduitSharp.Plugin.BodyCapture\ConduitSharp.Plugin.BodyCapture.csproj", "{0D68E96A-0159-4458-9FE8-767E1077A6BD}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{9A62FE96-42C0-87A0-E436-03A614B91EC5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.BodyCapture.Tests", "examples\ConduitSharp.Plugin.BodyCapture\tests\ConduitSharp.Plugin.BodyCapture.Tests\ConduitSharp.Plugin.BodyCapture.Tests.csproj", "{416AD227-3D48-4DD8-AEA5-80D1FB250980}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.BodyCapture.Tests", "plugins\ConduitSharp.Plugin.BodyCapture\tests\ConduitSharp.Plugin.BodyCapture.Tests\ConduitSharp.Plugin.BodyCapture.Tests.csproj", "{416AD227-3D48-4DD8-AEA5-80D1FB250980}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.EmbeddedGateway.E2E.Tests", "tests\ConduitSharp.EmbeddedGateway.E2E.Tests\ConduitSharp.EmbeddedGateway.E2E.Tests.csproj", "{ADBB6D22-14DC-454B-8AF4-2ECCA43A6468}"
 EndProject
@@ -93,11 +93,11 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ConduitSharp.RateLimit.Slid
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{789C2024-06D1-DEE5-23BB-134311AE9B9F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.RateLimit.SlidingWindow", "examples\ConduitSharp.RateLimit.SlidingWindow\src\ConduitSharp.RateLimit.SlidingWindow\ConduitSharp.RateLimit.SlidingWindow.csproj", "{AD8AA1C6-81C0-4DDD-89AE-4D6E0B3E59F0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.RateLimit.SlidingWindow", "plugins\ConduitSharp.RateLimit.SlidingWindow\src\ConduitSharp.RateLimit.SlidingWindow\ConduitSharp.RateLimit.SlidingWindow.csproj", "{AD8AA1C6-81C0-4DDD-89AE-4D6E0B3E59F0}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{51C5B588-6224-959D-FF44-4E50299BCB63}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.RateLimit.SlidingWindow.Tests", "examples\ConduitSharp.RateLimit.SlidingWindow\tests\ConduitSharp.RateLimit.SlidingWindow.Tests\ConduitSharp.RateLimit.SlidingWindow.Tests.csproj", "{0267C03B-629E-40BA-90A5-6F3587E76CE1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.RateLimit.SlidingWindow.Tests", "plugins\ConduitSharp.RateLimit.SlidingWindow\tests\ConduitSharp.RateLimit.SlidingWindow.Tests\ConduitSharp.RateLimit.SlidingWindow.Tests.csproj", "{0267C03B-629E-40BA-90A5-6F3587E76CE1}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Architecture.Tests", "tests\ConduitSharp.Architecture.Tests\ConduitSharp.Architecture.Tests.csproj", "{F22AAFE7-BAB1-44F0-9CC7-DBA95233CABB}"
 EndProject
@@ -105,11 +105,41 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ConduitSharp.Plugin.BodyCap
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0D6AA347-D46F-C6F9-3140-87E9D4E9B1CC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.BodyCaptureToFile.Tests", "examples\ConduitSharp.Plugin.BodyCaptureToFile\tests\ConduitSharp.Plugin.BodyCaptureToFile.Tests\ConduitSharp.Plugin.BodyCaptureToFile.Tests.csproj", "{8BC4CF4D-CCAB-4BB2-94F0-FB662BD62BBF}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.BodyCaptureToFile.Tests", "plugins\ConduitSharp.Plugin.BodyCaptureToFile\tests\ConduitSharp.Plugin.BodyCaptureToFile.Tests\ConduitSharp.Plugin.BodyCaptureToFile.Tests.csproj", "{8BC4CF4D-CCAB-4BB2-94F0-FB662BD62BBF}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{CAB0FF4C-A2C1-AE03-78CC-47722EE5850D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.BodyCaptureToFile", "examples\ConduitSharp.Plugin.BodyCaptureToFile\src\ConduitSharp.Plugin.BodyCaptureToFile\ConduitSharp.Plugin.BodyCaptureToFile.csproj", "{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.BodyCaptureToFile", "plugins\ConduitSharp.Plugin.BodyCaptureToFile\src\ConduitSharp.Plugin.BodyCaptureToFile\ConduitSharp.Plugin.BodyCaptureToFile.csproj", "{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.BodyCaptureMemory.E2E.Tests", "tests\ConduitSharp.BodyCaptureMemory.E2E.Tests\ConduitSharp.BodyCaptureMemory.E2E.Tests.csproj", "{62CA240B-C066-47C1-BAD8-0503CF1865FD}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ConduitSharp.Plugin.OrderProbe", "ConduitSharp.Plugin.OrderProbe", "{0D965788-7846-51C4-7F91-9E030A307260}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{19B57BD1-6F61-9F30-67EB-49408CED3262}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.OrderProbe", "tests\ConduitSharp.Plugin.OrderProbe\src\ConduitSharp.Plugin.OrderProbe\ConduitSharp.Plugin.OrderProbe.csproj", "{844E3EE0-07E4-43A2-B960-245C1F48EAEF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.PluginChain.E2E.Tests", "tests\ConduitSharp.PluginChain.E2E.Tests\ConduitSharp.PluginChain.E2E.Tests.csproj", "{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ConduitSharp.Plugin.TokenRateLimit", "ConduitSharp.Plugin.TokenRateLimit", "{573156D9-DC92-F6F0-A5CB-DC5BE47570A8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{7E1DF31E-FD42-9100-0A32-AA9242D85E37}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.TokenRateLimit", "plugins\ConduitSharp.Plugin.TokenRateLimit\src\ConduitSharp.Plugin.TokenRateLimit\ConduitSharp.Plugin.TokenRateLimit.csproj", "{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{6B06E714-D1D2-8203-9308-0D916264B5C8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.TokenRateLimit.Tests", "plugins\ConduitSharp.Plugin.TokenRateLimit\tests\ConduitSharp.Plugin.TokenRateLimit.Tests\ConduitSharp.Plugin.TokenRateLimit.Tests.csproj", "{4322748F-22D5-4191-BDC0-61DFA92EFFE5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.TokenSpend", "plugins\ConduitSharp.Plugin.TokenSpend\src\ConduitSharp.Plugin.TokenSpend\ConduitSharp.Plugin.TokenSpend.csproj", "{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Plugin.TokenSpend.Tests", "plugins\ConduitSharp.Plugin.TokenSpend\tests\ConduitSharp.Plugin.TokenSpend.Tests\ConduitSharp.Plugin.TokenSpend.Tests.csproj", "{2317DC94-CE43-4B36-9EA9-76027DEB6914}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmbeddedGatewayPrefixed", "examples\EmbeddedGatewayPrefixed\EmbeddedGatewayPrefixed.csproj", "{35B46353-8066-4BA9-9559-1CD12385E5BC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeMetrics", "tools\CodeMetrics\CodeMetrics.csproj", "{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConduitSharp.Spend", "examples\ConduitSharp.Spend\ConduitSharp.Spend.csproj", "{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -577,6 +607,126 @@ Global
 		{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C}.Release|x64.Build.0 = Release|Any CPU
 		{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C}.Release|x86.ActiveCfg = Release|Any CPU
 		{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C}.Release|x86.Build.0 = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|x64.Build.0 = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Debug|x86.Build.0 = Debug|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|x64.ActiveCfg = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|x64.Build.0 = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|x86.ActiveCfg = Release|Any CPU
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD}.Release|x86.Build.0 = Release|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Debug|x64.Build.0 = Debug|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Debug|x86.Build.0 = Debug|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Release|x64.ActiveCfg = Release|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Release|x64.Build.0 = Release|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Release|x86.ActiveCfg = Release|Any CPU
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF}.Release|x86.Build.0 = Release|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Debug|x64.Build.0 = Debug|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Debug|x86.Build.0 = Debug|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Release|x64.ActiveCfg = Release|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Release|x64.Build.0 = Release|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Release|x86.ActiveCfg = Release|Any CPU
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78}.Release|x86.Build.0 = Release|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Debug|x64.Build.0 = Debug|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Debug|x86.Build.0 = Debug|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Release|x64.ActiveCfg = Release|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Release|x64.Build.0 = Release|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Release|x86.ActiveCfg = Release|Any CPU
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB}.Release|x86.Build.0 = Release|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Debug|x64.Build.0 = Debug|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Debug|x86.Build.0 = Debug|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Release|x64.ActiveCfg = Release|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Release|x64.Build.0 = Release|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Release|x86.ActiveCfg = Release|Any CPU
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5}.Release|x86.Build.0 = Release|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Debug|x64.Build.0 = Debug|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Debug|x86.Build.0 = Debug|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Release|x64.ActiveCfg = Release|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Release|x64.Build.0 = Release|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Release|x86.ActiveCfg = Release|Any CPU
+		{C2CDF202-2AB7-48F0-ACD9-5AF77D51503F}.Release|x86.Build.0 = Release|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Debug|x64.Build.0 = Debug|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Debug|x86.Build.0 = Debug|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Release|x64.ActiveCfg = Release|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Release|x64.Build.0 = Release|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Release|x86.ActiveCfg = Release|Any CPU
+		{2317DC94-CE43-4B36-9EA9-76027DEB6914}.Release|x86.Build.0 = Release|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Debug|x64.Build.0 = Debug|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Debug|x86.Build.0 = Debug|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Release|x64.ActiveCfg = Release|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Release|x64.Build.0 = Release|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Release|x86.ActiveCfg = Release|Any CPU
+		{35B46353-8066-4BA9-9559-1CD12385E5BC}.Release|x86.Build.0 = Release|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Debug|x64.Build.0 = Debug|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Debug|x86.Build.0 = Debug|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Release|x64.ActiveCfg = Release|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Release|x64.Build.0 = Release|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Release|x86.ActiveCfg = Release|Any CPU
+		{A1B2F751-BE05-4CB6-946A-4762A6DEFDA0}.Release|x86.Build.0 = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|x64.Build.0 = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Debug|x86.Build.0 = Debug|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|x64.ActiveCfg = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|x64.Build.0 = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|x86.ActiveCfg = Release|Any CPU
+		{D81AB84B-4043-46A5-9A7E-9BB898A6C9E1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -612,7 +762,7 @@ Global
 		{F6BB2891-46A6-481B-82D9-2C2CAE0F8F21} = {3C84A8F0-B9F0-4F6E-FCE9-8F763EA73978}
 		{E26485D8-BA86-4147-81E9-FFCB172D5DCC} = {3C84A8F0-B9F0-4F6E-FCE9-8F763EA73978}
 		{6021BCC5-5DB0-4B21-B93F-717AAC50DB37} = {3C84A8F0-B9F0-4F6E-FCE9-8F763EA73978}
-		{F3612979-AE75-9940-6C45-9B9BEED7042E} = {F4A3C1D2-8B7E-4F6A-9C3E-2D1F5B8A7E4C}
+		{F3612979-AE75-9940-6C45-9B9BEED7042E} = {3C84A8F0-B9F0-4F6E-FCE9-8F763EA73978}
 		{67FDA779-AAEE-1DF9-F180-1BC7F85F23E6} = {F3612979-AE75-9940-6C45-9B9BEED7042E}
 		{0D68E96A-0159-4458-9FE8-767E1077A6BD} = {67FDA779-AAEE-1DF9-F180-1BC7F85F23E6}
 		{9A62FE96-42C0-87A0-E436-03A614B91EC5} = {F3612979-AE75-9940-6C45-9B9BEED7042E}
@@ -620,16 +770,26 @@ Global
 		{ADBB6D22-14DC-454B-8AF4-2ECCA43A6468} = {8AAD7522-76A2-4A17-9AAF-DF969D591643}
 		{BD06427E-B0E7-44F0-9797-F71B1039CBEA} = {8AAD7522-76A2-4A17-9AAF-DF969D591643}
 		{16408283-559D-45EA-B07D-8C84680D53A2} = {66320409-64EC-F7C5-3DEF-65E7510DAAD1}
-		{5A850638-BA26-96B3-E7B0-EF8B0E9CFB89} = {F4A3C1D2-8B7E-4F6A-9C3E-2D1F5B8A7E4C}
+		{5A850638-BA26-96B3-E7B0-EF8B0E9CFB89} = {3C84A8F0-B9F0-4F6E-FCE9-8F763EA73978}
 		{789C2024-06D1-DEE5-23BB-134311AE9B9F} = {5A850638-BA26-96B3-E7B0-EF8B0E9CFB89}
 		{AD8AA1C6-81C0-4DDD-89AE-4D6E0B3E59F0} = {789C2024-06D1-DEE5-23BB-134311AE9B9F}
 		{51C5B588-6224-959D-FF44-4E50299BCB63} = {5A850638-BA26-96B3-E7B0-EF8B0E9CFB89}
 		{0267C03B-629E-40BA-90A5-6F3587E76CE1} = {51C5B588-6224-959D-FF44-4E50299BCB63}
 		{F22AAFE7-BAB1-44F0-9CC7-DBA95233CABB} = {8AAD7522-76A2-4A17-9AAF-DF969D591643}
-		{2475FC54-10BF-35D2-8917-66ADC99B5168} = {F4A3C1D2-8B7E-4F6A-9C3E-2D1F5B8A7E4C}
+		{2475FC54-10BF-35D2-8917-66ADC99B5168} = {3C84A8F0-B9F0-4F6E-FCE9-8F763EA73978}
 		{0D6AA347-D46F-C6F9-3140-87E9D4E9B1CC} = {2475FC54-10BF-35D2-8917-66ADC99B5168}
 		{8BC4CF4D-CCAB-4BB2-94F0-FB662BD62BBF} = {0D6AA347-D46F-C6F9-3140-87E9D4E9B1CC}
 		{CAB0FF4C-A2C1-AE03-78CC-47722EE5850D} = {2475FC54-10BF-35D2-8917-66ADC99B5168}
 		{AAB139E6-3C02-4EC0-AA3B-BDCAD7B42F8C} = {CAB0FF4C-A2C1-AE03-78CC-47722EE5850D}
+		{62CA240B-C066-47C1-BAD8-0503CF1865FD} = {8AAD7522-76A2-4A17-9AAF-DF969D591643}
+		{0D965788-7846-51C4-7F91-9E030A307260} = {8AAD7522-76A2-4A17-9AAF-DF969D591643}
+		{19B57BD1-6F61-9F30-67EB-49408CED3262} = {0D965788-7846-51C4-7F91-9E030A307260}
+		{844E3EE0-07E4-43A2-B960-245C1F48EAEF} = {19B57BD1-6F61-9F30-67EB-49408CED3262}
+		{D750CEB6-0B6F-46E7-9248-C0B8852F8D78} = {8AAD7522-76A2-4A17-9AAF-DF969D591643}
+		{573156D9-DC92-F6F0-A5CB-DC5BE47570A8} = {3C84A8F0-B9F0-4F6E-FCE9-8F763EA73978}
+		{7E1DF31E-FD42-9100-0A32-AA9242D85E37} = {573156D9-DC92-F6F0-A5CB-DC5BE47570A8}
+		{B2C13EA1-0D6F-4BC9-A006-AECE36920BCB} = {7E1DF31E-FD42-9100-0A32-AA9242D85E37}
+		{6B06E714-D1D2-8203-9308-0D916264B5C8} = {573156D9-DC92-F6F0-A5CB-DC5BE47570A8}
+		{4322748F-22D5-4191-BDC0-61DFA92EFFE5} = {6B06E714-D1D2-8203-9308-0D916264B5C8}
 	EndGlobalSection
 EndGlobal

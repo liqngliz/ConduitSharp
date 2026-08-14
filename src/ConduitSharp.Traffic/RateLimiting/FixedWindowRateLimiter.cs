@@ -1,20 +1,12 @@
 namespace ConduitSharp.Traffic.RateLimiting;
 
 /// <summary>
-/// Fixed-window rate limiter — the default algorithm.
+/// Fixed-window rate limiter, the default algorithm. Each key gets <c>maxRequests</c> permits per
+/// <c>windowSeconds</c>-second window, aligned to the Unix epoch, counted in an
+/// <see cref="IRateLimitStore"/> so a distributed store shares the quota across replicas.
 ///
-/// Each unique key gets <c>maxRequests</c> permits per <c>windowSeconds</c>-second window, with
-/// boundaries aligned to the Unix epoch (a 60 s window resets on the minute). Counting is
-/// delegated to an <see cref="IRateLimitStore"/>, so swapping in a distributed store (Redis)
-/// shares the quota across replicas without touching this class.
-///
-/// The trade: because windows are hard boundaries, a caller can spend a full quota at the end of
-/// one window and another at the start of the next — up to 2x the nominal rate across that seam.
-/// That is the price of O(1) state per key. The SlidingWindow example trades memory for a limit
-/// that holds across every instant.
-///
-/// Stateless and thread-safe: window and quota arrive per call, and all mutable state lives in
-/// the store.
+/// <para>Stateless and thread-safe: window and quota arrive per call and all mutable state lives
+/// in the store.</para>
 /// </summary>
 public sealed class FixedWindowRateLimiter : IRateLimiter
 {
@@ -42,8 +34,6 @@ public sealed class FixedWindowRateLimiter : IRateLimiter
         if (_store.TryAcquire(key, windowId, windowSeconds, maxRequests))
             return RateLimitDecision.Allow;
 
-        // Seconds until this window rolls over — not the full window length. Boundaries are
-        // epoch-aligned, so the answer comes from the clock alone.
         return RateLimitDecision.Deny(windowSeconds - now % windowSeconds);
     }
 

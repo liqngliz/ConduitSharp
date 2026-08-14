@@ -2,17 +2,34 @@
   "routes": [
     {
       "id": "bench-logging-file",
-      "description": "Logging benchmark — captures request body to file asynchronously.",
-      "route": { "match": { "path": "/{**catch-all}" } },
+      "description": "Logging benchmark \u2014 captures request body to file asynchronously.",
+      "route": {
+        "match": {
+          "path": "/{**catch-all}"
+        }
+      },
       "cluster": {
         "loadBalancingPolicy": "RoundRobin",
         "destinations": {
-          "node-0": { "address": "http://upstream:8081" },
-          "node-1": { "address": "http://upstream:8082" }
+          "node-0": {
+            "address": "http://upstream:8081"
+          },
+          "node-1": {
+            "address": "http://upstream:8082"
+          }
         }
       },
       "plugins": [
-        { "name": "custom", "variant": "body-capture-file", "config": { "logPath": "/tmp/envoy-logs/conduit.json", "maxSize": 4096 } }
+        {
+          "name": "custom",
+          "variant": "body-capture-file",
+          "config": {
+            "logPath": "/tmp/envoy-logs/conduit.json",
+            "request": {
+              "maxSize": 4096
+            }
+          }
+        }
       ]
     }
   ]

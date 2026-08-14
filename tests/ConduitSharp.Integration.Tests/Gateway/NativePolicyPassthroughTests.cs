@@ -19,7 +19,6 @@ namespace ConduitSharp.Integration.Tests.Gateway;
 /// </summary>
 public sealed class NativePolicyPassthroughTests : IAsyncLifetime
 {
-    // Minimal scheme: authenticates only when X-Test-User is present, with that name as a claim.
     private sealed class HeaderAuthHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
         : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
@@ -81,7 +80,7 @@ public sealed class NativePolicyPassthroughTests : IAsyncLifetime
 
         var anonymous = await client.GetAsync("/secure/data");
         Assert.Equal(System.Net.HttpStatusCode.Unauthorized, anonymous.StatusCode);
-        Assert.Empty(_upstream.ReceivedRequests);   // rejected before the forward
+        Assert.Empty(_upstream.ReceivedRequests);
 
         var request = new HttpRequestMessage(HttpMethod.Get, "/secure/data");
         request.Headers.Add("X-Test-User", "alice");

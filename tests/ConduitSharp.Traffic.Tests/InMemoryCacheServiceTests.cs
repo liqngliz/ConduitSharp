@@ -13,10 +13,6 @@ public sealed class InMemoryCacheServiceTests
 
     private static string Text(CachedResponse response) => Encoding.UTF8.GetString(response.Body);
 
-    // -------------------------------------------------------------------------
-    // Miss
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task GetAsync_EmptyCache_ReturnsNull()
     {
@@ -24,10 +20,6 @@ public sealed class InMemoryCacheServiceTests
 
         Assert.Null(result);
     }
-
-    // -------------------------------------------------------------------------
-    // Hit
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task SetThenGet_ReturnsCachedEntry()
@@ -53,10 +45,6 @@ public sealed class InMemoryCacheServiceTests
         Assert.Equal("b-body", Text((await _cache.GetAsync("b"))!));
     }
 
-    // -------------------------------------------------------------------------
-    // Expired entry
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task GetAsync_ExpiredEntry_ReturnsNull()
     {
@@ -66,10 +54,6 @@ public sealed class InMemoryCacheServiceTests
 
         Assert.Null(result);
     }
-
-    // -------------------------------------------------------------------------
-    // Overwrite
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Set_OverwritesExistingKey()
@@ -81,10 +65,6 @@ public sealed class InMemoryCacheServiceTests
 
         Assert.Equal("new", Text(hit!));
     }
-
-    // -------------------------------------------------------------------------
-    // Remove (cache invalidation)
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Remove_DeletesEntry()
@@ -98,7 +78,7 @@ public sealed class InMemoryCacheServiceTests
     [Fact]
     public async Task Remove_MissingKey_IsNoOp()
     {
-        await _cache.RemoveAsync("never-set"); // must not throw
+        await _cache.RemoveAsync("never-set");
     }
 
     [Fact]
@@ -113,13 +93,8 @@ public sealed class InMemoryCacheServiceTests
         Assert.Equal(2, removed);
         Assert.Null(await _cache.GetAsync("route-a\0/x"));
         Assert.Null(await _cache.GetAsync("route-a\0/y"));
-        Assert.NotNull(await _cache.GetAsync("route-b\0/x")); // untouched
+        Assert.NotNull(await _cache.GetAsync("route-b\0/x"));
     }
-
-    // -------------------------------------------------------------------------
-    // Total-bytes cap — cache keys are attacker-controlled, so the cache must
-    // not grow without bound (mirrors the request-body budget).
-    // -------------------------------------------------------------------------
 
     private static long SizeOf(string key, string body) =>
         sizeof(char) * (key.Length + "text/plain".Length) + Encoding.UTF8.GetByteCount(body);
@@ -128,14 +103,13 @@ public sealed class InMemoryCacheServiceTests
     public async Task Set_OverBudget_EvictsEntryClosestToExpiry()
     {
         var body = new string('x', 100);
-        // Budget fits exactly two entries.
         var cache = new InMemoryCacheService(2 * SizeOf("k1", body));
 
-        await cache.SetAsync("k1", Response(200, body), TimeSpan.FromMinutes(1)); // expires first
+        await cache.SetAsync("k1", Response(200, body), TimeSpan.FromMinutes(1));
         await cache.SetAsync("k2", Response(200, body), TimeSpan.FromMinutes(10));
-        await cache.SetAsync("k3", Response(200, body), TimeSpan.FromMinutes(10)); // over budget
+        await cache.SetAsync("k3", Response(200, body), TimeSpan.FromMinutes(10));
 
-        Assert.Null(await cache.GetAsync("k1"));    // evicted (closest to expiry)
+        Assert.Null(await cache.GetAsync("k1"));
         Assert.NotNull(await cache.GetAsync("k2"));
         Assert.NotNull(await cache.GetAsync("k3"));
     }
@@ -149,7 +123,7 @@ public sealed class InMemoryCacheServiceTests
         await cache.SetAsync("huge", Response(200, new string('x', 10_000)), OneMinute);
 
         Assert.Null(await cache.GetAsync("huge"));
-        Assert.NotNull(await cache.GetAsync("small")); // untouched by the oversized write
+        Assert.NotNull(await cache.GetAsync("small"));
     }
 
     [Fact]
@@ -158,7 +132,6 @@ public sealed class InMemoryCacheServiceTests
         var body  = new string('x', 100);
         var cache = new InMemoryCacheService(4 * SizeOf("k000", body));
 
-        // Simulates ?x=1, ?x=2, … key stuffing: far more entries than the budget holds.
         for (var i = 0; i < 100; i++)
             await cache.SetAsync($"k{i:D3}", Response(200, body), OneMinute);
 
@@ -188,7 +161,6 @@ public sealed class InMemoryCacheServiceTests
         var body  = new string('x', 100);
         var cache = new InMemoryCacheService(2 * SizeOf("k1", body));
 
-        // Churn the same two keys: releases must balance reserves or writes start evicting.
         for (var i = 0; i < 20; i++)
         {
             await cache.SetAsync("k1", Response(200, body), OneMinute);
@@ -196,6 +168,6 @@ public sealed class InMemoryCacheServiceTests
             await cache.RemoveAsync("k2");
         }
 
-        Assert.NotNull(await cache.GetAsync("k1")); // never evicted — budget was never truly exceeded
+        Assert.NotNull(await cache.GetAsync("k1"));
     }
 }

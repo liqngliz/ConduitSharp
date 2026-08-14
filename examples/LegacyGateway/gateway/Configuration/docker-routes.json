@@ -2,19 +2,29 @@
   "routes": [
     {
       "id": "inventory-service",
-      "description": "Inventory API — API key auth, rate limited, round-robin across two nodes",
-      "circuitBreaker": { "threshold": 2, "cooldownMs": 30000 },
+      "description": "Inventory API \u2014 API key auth, rate limited, round-robin across two nodes",
+      "circuitBreaker": {
+        "threshold": 2,
+        "cooldownMs": 30000
+      },
       "route": {
         "match": {
           "path": "/api/inventory/{**rest}",
-          "methods": ["GET", "POST"]
+          "methods": [
+            "GET",
+            "POST"
+          ]
         }
       },
       "cluster": {
         "loadBalancingPolicy": "RoundRobin",
         "destinations": {
-          "node-0": { "address": "http://inventory-svc-1:5101" },
-          "node-1": { "address": "http://inventory-svc-2:5101" }
+          "node-0": {
+            "address": "http://inventory-svc-1:5101"
+          },
+          "node-1": {
+            "address": "http://inventory-svc-2:5101"
+          }
         },
         "httpRequest": {
           "activityTimeout": "00:00:05"
@@ -30,7 +40,9 @@
           "enabled": true,
           "config": {
             "header": "X-Api-Key",
-            "keys": ["demo-api-key-conduitsharp-example"]
+            "keys": [
+              "demo-api-key-conduitsharp-example"
+            ]
           }
         },
         {
@@ -48,7 +60,9 @@
           "order": 10,
           "enabled": true,
           "config": {
-            "maxSize": 1024
+            "request": {
+              "maxSize": 1024
+            }
           }
         },
         {
@@ -60,17 +74,22 @@
     },
     {
       "id": "order-service",
-      "description": "Order API — JWT (HS256) auth, forwarded to order service",
+      "description": "Order API \u2014 JWT (HS256) auth, forwarded to order service",
       "route": {
         "match": {
           "path": "/api/orders/{**rest}",
-          "methods": ["GET", "POST"]
+          "methods": [
+            "GET",
+            "POST"
+          ]
         }
       },
       "cluster": {
         "loadBalancingPolicy": "RoundRobin",
         "destinations": {
-          "node-0": { "address": "http://order-svc:5201" }
+          "node-0": {
+            "address": "http://order-svc:5201"
+          }
         },
         "httpRequest": {
           "activityTimeout": "00:00:05"
@@ -86,8 +105,8 @@
           "enabled": true,
           "config": {
             "signingKey": "ZGVtby1zaWduaW5nLWtleS1jb25kdWl0c2hhcnAtZXhhbXBsZS0zMmNo",
-            "issuer":     "conduitsharp-demo",
-            "audience":   "conduitsharp-demo"
+            "issuer": "conduitsharp-demo",
+            "audience": "conduitsharp-demo"
           }
         },
         {
@@ -96,7 +115,9 @@
           "order": 10,
           "enabled": true,
           "config": {
-            "maxSize": 1024
+            "request": {
+              "maxSize": 1024
+            }
           }
         },
         {
@@ -108,18 +129,23 @@
     },
     {
       "id": "upload-service",
-      "description": "Upload API — streamed directly without buffering; body-capture-streaming logs a bounded prefix off the tee",
+      "description": "Upload API \u2014 streamed directly without buffering; body-capture logs a bounded prefix off the tee",
       "route": {
         "match": {
           "path": "/api/upload/{**rest}",
-          "methods": ["POST", "PUT"]
+          "methods": [
+            "POST",
+            "PUT"
+          ]
         }
       },
       "streamOnly": true,
       "cluster": {
         "loadBalancingPolicy": "RoundRobin",
         "destinations": {
-          "node-0": { "address": "http://order-svc:5201" }
+          "node-0": {
+            "address": "http://order-svc:5201"
+          }
         },
         "httpRequest": {
           "activityTimeout": "00:00:15"
@@ -128,11 +154,13 @@
       "plugins": [
         {
           "name": "custom",
-          "variant": "body-capture-streaming",
+          "variant": "body-capture",
           "order": 10,
           "enabled": true,
           "config": {
-            "maxSize": 1024
+            "request": {
+              "maxSize": 1024
+            }
           }
         },
         {
@@ -144,11 +172,13 @@
     },
     {
       "id": "erp-report",
-      "description": "ERP erp report — JWT auth + role-based access, rate limited, cached 60s, executed via PowerShell plugin",
+      "description": "ERP erp report \u2014 JWT auth + role-based access, rate limited, cached 60s, executed via PowerShell plugin",
       "route": {
         "match": {
           "path": "/erp/reports/summary",
-          "methods": ["GET"]
+          "methods": [
+            "GET"
+          ]
         }
       },
       "cluster": null,
@@ -162,10 +192,16 @@
           "enabled": true,
           "config": {
             "signingKey": "ZGVtby1zaWduaW5nLWtleS1jb25kdWl0c2hhcnAtZXhhbXBsZS0zMmNo",
-            "issuer":     "conduitsharp-demo",
-            "audience":   "conduitsharp-demo",
+            "issuer": "conduitsharp-demo",
+            "audience": "conduitsharp-demo",
             "requiredClaims": [
-              { "claim": "role", "anyOf": ["analyst", "erp-admin"] }
+              {
+                "claim": "role",
+                "anyOf": [
+                  "analyst",
+                  "erp-admin"
+                ]
+              }
             ]
           }
         },
@@ -199,17 +235,21 @@
     },
     {
       "id": "error-demo",
-      "description": "Demonstrates a 502 Bad Gateway from an unreachable upstream — used by the Grafana E2E suite to verify error-level request logs reach Loki",
+      "description": "Demonstrates a 502 Bad Gateway from an unreachable upstream \u2014 used by the Grafana E2E suite to verify error-level request logs reach Loki",
       "route": {
         "match": {
           "path": "/error-demo",
-          "methods": ["GET"]
+          "methods": [
+            "GET"
+          ]
         }
       },
       "cluster": {
         "loadBalancingPolicy": "RoundRobin",
         "destinations": {
-          "node-0": { "address": "http://nonexistent-upstream:9999" }
+          "node-0": {
+            "address": "http://nonexistent-upstream:9999"
+          }
         },
         "httpRequest": {
           "activityTimeout": "00:00:01"
@@ -225,11 +265,13 @@
     },
     {
       "id": "health",
-      "description": "Health check — passthrough, no auth, no policies",
+      "description": "Health check \u2014 passthrough, no auth, no policies",
       "route": {
         "match": {
           "path": "/health",
-          "methods": ["GET"]
+          "methods": [
+            "GET"
+          ]
         }
       },
       "swagger": {
@@ -238,7 +280,9 @@
       "cluster": {
         "loadBalancingPolicy": "RoundRobin",
         "destinations": {
-          "node-0": { "address": "http://inventory-svc-1:5101" }
+          "node-0": {
+            "address": "http://inventory-svc-1:5101"
+          }
         },
         "httpRequest": {
           "activityTimeout": "00:00:02"

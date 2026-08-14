@@ -43,10 +43,6 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     /// <summary>Prefixes gateway-owned paths; upstream route paths are literal in routes.json.</summary>
     protected string P(string path) => fx.PathPrefix + path;
 
-    // =========================================================================
-    // Health
-    // =========================================================================
-
     [Fact]
     public async Task GetHealth_Returns200()
     {
@@ -54,10 +50,6 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
-
-    // =========================================================================
-    // Inventory — API-key auth, rate-limited, round-robin load balanced
-    // =========================================================================
 
     [Fact]
     public async Task GetInventory_WithApiKey_Returns200()
@@ -104,18 +96,12 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     [Fact]
     public async Task DeleteInventory_MethodNotInRoute_Returns405()
     {
-        // The inventory route only allows GET and POST — DELETE has no match.
-        // ASP.NET Core native routing correctly returns 405 Method Not Allowed.
         var request = ApiKeyRequest(HttpMethod.Delete, "/api/inventory/1");
 
         var response = await fx.Client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.MethodNotAllowed, response.StatusCode);
     }
-
-    // =========================================================================
-    // Orders — JWT (HS256) auth
-    // =========================================================================
 
     [Fact]
     public async Task GetOrders_WithJwt_Returns200()
@@ -139,7 +125,6 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
-        // BodyCapture plugin should have written to gateway.log
         var logPath = Path.Combine(fx.ExampleRoot, "logs", "gateway.log");
         var deadline = DateTime.UtcNow.AddSeconds(15);
         bool found = false;
@@ -148,7 +133,7 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
             if (File.Exists(logPath))
             {
                 var content = await ReadSharedAsync(logPath);
-                if (content.Contains("""Captured request body for path /api/orders: {"customerId":"c-123","sku":"widget","qty":5,"unitPrice":10}"""))
+                if (content.Contains("""RequestBody: {"customerId":"c-123","sku":"widget","qty":5,"unitPrice":10}""", StringComparison.Ordinal))
                 {
                     found = true;
                     break;
@@ -182,7 +167,6 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     [Fact]
     public async Task GetOrders_WrongSignatureToken_Returns401()
     {
-        // Valid structure, wrong signing key.
         var wrongToken = BuildToken(signingKeyBase64: Convert.ToBase64String(
             Encoding.UTF8.GetBytes("a-completely-different-secret-key")));
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/orders");
@@ -193,17 +177,11 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    // =========================================================================
-    // Erp value report — JWT auth + role-based access, rate limited,
-    // cached 60s, executed via PowerShell plugin
-    // =========================================================================
-
     [Fact]
     public async Task GetErpValue_WithJwt_Returns200_OrSkippedIfNoPwsh()
     {
         if (!IsPwshAvailable())
         {
-            // PowerShell plugin requires pwsh — skip gracefully on machines without it.
             return;
         }
 
@@ -229,8 +207,6 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     {
         if (!IsPwshAvailable()) return;
 
-        // Same signing key/issuer/audience as fx.DemoJwt, but a role not in the route's
-        // requiredClaims anyOf list — a valid token lacking permission is 403, not 401.
         var token   = MintTokenWithRole("intern");
         var request = new HttpRequestMessage(HttpMethod.Get, P("/erp/reports/summary"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -247,7 +223,7 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
 
         var request1 = JwtRequest(HttpMethod.Get, P("/erp/reports/summary"));
         var response1 = await fx.Client.SendAsync(request1);
-        if (!response1.IsSuccessStatusCode) return; // skip if pwsh fails for other reasons
+        if (!response1.IsSuccessStatusCode) return;
 
         var body1 = await response1.Content.ReadAsStringAsync();
 
@@ -255,14 +231,9 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
         var response2 = await fx.Client.SendAsync(request2);
         var body2 = await response2.Content.ReadAsStringAsync();
 
-        // Cache TTL is 60s — both responses must be identical.
         Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
         Assert.Equal(body1, body2);
     }
-
-    // =========================================================================
-    // Unmatched routes
-    // =========================================================================
 
     [Fact]
     public async Task UnmatchedPath_Returns404()
@@ -272,15 +243,9 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    // =========================================================================
-    // Swagger spec aggregation
-    // =========================================================================
-
     [Fact]
     public async Task SwaggerSpec_InventoryRoute_Returns200OrBadGateway()
     {
-        // Returns 200 when the upstream is live; 502 when upstream is unreachable.
-        // Either is acceptable here — we just verify the gateway endpoint itself is wired.
         var response = await fx.Client.GetAsync(P("/swagger/inventory-service.json"));
 
         Assert.True(
@@ -308,21 +273,12 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    // =========================================================================
-    // Security hardening — body limits (S1), auth boundaries, error hygiene (S5)
-    // Exercised against the real gateway process with the shipped routes.json.
-    // =========================================================================
-
     [Fact]
     public async Task PostInventory_BodyOverRouteLimit_Returns413()
     {
-        // The inventory route ships with maxRequestBodyBytes = 1 MiB (routes.json),
-        // overriding the 8 MiB global default — 2 MiB must be rejected at the gateway.
         var request = ApiKeyRequest(HttpMethod.Post, "/api/inventory");
         request.Content = new ByteArrayContent(new byte[2 * 1024 * 1024]);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-        // Expect: 100-continue — the gateway 413s on Content-Length and aborts without
-        // draining; without this the body write races the abort into a broken pipe.
         request.Headers.ExpectContinue = true;
 
         var response = await fx.Client.SendAsync(request);
@@ -333,7 +289,6 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     [Fact]
     public async Task PostOrders_BodyOverGlobalLimit_Returns413()
     {
-        // The orders route has no per-route override — the 8 MiB global default applies.
         var request = JwtRequest(HttpMethod.Post, "/api/orders");
         request.Content = new ByteArrayContent(new byte[9 * 1024 * 1024]);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
@@ -347,9 +302,9 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     [Fact]
     public async Task PostInventory_OversizedBody_ErrorBodyIsGeneric()
     {
-        // Rejection bodies must not echo limits, paths, or internal detail.
         var request = ApiKeyRequest(HttpMethod.Post, "/api/inventory");
         request.Content = new ByteArrayContent(new byte[2 * 1024 * 1024]);
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         request.Headers.ExpectContinue = true;
 
         var response = await fx.Client.SendAsync(request);
@@ -364,10 +319,8 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     [Fact]
     public async Task SwaggerSpec_ServedSpec_DoesNotLeakUpstreamTopology()
     {
-        // The aggregated spec rewrites servers so "Try it out" targets the gateway —
-        // upstream node URLs must not appear in the document.
         var response = await fx.Client.GetAsync(P("/swagger/inventory-service.json"));
-        if (response.StatusCode != HttpStatusCode.OK) return; // 502 covered elsewhere
+        if (response.StatusCode != HttpStatusCode.OK) return;
 
         var body = await response.Content.ReadAsStringAsync();
 
@@ -378,14 +331,9 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     [Fact]
     public async Task PostInventory_SlowUpload_AbortsDueToDataRateLimit()
     {
-        // The gateway is configured with MinRequestBodyDataRate = 500 bytes/sec and 3s GracePeriod.
-        // Trickling 100 bytes every 0.5s (~200 bytes/sec) for >3s will trigger Kestrel's slowloris defense
-        // and abort the connection.
         var request = ApiKeyRequest(HttpMethod.Post, "/api/inventory");
         request.Content = new SlowHttpContent();
 
-        // Kestrel kills the connection mid-upload, manifesting as an IOException wrapping a socket error
-        // or an HttpRequestException.
         await Assert.ThrowsAnyAsync<Exception>(() => fx.Client.SendAsync(request));
     }
 
@@ -398,7 +346,7 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
             {
                 await stream.WriteAsync(chunk, 0, chunk.Length);
                 await stream.FlushAsync();
-                await Task.Delay(500); // 200 bytes/sec
+                await Task.Delay(500);
             }
         }
 
@@ -409,19 +357,9 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
         }
     }
 
-    // =========================================================================
-    // gRPC passthrough — YARP forwarder, HTTP/2 end-to-end
-    // =========================================================================
-
     [Fact]
     public async Task GrpcSayHello_ThroughGateway_RepliesOverHttp2()
     {
-        // Cleartext gRPC: the client connects with HTTP/2 prior knowledge to the gateway's
-        // Http2-only listener, the greeter-grpc route is forwarded by YARP (h2c upstream),
-        // and the server reports the protocol it observed — asserting HTTP/2 survived both
-        // hops. No plugin needed: protocol fidelity is what the forwarder is for.
-        // The generated client owns the request path, so a prefixed stack rewrites it
-        // via a handler rather than the address.
         var httpHandler = fx.PathPrefix.Length == 0
             ? (HttpMessageHandler)new SocketsHttpHandler()
             : new PrefixDelegatingHandler(fx.PathPrefix) { InnerHandler = new SocketsHttpHandler() };
@@ -454,8 +392,6 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     [Fact]
     public async Task GrpcPath_OverHttp1_IsNotServedByGrpcRoute()
     {
-        // A plain HTTP/1.1 POST to the gRPC path must not crash the gateway; the
-        // upstream is HTTP/2-only, so anything but a 200-with-grpc-response is fine.
         var request = new HttpRequestMessage(HttpMethod.Post, "/greet.Greeter/SayHello");
         request.Content = new ByteArrayContent([]);
 
@@ -464,17 +400,9 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
         Assert.NotEqual(HttpStatusCode.InternalServerError, response.StatusCode);
     }
 
-    // =========================================================================
-    // OpenTelemetry — file exporter (the native stack's trace pipeline)
-    // =========================================================================
-
     [Fact]
     public async Task Traces_AfterGatewayTraffic_GatewayRequestSpanIsWrittenToTraceFile()
     {
-        // The native launcher enables the file exporter (configuration-vm/appsettings.json),
-        // writing spans as JSON lines. Drive a request, then poll the file for the
-        // gateway.request span — this covers the whole OTel pipeline: span creation,
-        // processor, exporter. Regressions in any of them surface here.
         var request  = ApiKeyRequest(HttpMethod.Get, "/api/inventory");
         var response = await fx.Client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -499,10 +427,6 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
     [Fact]
     public async Task Traces_GatewayRequestSpan_CarriesAlignedInstrumentationScope()
     {
-        // The gateway.request span must name its instrumentation scope (ConduitSharp.Gateway) and
-        // report a scope version that tracks the package version — auto-aligned from
-        // AssemblyInformationalVersion, SourceLink's "+<commit>" suffix stripped — not a stale
-        // hardcode. Proven end to end against the real running gateway, not just the source.
         var response = await fx.Client.SendAsync(ApiKeyRequest(HttpMethod.Get, "/api/inventory"));
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
@@ -519,9 +443,9 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
 
                     var scopeVersion = span.Value.GetProperty("scopeVersion").GetString();
                     Assert.False(string.IsNullOrEmpty(scopeVersion));
-                    Assert.DoesNotContain("+", scopeVersion!);          // SourceLink suffix stripped
-                    Assert.NotEqual("0.1.0", scopeVersion);             // aligned, not the old hardcode
-                    Assert.Matches(@"^\d+\.\d+\.\d+", scopeVersion!);   // starts with a SemVer core
+                    Assert.DoesNotContain("+", scopeVersion!);
+                    Assert.NotEqual("0.1.0", scopeVersion);
+                    Assert.Matches(@"^\d+\.\d+\.\d+", scopeVersion!);
                     return;
                 }
             }
@@ -531,13 +455,12 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
         Assert.Fail($"No gateway.request span with instrumentation scope appeared in {tracesPath} within 15s.");
     }
 
-    // Parses JSON-lines trace output, returning the first span whose "name" matches, or null.
     private static JsonElement? FindSpan(string jsonl, string name)
     {
         foreach (var line in jsonl.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             JsonDocument doc;
-            try { doc = JsonDocument.Parse(line); }   // skip a half-written trailing line mid-append
+            try { doc = JsonDocument.Parse(line); }
             catch (JsonException) { continue; }
             using (doc)
                 if (doc.RootElement.TryGetProperty("name", out var n) && n.GetString() == name)
@@ -545,10 +468,6 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
         }
         return null;
     }
-
-    // =========================================================================
-    // Helpers
-    // =========================================================================
 
     /// <summary>Reads a file another process is appending to (log/trace tails).</summary>
     protected static async Task<string> ReadSharedAsync(string path)
@@ -579,8 +498,6 @@ public abstract class GatewayE2ETestsBase(IGatewayE2EFixture fx)
                         File.Exists(Path.Combine(dir, "pwsh.exe")))
         ?? false;
 
-    // Same signing key as the fixtures' MintDemoJwt — a real per-file constant would be
-    // one more shared indirection for a value that generate-token.sh/.ps1 already duplicate.
     private const string DemoSigningKeyBase64 = "ZGVtby1zaWduaW5nLWtleS1jb25kdWl0c2hhcnAtZXhhbXBsZS0zMmNo";
 
     protected static string MintTokenWithRole(string role)

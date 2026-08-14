@@ -33,6 +33,8 @@ Routes are defined in JSON:
 }
 ```
 
+Forwarding is built on YARP, so HTTP/2, gRPC, WebSockets, and streaming bodies pass through natively via the `http-proxy` plugin.
+
 ## Plugin System
 
 Plugins run per-route to inspect, transform, or filter requests/responses. Drop a compiled plugin assembly into your `plugins/` folder and reference it in route config — no restart required.
@@ -43,7 +45,6 @@ Build plugins with [ConduitSharp.Core](https://www.nuget.org/packages/ConduitSha
 
 The NuGet ecosystem provides ready-to-use plugins:
 
-- [ConduitSharp.Plugin.YarpProxy](https://www.nuget.org/packages/ConduitSharp.Plugin.YarpProxy) — HTTP/2, WebSocket, streaming
 - [ConduitSharp.Cache.RedisProtocol](https://www.nuget.org/packages/ConduitSharp.Cache.RedisProtocol) — Redis-backed response cache
 - [ConduitSharp.RateLimit.RedisProtocol](https://www.nuget.org/packages/ConduitSharp.RateLimit.RedisProtocol) — Redis-backed rate limiter
 

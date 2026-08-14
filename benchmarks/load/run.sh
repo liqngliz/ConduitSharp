@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 2/3 load benchmarks (see docs/planning/BENCHMARKS_PLAN.md).
+# Phase 2/3 load benchmarks. Method and per-scenario rationale are documented inline below.
 #
 #   ./run.sh all                  # direct + scenario-a + scenario-b + flood
 #   ./run.sh scenario-a           # one scenario
@@ -58,12 +58,14 @@ wait_url() { # $1 = host-side URL, $2 = service name (for logs on failure)
     exit 1
 }
 
-up() { # $1 = scenario json name, $2 = MaxTotalBufferedBodyBytes override
-    # MAX_MEMORY_BUFFERED / MEMORY_THRESHOLD pass through from the caller's environment so a
-    # scenario can size the tiers; compose supplies defaults for whatever is left unset.
-    SCENARIO="$1" MAX_TOTAL_BUFFERED="${2:-134217728}" \
-    MAX_MEMORY_BUFFERED="${MAX_MEMORY_BUFFERED:-67108864}" \
-    MEMORY_THRESHOLD="${MEMORY_THRESHOLD:-1048576}" \
+up() { # $1 = scenario json name, $2 = MaxDiskBufferedBodyBytes override
+    # MAX_RAM_BUFFERED / RAM_THRESHOLD pass through from the caller's environment so a scenario
+    # can size each budget; compose supplies defaults for whatever is left unset. The budgets are
+    # independent as of v2.0.0 — an arm that used to lower one combined total now lowers whichever
+    # resource it means to exhaust.
+    SCENARIO="$1" MAX_DISK_BUFFERED="${2:-67108864}" \
+    MAX_RAM_BUFFERED="${MAX_RAM_BUFFERED:-67108864}" \
+    RAM_THRESHOLD="${RAM_THRESHOLD:-1048576}" \
     SPILL_DIR="${SPILL_DIR:-/spill}" TMPFS_SIZE="${TMPFS_SIZE:-512m}" \
         "${COMPOSE[@]}" up -d --build --force-recreate gateway upstream >/dev/null 2>&1
     wait_url http://127.0.0.1:8080/healthz gateway
@@ -280,7 +282,7 @@ ptf_conduitsharp() {
 # and who sheds cleanly instead of dying?
 ptf_conduitsharp_buffered() {
     ensure_payload
-    up scenario-flood "${MAX_TOTAL_BUFFERED:-536870912}"
+    up scenario-flood "${MAX_DISK_BUFFERED:-469762048}"
     push_to_failure "push-to-failure conduitsharp (buffered: retry route)" "$GATEWAY_URL" gateway
 }
 
@@ -517,8 +519,8 @@ s5_tmpfs() {
     echo "== s5: buffered on tmpfs — 1 MB PUT, c=$CONNS, both spill to RAM, GW_MEM=$GW_MEM ==" | tee -a "$RESULTS"
 
     # RAM tier left at its default: this measures the spill path, not the tier.
-    SPILL_DIR=/spill-tmpfs MAX_MEMORY_BUFFERED="${MAX_MEMORY_BUFFERED:-67108864}" \
-        up scenario-flood "${MAX_TOTAL_BUFFERED:-402653184}"
+    SPILL_DIR=/spill-tmpfs MAX_RAM_BUFFERED="${MAX_RAM_BUFFERED:-67108864}" \
+        up scenario-flood "${MAX_DISK_BUFFERED:-335544320}"
     bench_shape "s5 conduitsharp (spill -> tmpfs)" gateway PUT "$GATEWAY_URL" /payload/1mb.bin 1
 
     up_apisix apisix-retry config-default   # client_body_temp is tmpfs via compose
@@ -538,22 +540,23 @@ s3_shed() {
     ensure_payload_1mb
     echo "" | tee -a "$RESULTS"
     echo "== s3: conduitsharp graceful shed — 1 MB PUT ramp vs a ${GW_MEM} pod ==" | tee -a "$RESULTS"
-    MAX_MEMORY_BUFFERED="${MAX_MEMORY_BUFFERED:-16777216}" up scenario-flood "${MAX_TOTAL_BUFFERED:-67108864}"
+    MAX_RAM_BUFFERED="${MAX_RAM_BUFFERED:-16777216}" up scenario-flood "${MAX_DISK_BUFFERED:-50331648}"
     PTF_PAYLOAD=/payload/1mb.bin push_to_failure "s3 conduitsharp (shed vs ${GW_MEM} pod)" "$GATEWAY_URL" gateway
 }
 
 # ── s4: the buffered head-to-head. PUT (idempotent, so ConduitSharp really buffers). ──────────
 # ConduitSharp is configured to match APISIX's defaults rather than to flatter itself: nginx gives
 # each body client_body_buffer_size (16k) of RAM, then spills to disk with no global cap and no
-# load-shed. So MemoryBufferThresholdBytes=16k and MaxTotalBufferedBodyBytes=0 (unlimited, never
-# 503). Both sides then do the same thing — buffer every upload to disk and serve it — and the
+# load-shed. So RamBufferThresholdBytes=16k and a disk budget large enough never to bind (128 GiB —
+# v2.0.0 reads 0 as "no disk at all", the opposite of the old "unlimited", so the cap is expressed
+# as a number that cannot be reached rather than as 0). Both sides then do the same thing — buffer every upload to disk and serve it — and the
 # numbers read like-for-like instead of reflecting a policy difference.
 s4_buffered() {
     ensure_payload_1mb
     echo "" | tee -a "$RESULTS"
     echo "== s4: buffered head-to-head — 1 MB PUT, c=$CONNS, conduit configured like apisix ==" | tee -a "$RESULTS"
 
-    MEMORY_THRESHOLD=16384 MAX_MEMORY_BUFFERED=134217728 up scenario-flood 0
+    RAM_THRESHOLD=16384 MAX_RAM_BUFFERED=134217728 up scenario-flood 137438953472
     bench_shape "s4 conduitsharp (retry, 16k threshold, no budget cap)" gateway PUT "$GATEWAY_URL" /payload/1mb.bin 1
 
     up_apisix apisix-retry config-default
@@ -582,7 +585,7 @@ s6_logging() {
     echo "== s6: logging — $S6_REQS fixed requests, ~4 KB JSON POST, to Loki ==" | tee -a "$RESULTS"
 
     ensure_payload_s6json
-    dotnet publish ../../examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release -o plugins/bench-logging
+    dotnet publish ../../plugins/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture -c Release -o plugins/bench-logging
 
     # Loki log counter helper — reads loki_distributor_lines_received_total from :3100/metrics
     loki_count() {
@@ -725,7 +728,7 @@ PY
 
     # --- Conduit ---
     reset_obs
-    pushd "../../examples/ConduitSharp.Plugin.BodyCaptureToFile/src/ConduitSharp.Plugin.BodyCaptureToFile" >/dev/null
+    pushd "../../plugins/ConduitSharp.Plugin.BodyCaptureToFile/src/ConduitSharp.Plugin.BodyCaptureToFile" >/dev/null
     dotnet publish -c Release -o "../../../../benchmarks/load/plugins/bench-logging-file" >/dev/null
     popd >/dev/null
     

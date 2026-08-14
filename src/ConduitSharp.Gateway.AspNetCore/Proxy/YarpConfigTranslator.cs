@@ -4,22 +4,27 @@ using Yarp.ReverseProxy.Configuration;
 namespace ConduitSharp.Gateway.Proxy;
 
 /// <summary>
-/// Hands routes.json's YARP half straight to YARP.
+/// Hands routes.json's YARP half straight to YARP. <see cref="GatewayRoute.Route"/> and
+/// <see cref="GatewayRoute.Cluster"/> already are <see cref="RouteConfig"/> and
+/// <see cref="ClusterConfig"/>, so this only fills in what a user should not have to type twice
+/// and wires the gateway's circuit breaker into YARP's passive health-check slot.
 ///
-/// There is no projection here any more — <see cref="GatewayRoute.Route"/> and
-/// <see cref="GatewayRoute.Cluster"/> already <em>are</em> <see cref="RouteConfig"/> and
-/// <see cref="ClusterConfig"/>. All this does is fill in the parts a user should never have to
-/// type twice, and wire the gateway's circuit breaker into YARP's passive health-check slot.
-///
-/// That is the point of the shape: a field-by-field translator is a layer that can disagree with
-/// YARP (it once silently downgraded HTTP/2 and broke gRPC), and it has to grow every time YARP
-/// grows a feature. Neither is true of a <c>with</c> expression.
-///
-/// Routes with no cluster (plugin-only, short-circuit routes) are skipped: YARP rejects a route
-/// with no cluster before any middleware runs, so those are mapped as plain endpoints instead.
+/// <para>Routes with no cluster (plugin-only, short-circuit routes) are skipped and mapped as
+/// plain endpoints: YARP rejects a clusterless route before any middleware runs.</para>
 /// </summary>
 internal static class YarpConfigTranslator
 {
+    /// <summary>
+    /// The passive health policy name, written into <see cref="PassiveHealthCheckConfig.Policy"/>
+    /// below and answered to by <c>ConsecutiveFailuresHealthPolicy.Name</c>. It lives here, with the
+    /// config that references it, rather than on the policy: the policy already depends on
+    /// <see cref="GatewayRouteTable"/> for its thresholds, and that table calls this translator — so
+    /// a constant owned by the policy closed a loop through all three. One constant, still one
+    /// source of truth, no cycle. Two literals would have been the same cycle break at the cost of
+    /// the compile-time link that keeps the two strings equal.
+    /// </summary>
+    internal const string ConsecutiveFailuresPolicyName = "ConsecutiveFailures";
+
     internal static (List<RouteConfig> Routes, List<ClusterConfig> Clusters) Translate(
         GatewayRoutesConfiguration gatewayRoutes)
     {
@@ -33,12 +38,9 @@ internal static class YarpConfigTranslator
 
             routes.Add(route.Route with
             {
-                // Routes and clusters are 1:1, so both ids are the route's id — never re-typed.
                 RouteId   = route.Id,
                 ClusterId = route.Id,
 
-                // Declaration order breaks overlaps: endpoint selection prefers the lowest Order,
-                // so the first route declared in routes.json wins. An explicit Order still wins.
                 Order = route.Route.Order ?? i,
             });
 
@@ -52,10 +54,6 @@ internal static class YarpConfigTranslator
         return (routes, clusters);
     }
 
-    // The circuit breaker is a passive health-check policy. Only its *enablement* crosses into
-    // YARP — the threshold and cooldown are read from the route's own CircuitBreakerConfig, so
-    // nothing rides along in ClusterConfig.Metadata as a string. Any active health check the user
-    // configured is preserved.
     private static HealthCheckConfig? WithCircuitBreaker(
         HealthCheckConfig? configured, CircuitBreakerConfig? breaker)
     {
@@ -68,7 +66,7 @@ internal static class YarpConfigTranslator
             Passive = new PassiveHealthCheckConfig
             {
                 Enabled = true,
-                Policy  = ConsecutiveFailuresHealthPolicy.PolicyName,
+                Policy  = ConsecutiveFailuresPolicyName,
             },
         };
     }

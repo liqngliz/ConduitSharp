@@ -19,9 +19,6 @@ namespace ConduitSharp.EmbeddedGatewayPrefixed.E2E.Tests;
 [Trait("Category", "E2E")]
 public sealed class EmbeddedGatewayPrefixedE2ETests(EmbeddedGatewayPrefixedFixture fx) : GatewayE2ETestsBase(fx)
 {
-    // =========================================================================
-    // Uploads — streamOnly, no body capture
-    // =========================================================================
 
     [Fact]
     public async Task PostUpload_WithStreamOnly_Succeeds_AndNoBodyCapture()
@@ -35,7 +32,6 @@ public sealed class EmbeddedGatewayPrefixedE2ETests(EmbeddedGatewayPrefixedFixtu
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        // Verify that BodyCapture did NOT log this route (it's not configured on the upload route)
         var logPath = Path.Combine(Fx.ExampleRoot, "logs", "gateway.log");
         if (File.Exists(logPath))
         {
@@ -44,22 +40,14 @@ public sealed class EmbeddedGatewayPrefixedE2ETests(EmbeddedGatewayPrefixedFixtu
         }
     }
 
-    // =========================================================================
-    // Prefix-only behavior: the host owns everything outside "/api"
-    // =========================================================================
-
     [Fact]
     public async Task Gateway_ExecutesStandardAspNetCoreMiddleware()
     {
-        // Prove that standard ASP.NET Core middleware injected before the gateway
-        // wraps the YARP pipeline. The proxy passes through, and the middleware
-        // appends the response header.
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/health");
         var response = await Fx.Client.SendAsync(request);
 
         response.EnsureSuccessStatusCode();
 
-        // Assert the header set by `app.Use(...)` in Program.cs
         Assert.True(response.Headers.Contains("X-Standard-Middleware"),
             "The standard ASP.NET middleware did not execute or set the header.");
         Assert.Equal("Executed", response.Headers.GetValues("X-Standard-Middleware").First());

@@ -16,10 +16,6 @@ public class PluginAssemblyLoaderTests
     private readonly PluginAssemblyLoader _loader =
         new(NullLogger<PluginAssemblyLoader>.Instance);
 
-    // -------------------------------------------------------------------------
-    // Non-existent directory
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void DiscoverPluginTypes_NonExistentDirectory_ReturnsEmpty()
     {
@@ -27,10 +23,6 @@ public class PluginAssemblyLoaderTests
 
         Assert.Empty(result);
     }
-
-    // -------------------------------------------------------------------------
-    // Existing but empty directory
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void DiscoverPluginTypes_EmptyDirectory_ReturnsEmpty()
@@ -44,15 +36,9 @@ public class PluginAssemblyLoaderTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
-    // -------------------------------------------------------------------------
-    // Real DLL with no IPipelinePlugin implementations → covers PluginLoadContext
-    // and the GetExportedTypes / filter path
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void DiscoverPluginTypes_DllWithNoPlugins_ReturnsEmpty()
     {
-        // ConduitSharp.Core.dll is always in the test output dir and has no plugins.
         var sourceDll = Path.Combine(AppContext.BaseDirectory, "ConduitSharp.Core.dll");
         var dir = CreateTempDir();
         try
@@ -66,17 +52,12 @@ public class PluginAssemblyLoaderTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
-    // -------------------------------------------------------------------------
-    // Corrupt / unreadable DLL → covers the load-failure catch branch
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void DiscoverPluginTypes_CorruptDll_SkipsFileAndReturnsEmpty()
     {
         var dir = CreateTempDir();
         try
         {
-            // Valid PE header magic (MZ) but truncated — LoadFromAssemblyPath will throw.
             File.WriteAllBytes(Path.Combine(dir, "corrupt.dll"), [0x4D, 0x5A, 0x00, 0x00]);
 
             var result = _loader.DiscoverPluginTypes(dir);
@@ -85,12 +66,6 @@ public class PluginAssemblyLoaderTests
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
-
-
-
-    // -------------------------------------------------------------------------
-    // DiscoverServiceType — global service backends dropped in the plugins root
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void DiscoverServiceType_MissingDirectory_ReturnsNull()
@@ -107,7 +82,6 @@ public class PluginAssemblyLoaderTests
         var dir = CreateTempDir();
         try
         {
-            // A DLL with no ICacheService implementation → nothing discovered.
             File.Copy(
                 Path.Combine(AppContext.BaseDirectory, "ConduitSharp.Core.dll"),
                 Path.Combine(dir, "ConduitSharp.Core.dll"));
@@ -119,19 +93,9 @@ public class PluginAssemblyLoaderTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
-    // -------------------------------------------------------------------------
-    // Corrupt DLL where it is actually scanned → covers the load-failure catch
-    // on both scan paths (subdirectory scan and root scan). The earlier corrupt
-    // test drops the DLL in the root, which DiscoverPluginTypes never scans, so
-    // it did not reach the catch.
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void DiscoverPluginTypes_CorruptDllInSubdirectory_SkipsAndReturnsEmpty()
     {
-        // DiscoverPluginTypes scans per-route SUBDIRECTORIES. A corrupt DLL dropped into one
-        // must be logged and skipped, not crash the scan — the appliance drop-in model has to
-        // survive a bad artifact.
         var root = CreateTempDir();
         try
         {
@@ -148,8 +112,6 @@ public class PluginAssemblyLoaderTests
     [Fact]
     public void DiscoverServiceType_CorruptDllInRoot_ReturnsNull()
     {
-        // DiscoverServiceType scans the plugins ROOT directly. A corrupt DLL there must be
-        // skipped, leaving the built-in default in place rather than failing the gateway.
         var root = CreateTempDir();
         try
         {
@@ -161,10 +123,6 @@ public class PluginAssemblyLoaderTests
         }
         finally { Directory.Delete(root, recursive: true); }
     }
-
-    // -------------------------------------------------------------------------
-    // Helper
-    // -------------------------------------------------------------------------
 
     private static string CreateTempDir()
     {

@@ -64,8 +64,6 @@ public sealed class ForwardingTests : IAsyncLifetime
     [Fact]
     public async Task Post_WithBody_NoContentType_ForwardsBodyWithoutContentTypeHeader()
     {
-        // A POST with a body but no Content-Type header exercises the
-        // no-Content-Type branch in GatewayMiddlewareExt.
         var content = new ByteArrayContent("raw body bytes"u8.ToArray());
 
         var response = await _client.PostAsync("/api/data", content);
@@ -80,8 +78,6 @@ public sealed class ForwardingTests : IAsyncLifetime
     [Fact]
     public async Task Post_WithEntityHeaders_ForwardsAllContentHeadersToUpstream()
     {
-        // Regression: only Content-Type used to be copied onto the outgoing content —
-        // Content-Encoding, Content-Language, etc. were silently dropped.
         var content = new ByteArrayContent("pretend-gzipped"u8.ToArray());
         content.Headers.TryAddWithoutValidation("Content-Type", "application/json");
         content.Headers.TryAddWithoutValidation("Content-Encoding", "gzip");
@@ -99,8 +95,6 @@ public sealed class ForwardingTests : IAsyncLifetime
     [Fact]
     public async Task Upstream_HopByHopResponseHeaders_AreNotRelayedToClient()
     {
-        // Hop-by-hop headers describe the gateway↔upstream connection; the request side
-        // already stripped them and the response side must do the same.
         _upstream.RespondWith(async ctx =>
         {
             ctx.Response.StatusCode = 200;

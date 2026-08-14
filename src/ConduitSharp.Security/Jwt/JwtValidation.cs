@@ -34,7 +34,6 @@ internal static class JwtValidation
         if (!result.IsValid)
             return (false, MapError(result.Exception), default);
 
-        // The token is verified — its payload segment is safe to parse.
         JsonElement claims;
         using (var doc = JsonDocument.Parse(Base64UrlEncoder.Decode(((JsonWebToken)result.SecurityToken).EncodedPayload)))
             claims = doc.RootElement.Clone();
@@ -45,8 +44,6 @@ internal static class JwtValidation
     internal static TokenValidationParameters BaseParameters(string? issuer, string? audience) =>
         new()
         {
-            // exp/nbf are honored when present, but a token without exp stays valid
-            // (pre-existing gateway behavior; some internal issuers omit exp).
             RequireExpirationTime = false,
             ValidateIssuer        = issuer is not null,
             ValidIssuer           = issuer,
@@ -59,7 +56,6 @@ internal static class JwtValidation
     {
         SecurityTokenExpiredException              => "Token has expired.",
         SecurityTokenNotYetValidException          => "Token not yet valid.",
-        // Covers SecurityTokenSignatureKeyNotFoundException too (derived type).
         SecurityTokenInvalidSignatureException     => "Invalid token signature.",
         SecurityTokenInvalidIssuerException        => "Invalid issuer.",
         SecurityTokenInvalidAudienceException      => "Invalid audience.",

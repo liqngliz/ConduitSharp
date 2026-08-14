@@ -58,7 +58,7 @@ services:
   gateway:
     build:
       context: ../..
-      dockerfile: examples/EmbeddedGateway/docker/gateway/Dockerfile
+      dockerfile: examples/EmbeddedGatewayPrefixed/docker/gateway/Dockerfile
     ports:
       - "7050:7050"
     environment:

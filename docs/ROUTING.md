@@ -3,7 +3,7 @@
 _Part of the [ConduitSharp documentation](../README.md)._
 
 
-All routing lives in `Configuration/routes.json` (next to the binary). No database, no admin UI — just a file you can commit, review, and diff.
+All routing lives in `Configuration/routes.json`, next to the binary. No database, no admin UI. A file you commit, review, and diff.
 
 ```json
 {
@@ -41,22 +41,93 @@ All routing lives in `Configuration/routes.json` (next to the binary). No databa
 }
 ```
 
-A route has two halves, and the split is deliberate:
+A route has two halves:
 
-- **`route` and `cluster` are YARP's own `RouteConfig` and `ClusterConfig`**, used verbatim. Nothing
-  is projected or re-modelled, so *every* YARP feature is available the day YARP ships it — session
+- **`route` and `cluster` are YARP's own `RouteConfig` and `ClusterConfig`**, verbatim. Nothing is
+  projected or re-modelled, so every YARP feature is available the day YARP ships it: session
   affinity, active health checks, request/response transforms, host matching, `sslProtocols`,
   per-destination `host` overrides. Header and query matching get YARP's full matcher objects
-  (`ExactHeader`, `Prefix`, `Contains`, `NotExists`, …), not just exact string equality.
-  `routeId`, `clusterId` and `order` are derived from the route's `id` and its position in the file,
-  so you never type them.
-- **Everything else is ConduitSharp's** — `retry`, `circuitBreaker`, `plugins`, `swagger`,
-  `maxRequestBodyBytes` — because YARP has no concept of any of them.
+  (`ExactHeader`, `Prefix`, `Contains`, `NotExists`), not just exact string equality. `routeId`,
+  `clusterId` and `order` are derived from the route's `id` and its position in the file, never
+  typed.
+- **Everything else is ConduitSharp's**, because YARP has no concept of it: `retry`,
+  `circuitBreaker`, `plugins`, `swagger`, `maxRequestBodyBytes`.
 
 Write it all in camelCase; YARP's records bind case-insensitively.
 
 > **Upgrading from 0.1.4?** The schema changed. See the
 > [migration guide](../CHANGELOG.md#migrating-routesjson).
+
+### Where the file is read from
+
+1. `Gateway:RoutesPath` config value (env override `Gateway__RoutesPath`)
+2. `{AppContext.BaseDirectory}/Configuration/routes.json`, next to the binary
+3. When embedding, `ConduitSharpGatewayOptions.Routes` (in-memory table) wins over both
+
+### Every field
+
+The reference the rest of the docs point at. Only `id` and `route` are required.
+
+```jsonc
+{
+  "routes": [
+    {
+      "id": "user-service",           // unique, [A-Za-z0-9_-] only; duplicates throw at startup
+      "description": "optional label shown in Swagger UI dropdown",
+
+      // --- YARP's RouteConfig, verbatim. routeId/clusterId/order are filled in from `id`
+      //     and list position, so they are never written here.
+      "route": {
+        "match": {
+          "path": "/api/users/{**rest}",  // see "Path syntax" below
+          "methods": ["GET", "POST"],     // omit for any verb
+          "headers": [                    // YARP matcher objects, not a dict — so modes work
+            { "name": "X-Version", "values": ["2"], "mode": "ExactHeader" }
+          ],
+          "queryParameters": [
+            { "name": "locale", "values": ["en"], "mode": "Exact" }
+          ]
+        }
+        // anything else RouteConfig exposes also works here: hosts, transforms, corsPolicy, ...
+      },
+
+      // --- YARP's ClusterConfig, verbatim. null = plugin-only route (YARP never sees it).
+      "cluster": {
+        "loadBalancingPolicy": "RoundRobin",   // any registered ILoadBalancingPolicy name
+        "destinations": {
+          "node-0": { "address": "http://svc-1:8080" }   // keys are yours; they show up in traces
+        },
+        "httpRequest": { "activityTimeout": "00:00:05" },      // per-attempt timeout before 504
+        "httpClient": { "dangerousAcceptAnyServerCertificate": false }
+        // ...plus sessionAffinity, healthCheck.active, sslProtocols, etc. — all free
+      },
+
+      // --- ConduitSharp's own, because YARP has no concept of them.
+      "retry": {                          // omit = no retries. Idempotent methods only.
+        "maxAttempts": 3,                 // total attempts INCLUDING the first
+        "delayMs": 200,
+        "backoff": "Exponential",         // Fixed | Linear | Exponential
+        "jitter": true,
+        "retryOn": [502, 503, 504]
+      },
+      "circuitBreaker": {                 // omit = no circuit breaking
+        "threshold": 5,                   // consecutive failures before a node's circuit opens
+        "cooldownMs": 10000               // how long it stays open before one trial request
+      },
+      "plugins": [
+        { "name": "jwt-auth", "order": 1, "enabled": true, "config": { } },
+        { "name": "rate-limit", "order": 2, "enabled": true, "config": { } },
+        { "name": "custom", "variant": "fan-out", "order": 99, "config": { } }
+      ],
+      "swagger": {
+        "fetchFrom": "http://svc-1:8080/swagger/v1/swagger.json"
+        // OR "specFile": "./specs/user-service.json"
+      },
+      "maxRequestBodyBytes": null      // overrides the global body-size cap for this route; null inherits it
+    }
+  ]
+}
+```
 
 ### Load balancing
 
@@ -66,17 +137,17 @@ Write it all in camelCase; YARP's records bind case-insensitively.
 | ------ | --------- |
 | `RoundRobin` (default) | Cycle through nodes in order |
 | `Random` | Pick a node at random |
-| `PowerOfTwoChoices` | Pick two at random, take the less busy — Random's throughput, without its worst case |
+| `PowerOfTwoChoices` | Pick two at random, take the less busy. Random's throughput without its worst case |
 | `LeastRequests` | Fewest in-flight requests; examines every node |
-| `FirstAlphabetical` | Always the alphabetically first healthy node — dual-node failover |
+| `FirstAlphabetical` | Alphabetically first healthy node; dual-node failover |
 
-A policy is a drop-in seam like any other: implement YARP's `ILoadBalancingPolicy`, drop the DLL in
-`plugins/`, and name it in `cluster.loadBalancingPolicy`. That is why the field is a free string
-rather than a closed enum — a custom policy has to be nameable.
+A policy is a drop-in seam: implement YARP's `ILoadBalancingPolicy`, drop the DLL in `plugins/`,
+name it in `cluster.loadBalancingPolicy`. The field is a free string rather than a closed enum so a
+custom policy is nameable.
 
-An unregistered name fails the gateway at **startup** (and rejects an admin reload), with an error
-that names the offending route and lists the policies actually available. Building routes in C#?
-Use the `LoadBalancingPolicy` enum for the built-ins so a typo is a compile error instead:
+An unregistered name fails the gateway at **startup** and rejects an admin reload, with an error
+naming the offending route and listing the available policies. In C#, the `LoadBalancingPolicy` enum
+makes a typo a compile error:
 
 ```csharp
 Cluster = new ClusterConfig
@@ -91,39 +162,40 @@ Cluster = new ClusterConfig
 
 ### Retries and circuit breaking
 
-Retries are ConduitSharp's, not YARP's — a proxy cannot safely replay a half-streamed body, so the
-gateway buffers the request, wraps the forwarder in a retry loop, and re-runs load balancing on
-each attempt so a retry lands on a *different* node. By default, ConduitSharp eagerly buffers all
-requests (subject to `Gateway:RequestLimits`) to ensure plugins always have access to a seekable stream.
+Retries are ConduitSharp's, not YARP's: a proxy cannot safely replay a half-streamed body, so the
+gateway buffers the request, wraps the forwarder in a retry loop, and re-runs load balancing on each
+attempt so a retry lands on a *different* node. Buffering is eager by default (subject to
+`Gateway:RequestLimits`) so plugins always get a seekable stream.
 
-If you are uploading large files and know that no plugins need to inspect the body, you can opt out
-of buffering by setting `"streamOnly": true` on the route. This streams the request directly to YARP
-with zero allocations. `streamOnly` cannot be combined with `retry` (a retry needs a rewindable
-body), and both constraints are enforced **at startup**, not at request time.
+`"streamOnly": true` opts a route out of buffering and streams straight to YARP with zero
+allocations. Use it for large uploads no plugin needs to inspect. `streamOnly` cannot combine with
+`retry`, which needs a rewindable body; both constraints are enforced **at startup**.
 
-A plugin that needs the *whole* request body — to hash it, validate a signature, capture it for audit —
-declares `ReadsRequestBody => true` on its `IPipelinePlugin` implementation. Putting such a plugin
-on a `streamOnly` route is rejected at startup: without the buffered body it would consume YARP's
-forward-only stream and leave the upstream a zero-length payload. Read the body through the buffered
-stream the gateway already provides (`context.Request.Body` is seekable — rewind with `Position = 0`);
-never call `Request.EnableBuffering()` yourself, which buffers a second copy *outside* the gateway's
-memory budget.
+A plugin needing the *whole* request body (hashing, signature validation, audit capture) declares
+`ReadsRequestBody => true` on its `IPipelinePlugin`. Such a plugin on a `streamOnly` route is
+rejected at startup: with no buffered body it would consume YARP's forward-only stream and leave the
+upstream a zero-length payload. Read through the buffered stream the gateway already provides
+(`context.Request.Body` is seekable; rewind with `Position = 0`). Never call
+`Request.EnableBuffering()` yourself, which buffers a second copy *outside* the gateway's memory
+budget.
 
-Most payload-inspecting plugins don't need the whole body, and declaring `ReadsRequestBody` costs the
-route its streaming path — the gateway buffers every request (memory, then temp-file spill) just to
-hand the plugin a rewindable stream. If a bounded prefix is enough (logging, sampling, sniffing a
-content type), leave `ReadsRequestBody => false` and observe the bytes as they stream past instead:
-wrap `context.Request.Body` before calling `next`, and the route keeps streaming. ASP.NET Core's own
-`HttpLogging` middleware does exactly this and is worth reaching for before writing your own wrapper.
-See [examples/ConduitSharp.Plugin.BodyCapture](../examples/ConduitSharp.Plugin.BodyCapture) for both
+`ReadsRequestBody` costs the route its streaming path: the gateway buffers every request (memory,
+then temp-file spill) to hand the plugin a rewindable stream. Most payload-inspecting plugins need
+only a bounded prefix (logging, sampling, sniffing a content type). Leave `ReadsRequestBody => false`
+and wrap `context.Request.Body` before calling `next` to observe bytes as they stream past; the route
+keeps streaming. ASP.NET Core's `HttpLogging` middleware does exactly this. See
+[plugins/ConduitSharp.Plugin.BodyCapture](../plugins/ConduitSharp.Plugin.BodyCapture) for both
 patterns side by side.
 
-Retries apply to **idempotent methods only** (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`, `TRACE`);
-a `POST`/`PATCH` never retries, since it may already have been applied upstream. A retried attempt
-never reaches the client — its response is held back and discarded.
+Retries apply to **idempotent methods only** (`GET`, `HEAD`, `OPTIONS`, `PUT`, `DELETE`, `TRACE`) by
+default; `POST`/`PATCH` never retries, having possibly already been applied upstream.
+`"retry": { "maxAttempts": 3, "retryNonIdempotent": true }` opts a non-idempotent method in. A
+replayed `POST` can **double-apply** if the first attempt reached the upstream, so enable it only
+where that is harmless. Opting in forces the route to buffer. A retried attempt never reaches the
+client; its response is held back and discarded.
 
-Retry is a sibling of `cluster`, not part of it — YARP's `ClusterConfig` has no retry field, and its
-`metadata` (a string-to-string dictionary) could never hold a structured policy:
+Retry is a sibling of `cluster`, not part of it. YARP's `ClusterConfig` has no retry field, and its
+`metadata` (a string-to-string dictionary) cannot hold a structured policy:
 
 ```json
 "cluster": {
@@ -144,11 +216,11 @@ Retry is a sibling of `cluster`, not part of it — YARP's `ClusterConfig` has n
 | `maxAttempts` | `1` | Total attempts including the first. `1` disables retries |
 | `delayMs` | `0` | Base delay between attempts |
 | `backoff` | `Fixed` | `Fixed`, `Linear`, or `Exponential` growth of that delay |
-| `jitter` | `false` | Randomize each delay, so retries from many clients do not stampede |
+| `jitter` | `false` | Randomize each delay against a client stampede |
 | `retryOn` | `[502, 503, 504]` | Upstream statuses that trigger a retry |
 
-A connection failure or timeout always retries, whatever `retryOn` says. Omit `retry` entirely and
-the route does not retry.
+A connection failure or timeout always retries, whatever `retryOn` says. Omit `retry` and the route
+does not retry.
 
 The circuit breaker is likewise a sibling block:
 
@@ -156,13 +228,13 @@ The circuit breaker is likewise a sibling block:
 "circuitBreaker": { "threshold": 5, "cooldownMs": 10000 }
 ```
 
-`threshold` consecutive failures against one node open its circuit, so the load balancer stops
-sending it traffic for `cooldownMs`; one trial request after the cooldown decides whether it
-recovers or opens again. Omit the block (or set `threshold` to `0`) to disable circuit breaking for
-a route. A client disconnecting mid-request is never counted as a node failure.
+`threshold` consecutive failures against one node open its circuit and the load balancer stops
+sending it traffic for `cooldownMs`; one trial request after the cooldown decides whether it recovers
+or opens again. Omit the block, or set `threshold` to `0`, to disable it for a route. A client
+disconnecting mid-request never counts as a node failure.
 
-Under the hood this is a YARP `IPassiveHealthCheckPolicy` — YARP's own passive policy is
-rate-over-a-window and cannot express a consecutive-failure threshold, so ConduitSharp supplies one.
+This is a YARP `IPassiveHealthCheckPolicy`. YARP's own passive policy is rate-over-a-window and
+cannot express a consecutive-failure threshold, so ConduitSharp supplies one.
 
 ### Path syntax
 
@@ -176,7 +248,7 @@ rate-over-a-window and cannot express a consecutive-failure threshold, so Condui
 
 ### Query parameter matching
 
-Add a `queryParams` block to `match` to require specific key=value pairs before a route is selected. All listed params must be present with the exact value — extra params on the request are ignored.
+A `queryParams` block on `match` requires specific key=value pairs before a route is selected. All listed params must be present with the exact value; extra params on the request are ignored.
 
 ```json
 {
@@ -190,19 +262,18 @@ Add a `queryParams` block to `match` to require specific key=value pairs before 
 | Request URL | Matches? |
 |---|---|
 | `/search?version=2&format=json` | Yes |
-| `/search?version=2&format=json&page=1` | Yes — extra params ignored |
-| `/search?version=2` | No — `format` missing |
-| `/search?version=1&format=json` | No — `version` wrong value |
+| `/search?version=2&format=json&page=1` | Yes, extra params ignored |
+| `/search?version=2` | No, `format` missing |
+| `/search?version=1&format=json` | No, `version` wrong value |
 
-Omit the block or leave it empty (`{}`) to match any query string. The full original query string is always forwarded to the upstream unchanged — `queryParams` in `match` is a filter only, not a transform.
+Omit the block or leave it empty (`{}`) to match any query string. The full original query string is always forwarded upstream unchanged: `queryParams` is a filter, not a transform.
 
 ### Per-route request body limit
 
-Add `"maxRequestBodyBytes": <n>` at the top level of a route entry (alongside `id`,
-`match`, `upstream`) to override the global `Gateway.RequestLimits.MaxRequestBodyBytes`
-(see [Gateway settings](GATEWAY_SETTINGS.md)) for just that route — useful for an upload
-endpoint that legitimately needs a larger cap than the rest of the gateway. Omit it, or
-leave it `null`, to inherit the global limit.
+`"maxRequestBodyBytes": <n>` at the top level of a route entry (alongside `id`, `match`, `upstream`)
+overrides the global `Gateway.RequestLimits.MaxRequestBodyBytes`
+(see [Gateway settings](GATEWAY_SETTINGS.md)) for that route: an upload endpoint needing a larger cap
+than the rest of the gateway. Omit it, or leave it `null`, to inherit the global limit.
 
 ### Built-in plugins
 
@@ -214,8 +285,8 @@ leave it `null`, to inherit the global limit.
 | `api-key-auth-hashed` | Validates API keys by comparing SHA-256 hash; keys never stored raw  |
 | `rate-limit`          | Fixed-window quota enforcement per route or per client header value  |
 | `cache`               | Response caching with configurable TTL and vary-by-header rules      |
-| `header-transform`    | Add, remove, or rewrite request headers before forwarding upstream   |
-| `http-proxy`          | Not a plugin — names where in the chain YARP forwards to the upstream. Declare it to place the forward explicitly, or omit it and the forward is appended at the end of the chain |
+| `header-transform`    | Add, remove, or rewrite request headers (upstream) and response headers (client) |
+| `http-proxy`          | Marks where in the chain YARP forwards upstream. Declare it to place the forward explicitly; omit it and the forward is appended at the end |
 
 ---
 

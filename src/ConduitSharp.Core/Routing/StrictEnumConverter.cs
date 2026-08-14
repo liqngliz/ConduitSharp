@@ -23,11 +23,9 @@ public sealed class StrictEnumConverter<T> : JsonConverter<T> where T : struct, 
         if (string.IsNullOrWhiteSpace(raw))
             throw Throw(raw);
 
-        // 1. Direct case-insensitive match (handles PascalCase and UPPERCASE inputs).
         if (Enum.TryParse<T>(raw, ignoreCase: true, out var direct))
             return direct;
 
-        // 2. Kebab-case → PascalCase conversion ("jwt-auth" → "JwtAuth").
         var pascalCase = KebabToPascal(raw!);
         if (Enum.TryParse<T>(pascalCase, ignoreCase: false, out var fromKebab))
             return fromKebab;
@@ -38,8 +36,6 @@ public sealed class StrictEnumConverter<T> : JsonConverter<T> where T : struct, 
     /// <inheritdoc/>
     public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
         => writer.WriteStringValue(value.ToString());
-
-    // -----------------------------------------------------------------------
 
     private static string KebabToPascal(string kebab)
         => string.Concat(

@@ -1,5 +1,5 @@
 using System.Reflection;
-using System.Runtime.Loader;  // AssemblyLoadContext, AssemblyDependencyResolver
+using System.Runtime.Loader;
 using ConduitSharp.Core.Pipeline;
 using ConduitSharp.Core.Routing;
 using Microsoft.Extensions.Logging;
@@ -8,38 +8,20 @@ using ConduitSharp.Gateway.Routing;
 namespace ConduitSharp.Gateway.Plugins;
 
 /// <summary>
-/// Manages external plugins stored under a per-route subdirectory layout:
+/// Loads external plugins from a per-route subdirectory layout (<c>plugins/{routeId}/MyPlugin.dll</c>).
+/// Drop a compiled .dll into the matching folder and restart the gateway; no rebuild is required.
 ///
-///   plugins/
-///     {routeId}/          ← one folder per route
-///       MyPlugin.dll
-///       MyPlugin.deps.json
-///       ...
+/// <para>The folder structure is organisational only. Discovered types register globally and
+/// resolve by (PluginName, Variant); which routes actually run a plugin is decided by each route's
+/// <c>plugins</c> list in routes.json.</para>
 ///
-/// All assemblies are loaded into <see cref="AssemblyLoadContext.Default"/> with full trust.
-/// The per-route directory structure is cosmetic for organization only; discovered types are
-/// registered globally and resolve by (PluginName, Variant) key regardless of which route folder
-/// they came from. Which routes actually *run* a plugin is decided entirely by each route's
-/// <c>plugins</c> list in routes.json — that is where per-route scoping lives (auth, rate-limit,
-/// cache, forwarder, custom variants). P/Invoke and COM interop require this shared context.
-///
-/// Usage: drop a compiled plugin .dll into the matching route subdirectory,
-/// then restart the gateway. No rebuild of the gateway required.
-///
-/// Security note: loaded assemblies run in-process with full trust.
-/// Only load assemblies from sources you control.
+/// <para><b>Security:</b> assemblies are loaded into <see cref="AssemblyLoadContext.Default"/> and
+/// run in-process with full trust. Only load assemblies from sources you control.</para>
 /// </summary>
 internal sealed class PluginAssemblyLoader(ILogger<PluginAssemblyLoader> logger)
 {
     private readonly ILogger<PluginAssemblyLoader> _logger = logger;
 
-    // One shared Resolving handler for every DLL this loader scans, rather than one handler
-    // per DLL: each handler runs on every future unresolved reference for the process's
-    // lifetime (plugins may lazily load assemblies at runtime, e.g. PowerShell initialising
-    // a Runspace on first use, so detaching after the scan isn't an option). Registering N
-    // handlers for N plugin DLLs meant N linear assembly scans plus N delegate invocations
-    // per resolution; one handler trying each DLL's resolver in turn does the same work
-    // without the per-DLL event-dispatch overhead.
     private readonly List<AssemblyDependencyResolver> _resolvers = [];
     private bool _resolvingHandlerAttached;
 
@@ -57,7 +39,6 @@ internal sealed class PluginAssemblyLoader(ILogger<PluginAssemblyLoader> logger)
 
         return null;
     }
-
 
     /// <summary>
     /// Scans every route subdirectory under <paramref name="pluginsRoot"/> for
@@ -128,25 +109,11 @@ internal sealed class PluginAssemblyLoader(ILogger<PluginAssemblyLoader> logger)
 
     private IEnumerable<Type> LoadTypes(string dllPath, Type serviceType)
     {
-        // Load plugins into the Default AssemblyLoadContext rather than an isolated context.
-        //
-        // Isolated contexts break plugins that use native P/Invoke libraries (e.g.
-        // Microsoft.PowerShell.SDK / libpsl-native) because the native code can only
-        // interop correctly with the default runtime context. Loading everything into
-        // Default avoids this entirely.
-        //
-        // ResolveFromAnyScannedPlugin (registered once — see the field declarations above)
-        // lets the Default context find this plugin's private deps (e.g.
-        // Microsoft.PowerShell.SDK, Yarp.ReverseProxy) that are published alongside the
-        // plugin DLL but are not in the host's output directory. Assemblies already loaded
-        // by the host are reused — no type-identity mismatch.
         var resolver = new AssemblyDependencyResolver(dllPath);
         _resolvers.Add(resolver);
 
         if (!_resolvingHandlerAttached)
         {
-            // Kept registered for the process's lifetime — plugins may lazily load
-            // assemblies at runtime (e.g. PowerShell initialising a Runspace on first use).
             AssemblyLoadContext.Default.Resolving += ResolveFromAnyScannedPlugin;
             _resolvingHandlerAttached = true;
         }
@@ -161,20 +128,14 @@ internal sealed class PluginAssemblyLoader(ILogger<PluginAssemblyLoader> logger)
             if (loadedByName is not null &&
                 !string.Equals(loadedByName.Location, dllPath, StringComparison.OrdinalIgnoreCase))
             {
-                // A copy of an assembly the host already has (plugin publishes bring the
-                // whole dependency closure, e.g. ConduitSharp.Host.dll). Loading it again
-                // would re-discover the built-in plugins it contains and re-register them
-                // AFTER the external plugin — last-registration-wins would then silently
-                // shadow the plugin with the built-in it was meant to replace.
                 return [];
             }
 
-            // Reuse if already loaded from this exact path (gateway restart in tests).
             assembly = loadedByName ?? AssemblyLoadContext.Default.LoadFromAssemblyPath(dllPath);
         }
         catch (Exception ex)
         {
-            _resolvers.Remove(resolver); // this DLL never loaded — its resolver can't help anyone
+            _resolvers.Remove(resolver);
             _logger.LogWarning(ex, "Failed to load assembly '{Path}' — skipping.", dllPath);
             return [];
         }

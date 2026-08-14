@@ -14,8 +14,10 @@ namespace ConduitSharp.Gateway.Proxy;
 /// half-streamed body), so the loop lives here where it can rewind the buffered request body and
 /// re-run load balancing to land on a different node.
 ///
-/// Only idempotent methods are retried: a POST/PATCH may already have been applied upstream.
-/// Config: the route's <c>retry</c> block (maxAttempts / delayMs / backoff / jitter / retryOn).
+/// Only idempotent methods are retried by default: a POST/PATCH may already have been applied
+/// upstream. A route can opt in with <c>retryNonIdempotent</c> when its upstream is safe to replay.
+/// Config: the route's <c>retry</c> block (maxAttempts / retryNonIdempotent / delayMs / backoff /
+/// jitter / retryOn).
 /// </summary>
 internal sealed class UpstreamRetry
 {
@@ -28,8 +30,6 @@ internal sealed class UpstreamRetry
     /// <summary>The route's effective retryOn status set, read by the response transform.</summary>
     internal const string RetryOnKey = "ConduitSharp.RetryOn";
 
-    // Polly outcome for "done — do not retry" regardless of the response status
-    // (last attempt, response already streaming, or client gone).
     private const int DoNotRetry = 0;
 
     private static readonly HashSet<string> IdempotentMethods =
@@ -89,8 +89,8 @@ internal sealed class UpstreamRetry
         using var activity = PipelineTelemetry.ActivitySource.StartActivity("gateway.forward");
         activity?.SetTag("conduitsharp.route_id", routeId);
 
-        if (!IdempotentMethods.Contains(context.Request.Method)
-            || !_routes.TryGetValue(routeId, out var retry))
+        if (!_routes.TryGetValue(routeId, out var retry)
+            || (!IdempotentMethods.Contains(context.Request.Method) && !retry.Config.RetryNonIdempotent))
         {
             activity?.SetTag("conduitsharp.attempt", 1);
             context.Items[CanRetryKey] = false;
@@ -102,12 +102,8 @@ internal sealed class UpstreamRetry
 
         var feature = context.GetReverseProxyFeature();
 
-        // Load balancing narrows AvailableDestinations to the single node it picked, so each
-        // attempt must start from the full set to be able to fail over.
         var allDestinations = feature.AvailableDestinations;
 
-        // Response headers a plugin set before forwarding are the client's, not the attempt's —
-        // keep them across a reset.
         var pluginHeaders = context.Response.Headers.ToList();
 
         var attempt = 0;

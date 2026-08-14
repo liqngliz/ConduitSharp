@@ -1,4 +1,4 @@
-# Phase 2/3 load-bench rig — APISIX-style method (see docs/planning/BENCHMARKS_PLAN.md).
+# Phase 2/3 load-bench rig — APISIX-style method (see run.sh for per-scenario rationale).
 #
 #   ./run.sh all                 # scenarios with 30s runs, writes results.md
 #   SCENARIO=scenario-b ./run.sh scenario-b
@@ -23,13 +23,14 @@ services:
     environment:
       OTEL_BLRP_MAX_QUEUE_SIZE: 20000
       Gateway__RoutesPath: /config/${SCENARIO:-scenario-a}.json
-      # Phase 3 flood: lower the global buffered-body budget to force 503 load-shed.
-      Gateway__RequestLimits__MaxTotalBufferedBodyBytes: ${MAX_TOTAL_BUFFERED:-134217728}
-      # The RAM tier, carved out of the total above; the rest is the disk-spill tier.
-      Gateway__RequestLimits__MaxMemoryBufferedBodyBytes: ${MAX_MEMORY_BUFFERED:-67108864}
+      # Two independent budgets, one per resource (v2.0.0). Neither is carved out of the other:
+      # RAM is sized against the container's memory, disk against the spill mount below.
+      # Phase 3 flood lowers whichever one the arm is trying to exhaust, to force 503 load-shed.
+      Gateway__RequestLimits__MaxRamBufferedBodyBytes: ${MAX_RAM_BUFFERED:-67108864}
+      Gateway__RequestLimits__MaxDiskBufferedBodyBytes: ${MAX_DISK_BUFFERED:-67108864}
       # Per-request RAM ceiling. Scenario 4 drops this to nginx's client_body_buffer_size (16k)
       # so ConduitSharp's buffered path is configured like APISIX's default rather than better.
-      Gateway__RequestLimits__MemoryBufferThresholdBytes: ${MEMORY_THRESHOLD:-1048576}
+      Gateway__RequestLimits__RamBufferThresholdBytes: ${RAM_THRESHOLD:-1048576}
       # A real disk-backed volume, NOT the container's /tmp — on many images that is tmpfs,
       # which would make the "disk" tier RAM and quietly turn the step-down into an OOM.
       Gateway__RequestLimits__SpillDirectory: ${SPILL_DIR:-/spill}
@@ -52,7 +53,7 @@ services:
       - capture-disk:/var/log/conduit
     # RAM-backed spill for s5, sized explicitly. Three limits can stop a tmpfs spill and only one
     # of them is graceful, so they must be ordered:
-    #   MaxTotalBufferedBodyBytes (503) < tmpfs size= (ENOSPC -> 500) < mem_limit (OOM-kill)
+    #   MaxDiskBufferedBodyBytes (503) < tmpfs size= (ENOSPC -> 500) < mem_limit (OOM-kill)
     # Unset, a tmpfs mount defaults to half the host's RAM and /dev/shm to 64 MB — the latter is why
     # an earlier spill-heavy run looked fast while actually returning 85% 500s. tmpfs pages are
     # charged to the container's cgroup, so GW_MEM must cover this mount PLUS the heap.

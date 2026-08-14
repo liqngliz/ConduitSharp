@@ -4,28 +4,26 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-// Cross-platform code metrics — the Visual Studio "Calculate Code Metrics" equivalent
-// (cyclomatic complexity, source lines, maintainability index) computed with Roslyn.
-//
-//   dotnet run --project tools/CodeMetrics -- <sourceRoot> <outputDir>
-//
-// Defaults: sourceRoot=src, outputDir=TestResults/metrics. Emits metrics.csv and
-// metrics.html and prints a summary + the worst offenders.
-
-var sourceRoot = args.Length > 0 ? args[0] : "src";
+var sourceRoots = (args.Length > 0 ? args[0] : "src")
+    .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 var outputDir  = args.Length > 1 ? args[1] : Path.Combine("TestResults", "metrics");
 Directory.CreateDirectory(outputDir);
 
-var files = Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
-    .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
-             && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
-             && !f.EndsWith(".g.cs") && !f.EndsWith(".Designer.cs"))
-    .OrderBy(f => f)
+var files = sourceRoots
+    .Where(Directory.Exists)
+    .SelectMany(root => Directory
+        .EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+        .Select(path => (Root: root, Path: path)))
+    .Where(f => !f.Path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+             && !f.Path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+             && !f.Path.EndsWith(".g.cs", StringComparison.Ordinal)
+             && !f.Path.EndsWith(".Designer.cs", StringComparison.Ordinal))
+    .OrderBy(f => f.Path, StringComparer.Ordinal)
     .ToList();
 
 var rows = new List<Row>();
 
-foreach (var file in files)
+foreach (var (sourceRoot, file) in files)
 {
     var text = File.ReadAllText(file);
     var tree = CSharpSyntaxTree.ParseText(text);
@@ -64,8 +62,6 @@ WriteHtml(Path.Combine(outputDir, "metrics.html"), rows);
 PrintSummary(rows, outputDir);
 return 0;
 
-// ---------------------------------------------------------------------------
-
 static int CountBranches(SyntaxNode body) =>
     body.DescendantNodes().Sum(n => n switch
     {
@@ -84,7 +80,6 @@ static int CountBranches(SyntaxNode body) =>
         _ => 0,
     });
 
-// Non-blank, non-comment-only source lines within the member.
 static int SourceLines(SyntaxNode member)
 {
     var span  = member.GetLocation().GetLineSpan();
@@ -92,13 +87,14 @@ static int SourceLines(SyntaxNode member)
     return lines.Count(l =>
     {
         var t = l.Trim();
-        return t.Length > 0 && !t.StartsWith("//") && !t.StartsWith("///")
-            && !t.StartsWith("/*") && !t.StartsWith('*');
+        return t.Length > 0
+            && !t.StartsWith("//", StringComparison.Ordinal)
+            && !t.StartsWith("///", StringComparison.Ordinal)
+            && !t.StartsWith("/*", StringComparison.Ordinal)
+            && !t.StartsWith('*');
     });
 }
 
-// Halstead volume V = N * log2(n): operators = punctuation + keyword tokens,
-// operands = identifiers + literals.
 static double HalsteadVolume(SyntaxNode body)
 {
     var distinctOps = new HashSet<string>();
@@ -129,7 +125,6 @@ static bool IsLiteral(SyntaxToken t) =>
     || t.IsKind(SyntaxKind.CharacterLiteralToken) || t.IsKind(SyntaxKind.TrueKeyword)
     || t.IsKind(SyntaxKind.FalseKeyword);
 
-// Microsoft's maintainability index, clamped to 0..100.
 static int MaintainabilityIndex(int cc, int loc, double halsteadVolume)
 {
     var hv  = Math.Max(halsteadVolume, 1);

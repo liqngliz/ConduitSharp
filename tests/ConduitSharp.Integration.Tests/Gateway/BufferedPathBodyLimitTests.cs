@@ -19,7 +19,6 @@ namespace ConduitSharp.Integration.Tests.Gateway;
 public sealed class BufferedPathBodyLimitTests : IAsyncLifetime
 {
     private FakeUpstream _upstream = null!;
-    // Used to capture what the gateway set the MaxRequestBodySize feature to
     public static long? CapturedMaxRequestBodySize { get; set; } = -1;
 
     public async Task InitializeAsync()
@@ -35,7 +34,7 @@ public sealed class BufferedPathBodyLimitTests : IAsyncLifetime
     [Fact]
     public async Task BufferedRoute_WithLimit_SetsFeatureLimit()
     {
-        CapturedMaxRequestBodySize = -1; // Reset
+        CapturedMaxRequestBodySize = -1;
 
         var routes = """
         {
@@ -177,7 +176,7 @@ public sealed class BufferedPathBodyLimitTests : IAsyncLifetime
         using var client = factory.CreateClient();
         
         await client.PutAsync("/test-stream", new StringContent("test body"));
-        Assert.Equal(-2, CapturedMaxRequestBodySize); // Our mock feature returns -2
+        Assert.Equal(-2, CapturedMaxRequestBodySize);
 
         CapturedMaxRequestBodySize = -1;
         await client.PutAsync("/test-buffer", new StringContent("test body"));
@@ -214,7 +213,6 @@ public sealed class BufferedPathBodyLimitTests : IAsyncLifetime
     [Trait("Category", "Security")]
     public async Task BufferedRoute_AboveKestrelDefault_EndToEnd_HonorsConfiguredLimit()
     {
-        // 1. Configure the route with limit 40MB (above Kestrel's 30MB default)
         var routes = """
         {
         "routes": [
@@ -235,7 +233,6 @@ public sealed class BufferedPathBodyLimitTests : IAsyncLifetime
         var path = System.IO.Path.GetTempFileName();
         await System.IO.File.WriteAllTextAsync(path, routes);
 
-        // 2. Start a real Kestrel host on a random port
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -250,25 +247,19 @@ public sealed class BufferedPathBodyLimitTests : IAsyncLifetime
         app.UseConduitSharpGateway();
         await app.StartAsync();
 
-        // 3. Get the bound port
         var serverAddress = app.Urls.First();
 
-        // 4. Send a 35MB body (below 40MB but above 30MB Kestrel limit)
-        // If the bug is present, Kestrel will throw 413 Payload Too Large.
-        // If the bug is fixed, it will forward successfully and return 200 OK.
         using var client = new HttpClient();
         client.BaseAddress = new Uri(serverAddress);
         
         var request = new HttpRequestMessage(HttpMethod.Put, "/test");
-        var hugeBody = new byte[35 * 1024 * 1024]; // 35 MB
+        var hugeBody = new byte[35 * 1024 * 1024];
         request.Content = new ByteArrayContent(hugeBody);
 
         var response = await client.SendAsync(request);
 
-        // Prove that the request made it through Kestrel's 30MB default and was successfully forwarded!
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        // Clean up
         await app.StopAsync();
         System.IO.File.Delete(path);
     }

@@ -22,8 +22,6 @@ namespace ConduitSharp.Gateway.Proxy;
 /// </summary>
 internal static class UpstreamProtocol
 {
-    // Keyed on the cluster model, so a config change (which produces a new model) drops the
-    // derived one with it, and the HttpMessageInvoker is shared rather than rebuilt.
     private static readonly ConditionalWeakTable<ClusterModel, ClusterModel> Http2Variants = new();
 
     internal static Task NegotiateAsync(HttpContext context, RequestDelegate next)

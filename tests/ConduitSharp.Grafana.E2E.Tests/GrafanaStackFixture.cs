@@ -57,10 +57,6 @@ public sealed class GrafanaStackFixture : IAsyncLifetime
             await RunDockerAsync([.. ComposeArgs, "down", "-v"], timeoutSeconds: 180, ignoreFailure: true);
     }
 
-    // -------------------------------------------------------------------------
-    // Docker helpers
-    // -------------------------------------------------------------------------
-
     private static async Task<bool> IsDockerAvailableAsync()
     {
         try
@@ -119,18 +115,13 @@ public sealed class GrafanaStackFixture : IAsyncLifetime
                 if (response.IsSuccessStatusCode)
                     return;
             }
-            catch { /* not ready yet */ }
+            catch { }
 
             await Task.Delay(1_000);
         }
 
         throw new TimeoutException($"{name} at {url} did not become ready within {timeoutSeconds}s.");
     }
-
-    // -------------------------------------------------------------------------
-    // Polling helper for the backend query APIs — telemetry lands asynchronously
-    // (gateway export → collector batch (5s) → backend ingest).
-    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Polls <paramref name="url"/> until <paramref name="hasData"/> returns true for
@@ -154,16 +145,12 @@ public sealed class GrafanaStackFixture : IAsyncLifetime
                         return (true, lastBody);
                 }
             }
-            catch { /* transient — keep polling */ }
+            catch { }
 
             await Task.Delay(2_000);
         }
         return (false, lastBody);
     }
-
-    // -------------------------------------------------------------------------
-    // Solution-root discovery
-    // -------------------------------------------------------------------------
 
     private static string LocateLegacyGatewayRoot()
     {

@@ -25,10 +25,6 @@ public sealed class JwksJwtAuthPluginTests
     private static string ValidBearer(string payloadJson = """{"sub":"test"}""") =>
         $"Bearer {AsymmetricTokenKit.SignRs256(payloadJson)}";
 
-    // -------------------------------------------------------------------------
-    // Bearer extraction failures
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ValidateConfig_MissingJwksUri_Throws()
     {
@@ -39,14 +35,9 @@ public sealed class JwksJwtAuthPluginTests
         Assert.Contains("jwksUri", ex.Message);
     }
 
-    // -------------------------------------------------------------------------
-    // Multiple Providers
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_MultipleProviders_SucceedsIfAnyProviderValidates()
     {
-        // Provider 1 fails signature, Provider 2 succeeds
         var config = new JwksJwtAuthConfig
         {
             Providers =
@@ -69,9 +60,6 @@ public sealed class JwksJwtAuthPluginTests
     [Fact]
     public async Task ExecuteAsync_MultipleProviders_Returns403IfAnyProviderFailsRbac()
     {
-        // Provider 1 matches signature but fails RBAC (should yield 403)
-        // Provider 2 fails signature (should yield 401)
-        // Expected final result: 403 (Forbidden is higher precedence than Unauthorized)
         var config = new JwksJwtAuthConfig
         {
             Providers =
@@ -79,7 +67,7 @@ public sealed class JwksJwtAuthPluginTests
                 new JwksProviderConfig 
                 { 
                     JwksUri = "https://stub.example.com/.well-known/jwks.json",
-                    RequiredClaims = [ new RequiredClaim { Claim = "roles", AnyOf = ["Admin"] } ] // Token doesn't have this
+                    RequiredClaims = [ new RequiredClaim { Claim = "roles", AnyOf = ["Admin"] } ]
                 },
                 new JwksProviderConfig 
                 { 
@@ -118,10 +106,6 @@ public sealed class JwksJwtAuthPluginTests
         Assert.Equal(401, context.Response.StatusCode);
     }
 
-    // -------------------------------------------------------------------------
-    // Handler validation failure
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_TokenSignedByWrongKey_ShortCircuits401()
     {
@@ -148,10 +132,6 @@ public sealed class JwksJwtAuthPluginTests
         Assert.Equal(401, context.Response.StatusCode);
     }
 
-    // -------------------------------------------------------------------------
-    // Happy path
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_ValidToken_CallsNext()
     {
@@ -164,10 +144,6 @@ public sealed class JwksJwtAuthPluginTests
         Assert.Equal(200, context.Response.StatusCode);
         Assert.True(wasCalled());
     }
-
-    // -------------------------------------------------------------------------
-    // requiredClaims (RBAC) — 403, not 401, on a valid token lacking permission
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task ExecuteAsync_ValidTokenMissingRequiredRole_ShortCircuits403()
@@ -204,8 +180,6 @@ public sealed class JwksJwtAuthPluginTests
     [Fact]
     public async Task ExecuteAsync_InvalidTokenWithRequiredClaims_StillReturns401NotChecked()
     {
-        // A failed handler validation must short-circuit 401 before requiredClaims is
-        // ever evaluated — requiredClaims is present here but never reached.
         var config = DefaultConfig with
         {
             RequiredClaims = [new RequiredClaim { Claim = "roles", AnyOf = ["Admin"] }]
@@ -219,15 +193,9 @@ public sealed class JwksJwtAuthPluginTests
         Assert.Equal(401, context.Response.StatusCode);
     }
 
-    // -------------------------------------------------------------------------
-    // Config comes from context.PluginConfig (routes.json round-trip)
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task ExecuteAsync_ReadsConfigFromContextPluginConfig()
     {
-        // The audience constraint only exists in the JSON placed on the context — proving
-        // ExecuteAsync parses context.PluginConfig rather than any ambient default.
         var plugin  = Plugin();
         var context = HttpContextBuilder.WithAuth(ValidBearer());
         var config = Configured(DefaultConfig with { Audience = "some-other-api" });
@@ -236,11 +204,6 @@ public sealed class JwksJwtAuthPluginTests
 
         Assert.Equal(401, context.Response.StatusCode);
     }
-
-    // -------------------------------------------------------------------------
-    // Per-route config isolation: one plugin/handler/factory (the singleton wiring),
-    // four route configs with overlapping jwksUris — keys must stay per URI.
-    // -------------------------------------------------------------------------
 
     [Fact]
     [Trait("Contract", "PluginIsolation")]
@@ -266,7 +229,7 @@ public sealed class JwksJwtAuthPluginTests
             ['a'] = ['a'],
             ['b'] = ['b'],
             ['c'] = ['c', 'a'],
-            ['d'] = ['a', 'b', 'c'],  // key d valid nowhere
+            ['d'] = ['a', 'b', 'c'],
         };
 
         foreach (var route in "abcd")

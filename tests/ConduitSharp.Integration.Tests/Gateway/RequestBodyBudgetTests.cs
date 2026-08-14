@@ -3,119 +3,110 @@ using ConduitSharp.Gateway.Middleware;
 namespace ConduitSharp.Integration.Tests.Gateway;
 
 /// <summary>
-/// The two-tier buffering budget in isolation. The tiers exist so the gateway steps down under
-/// pressure — RAM while it lasts, disk after that, 503 only when both are gone — so the cases that
-/// matter are the transitions between them.
+/// The two buffering budgets in isolation. They meter different physical resources — RAM and spill
+/// disk — and are independent, so the cases that matter are the handoff between them (a body that
+/// outgrows RAM moves to disk) and the boundaries of each.
 /// </summary>
 [Trait("Category", "Security")]
 public sealed class RequestBodyBudgetTests
 {
     [Fact]
-    public void MemoryTier_WhileItHasHeadroom_HandsOutRam()
+    public void RamBudget_WhileItHasHeadroom_HandsOutRam()
     {
-        var budget = new RequestBodyBudget(maxTotalBytes: 1000, maxMemoryBytes: 100);
+        var budget = new RequestBodyBudget(maxRamBytes: 100, maxDiskBytes: 1000);
 
-        Assert.Equal(100, budget.MemoryHeadroom);
-        Assert.True(budget.TryReserveMemory(60));
-        Assert.Equal(40, budget.MemoryHeadroom);
+        Assert.Equal(100, budget.RamHeadroom);
+        Assert.True(budget.TryReserveRam(60));
+        Assert.Equal(40, budget.RamHeadroom);
     }
 
     [Fact]
-    public void MemoryTier_WhenFull_RefusesRamButTotalStillAdmits()
+    public void RamBudget_WhenFull_RefusesRamButDiskStillAdmits()
     {
-        // The step-down itself: no RAM left, so the body spills — but it is still served, because
-        // the combined budget has room. A refusal here is routine, not an error.
-        var budget = new RequestBodyBudget(maxTotalBytes: 1000, maxMemoryBytes: 100);
+        var budget = new RequestBodyBudget(maxRamBytes: 100, maxDiskBytes: 1000);
 
-        Assert.True(budget.TryReserveMemory(100));
-        Assert.False(budget.TryReserveMemory(1));
-        Assert.Equal(0, budget.MemoryHeadroom);
+        Assert.True(budget.TryReserveRam(100));
+        Assert.False(budget.TryReserveRam(1));
+        Assert.Equal(0, budget.RamHeadroom);
 
-        Assert.True(budget.TryReserve(500)); // spilled bytes still fit the total → no 503
+        Assert.True(budget.TryReserveDisk(500));
     }
 
     [Fact]
-    public void TotalTier_WhenExhausted_RefusesEvenThoughItIsTheLastResort()
+    public void DiskBudget_WhenExhausted_RefusesAndThatIsThe503()
     {
-        var budget = new RequestBodyBudget(maxTotalBytes: 1000, maxMemoryBytes: 100);
+        var budget = new RequestBodyBudget(maxRamBytes: 100, maxDiskBytes: 1000);
 
-        Assert.True(budget.TryReserve(1000));
-        Assert.False(budget.TryReserve(1)); // this is the 503
+        Assert.True(budget.TryReserveDisk(1000));
+        Assert.False(budget.TryReserveDisk(1));
     }
 
     [Fact]
-    public void ReleaseMemory_OnSpill_ReturnsRamToTheTierWithoutTouchingTheTotal()
+    public void ReleaseRam_OnSpill_ReturnsRamWithoutTouchingTheDiskCharge()
     {
-        // What BufferRequestBody does when a body outgrows its threshold: the rented buffer went
-        // back to the pool, so the RAM is genuinely free — but the bytes still occupy the total,
-        // they just live on disk now.
-        var budget = new RequestBodyBudget(maxTotalBytes: 1000, maxMemoryBytes: 100);
+        var budget = new RequestBodyBudget(maxRamBytes: 100, maxDiskBytes: 1000);
 
-        Assert.True(budget.TryReserveMemory(100));
-        Assert.True(budget.TryReserve(100));
-        Assert.Equal(0, budget.MemoryHeadroom);
+        Assert.True(budget.TryReserveRam(100));
+        Assert.True(budget.TryReserveDisk(100));
+        Assert.Equal(0, budget.RamHeadroom);
 
-        budget.ReleaseMemory(100);
+        budget.ReleaseRam(100);
 
-        Assert.Equal(100, budget.MemoryHeadroom); // RAM freed for the next request
-        Assert.False(budget.TryReserve(901));     // total still holds the spilled bytes
+        Assert.Equal(100, budget.RamHeadroom);
+        Assert.False(budget.TryReserveDisk(901));
     }
 
     [Fact]
-    public void MemoryTier_DisabledByNonPositiveLimit_SpillsEverything()
+    public void RamBudget_Zero_MeansNoRamAtAll_SoEverythingSpills()
     {
-        // Non-positive limits disable the two tiers in opposite directions, which is the one
-        // genuinely surprising thing about this type: no memory tier means no RAM at all…
-        var budget = new RequestBodyBudget(maxTotalBytes: 1000, maxMemoryBytes: 0);
+        var budget = new RequestBodyBudget(maxRamBytes: 0, maxDiskBytes: 1000);
 
-        Assert.Equal(0, budget.MemoryHeadroom);
-        Assert.False(budget.TryReserveMemory(1));
-        Assert.True(budget.TryReserve(1000)); // …while the total still bounds the spill
+        Assert.Equal(0, budget.RamHeadroom);
+        Assert.False(budget.TryReserveRam(1));
+        Assert.True(budget.TryReserveDisk(1000));
     }
 
     [Fact]
-    public void TotalTier_DisabledByNonPositiveLimit_IsUnlimited()
+    public void DiskBudget_Zero_MeansNoSpilling_SoABodyMustFitRam()
     {
-        // …whereas no total limit means unlimited, not zero.
-        var budget = new RequestBodyBudget(maxTotalBytes: 0, maxMemoryBytes: 100);
+        var budget = new RequestBodyBudget(maxRamBytes: 100, maxDiskBytes: 0);
 
-        Assert.True(budget.TryReserve(long.MaxValue));
+        Assert.True(budget.TryReserveRam(100));
+        Assert.False(budget.TryReserveDisk(1));
     }
 
     [Fact]
-    public void Release_ReturnsBytesToTheTotal()
+    public void ReleaseDisk_ReturnsBytesToTheDiskBudget()
     {
-        var budget = new RequestBodyBudget(maxTotalBytes: 1000, maxMemoryBytes: 100);
+        var budget = new RequestBodyBudget(maxRamBytes: 100, maxDiskBytes: 1000);
 
-        Assert.True(budget.TryReserve(1000));
-        Assert.False(budget.TryReserve(1));
+        Assert.True(budget.TryReserveDisk(1000));
+        Assert.False(budget.TryReserveDisk(1));
 
-        budget.Release(1000);
+        budget.ReleaseDisk(1000);
 
-        Assert.True(budget.TryReserve(1000)); // the finally in BufferRequestBody
+        Assert.True(budget.TryReserveDisk(1000));
     }
 
     [Fact]
-    public async Task ConcurrentReserves_NeverOversubscribeEitherTier()
+    public async Task ConcurrentReserves_NeverOversubscribeEitherBudget()
     {
-        // The tiers are the memory bound. If the CAS loop is wrong under contention the bound is
-        // decorative, so hammer both from every core at once.
         const int max = 1000;
-        var budget = new RequestBodyBudget(maxTotalBytes: max, maxMemoryBytes: max);
+        var budget = new RequestBodyBudget(maxRamBytes: max, maxDiskBytes: max);
 
-        var totalGranted  = 0;
-        var memoryGranted = 0;
+        var diskGranted = 0;
+        var ramGranted  = 0;
 
         await Task.WhenAll(Enumerable.Range(0, Environment.ProcessorCount * 8).Select(_ => Task.Run(() =>
         {
             for (var i = 0; i < 200; i++)
             {
-                if (budget.TryReserve(1)) Interlocked.Increment(ref totalGranted);
-                if (budget.TryReserveMemory(1)) Interlocked.Increment(ref memoryGranted);
+                if (budget.TryReserveDisk(1)) Interlocked.Increment(ref diskGranted);
+                if (budget.TryReserveRam(1))  Interlocked.Increment(ref ramGranted);
             }
         })));
 
-        Assert.Equal(max, totalGranted);
-        Assert.Equal(max, memoryGranted);
+        Assert.Equal(max, diskGranted);
+        Assert.Equal(max, ramGranted);
     }
 }

@@ -39,9 +39,9 @@ SECTIONS = [
 ]
 
 GROUP_HEADINGS = {
-    "stream": "#### Streaming path — a 1 MB body nobody needs to replay",
+    "stream": "#### Streaming path: a 1 MB body nobody needs to replay",
     "buffer": "#### Buffered path — a 1 MB PUT each side must replay (charted: the disk story)",
-    "logging": "#### Body Capture Logging — a ~4 KB JSON POST logged to Loki",
+    "logging": "#### Body Capture Logging: a ~4 KB JSON POST logged to Loki",
 }
 
 
@@ -204,16 +204,16 @@ if len(sys.argv) > 4:
     # Two groups, mirroring the full table: streaming scenarios (nobody buffers) and the
     # buffered-to-storage ones (s4/s5), where the tmpfs bar carries the finding.
     S_GROUPS = [
-        ("#### Streaming path — a 1 MB body nobody needs to replay", [
-            ("s1", "s1 — retries configured, 1 MB POST (ConduitSharp streams it: method-aware)"),
-            ("s2", "s2 — pure streaming, 1 MB POST (APISIX de-tuned to qualify, forfeiting retry)"),
+        ("#### Streaming path: a 1 MB body nobody needs to replay", [
+            ("s1", "s1: retries configured, 1 MB POST (ConduitSharp streams it: method-aware)"),
+            ("s2", "s2: pure streaming, 1 MB POST (APISIX de-tuned to qualify, forfeiting retry)"),
         ]),
-        ("#### Buffered path — forced to disk (s4), and tmpfs as the answer (s5)", [
-            ("s4", "s4 — buffering forced onto disk, 1 MB PUT"),
-            ("s5", "s5 — buffered, spill target is tmpfs, 1 MB PUT"),
+        ("#### Buffered path: forced to disk (s4), and tmpfs as the answer (s5)", [
+            ("s4", "s4: buffering forced onto disk, 1 MB PUT"),
+            ("s5", "s5: buffered, spill target is tmpfs, 1 MB PUT"),
         ]),
-        ("#### Body Capture Logging — a ~4 KB JSON POST logged to Loki", [
-            ("s6", "s6 — logging + body capture, ~4 KB JSON POST"),
+        ("#### Body Capture Logging: a ~4 KB JSON POST logged to Loki", [
+            ("s6", "s6: logging + body capture, ~4 KB JSON POST"),
         ]),
     ]
 
@@ -221,7 +221,7 @@ if len(sys.argv) > 4:
         return next((r for r in rows if gateway_of(r["label"]).startswith(name)), None)
 
     s_parts = [S_START,
-               "### Body handling under load — the s1..s6 matrix (relative QPS, same rig)",
+               "### Body handling under load: the s1..s6 matrix (relative QPS, same rig)",
                ""]
 
     def cell(r, base):
@@ -323,7 +323,7 @@ if len(sys.argv) > 4:
     s_parts += [
         "Structured comparison: each scenario fixes the shape of the work, then compares gateways "
         "doing that shape, with bytes-written-to-storage measured rather than assumed. s4 is the "
-        "honest row: forced entirely onto disk, nginx wins — the design's answer is s5 and the RAM "
+        "honest row: forced entirely onto disk, nginx wins; the design's answer is s5 and the RAM "
         "tier that makes disk rare. s6 is the other honest row: capturing and shipping every body is "
         "real work, so APISIX and Envoy lead it while ConduitSharp buries Ocelot. Full tables, "
         "method, and the parts that hurt: "

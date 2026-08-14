@@ -38,16 +38,12 @@ public sealed class InMemoryCacheService : ICacheService
     {
         var size = EstimateSize(key, response);
         if (_maxTotalBytes > 0 && size > _maxTotalBytes)
-            return Task.CompletedTask; // larger than the whole budget — don't cache
+            return Task.CompletedTask;
 
-        Remove(key); // replace: release the old entry's bytes first
+        Remove(key);
         if (_store.TryAdd(key, (response, DateTimeOffset.UtcNow.Add(ttl), size)))
             Interlocked.Add(ref _totalBytes, size);
 
-        // ponytail: best-effort cap, not a hard invariant — concurrent SetAsync calls can each
-        // pass this check before either evicts, briefly overshooting by up to one entry per
-        // writer. Everyone converges on the next write. A hard cap needs a lock around
-        // add+evict; take that only if the overshoot ever matters.
         if (_maxTotalBytes > 0 && Interlocked.Read(ref _totalBytes) > _maxTotalBytes)
             EvictUntilUnderBudget();
 
@@ -77,16 +73,12 @@ public sealed class InMemoryCacheService : ICacheService
         return true;
     }
 
-    // ponytail: evicts by earliest expiry (no LRU access tracking); the O(n log n)
-    // snapshot sort only runs when the budget is exceeded.
     private void EvictUntilUnderBudget()
     {
         foreach (var kv in _store.ToArray().OrderBy(kv => kv.Value.Expiry))
         {
             if (Interlocked.Read(ref _totalBytes) <= _maxTotalBytes)
                 return;
-            // KeyValuePair overload: only removes if the entry wasn't concurrently replaced,
-            // so the size we subtract always matches the entry we removed.
             if (_store.TryRemove(kv))
                 Interlocked.Add(ref _totalBytes, -kv.Value.Size);
         }

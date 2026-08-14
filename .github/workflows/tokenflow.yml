@@ -1,0 +1,214 @@
+name: TokenFlow
+
+# TokenFlow ships on its own tag, not the library's `v*`. A dashboard fix goes out without
+# cutting NuGet packages and binaries, and the image version says nothing about the gateway
+# library version it happens to embed.
+on:
+  push:
+    tags: [ 'tokenflow-v*' ]
+  # Manual re-run for a tag that already exists (a transient GHCR failure, say) without
+  # having to delete and re-push the tag.
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/tokenflow
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gate the publish on the dashboard actually building and passing. The image builds
+  # the dashboard itself (see the Dockerfile's node stage), so without this a broken
+  # component would ship as a broken page rather than a red build.
+  # ---------------------------------------------------------------------------
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/ConduitSharp.Spend/dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: examples/ConduitSharp.Spend/dashboard/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Test & Collect Coverage
+        run: npx vitest run --coverage
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload HTML Coverage Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-coverage-html
+          path: examples/ConduitSharp.Spend/dashboard/coverage
+
+  # ---------------------------------------------------------------------------
+  # Image — the whole install. `docker run ghcr.io/<owner>/tokenflow` is a working
+  # gateway and dashboard with no clone. Built for both arches so the manifest actually
+  # offers arm64 (Apple Silicon, Graviton) rather than silently amd64-only.
+  # ---------------------------------------------------------------------------
+  image:
+    needs: dashboard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # type=semver can't read a `tokenflow-v` prefix, so the version comes out of the tag
+      # by regex. On workflow_dispatch there is no tag to match and only :latest is produced.
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=match,pattern=tokenflow-v(\d+\.\d+\.\d+),group=1
+            type=match,pattern=tokenflow-v(\d+\.\d+),group=1
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: examples/ConduitSharp.Spend/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # ---------------------------------------------------------------------------
+  # dotnet tool — the one-command install for anyone with the .NET 10 SDK:
+  #   dotnet tool install -g ConduitSharp.TokenFlow && tokenflow
+  #   dnx ConduitSharp.TokenFlow                      (no install)
+  #
+  # Packed here rather than in release.yml's loop, which would pin the tool to the
+  # library's Directory.Build.props version. -p:Version comes off the tag instead.
+  # A tool package runs through the `dotnet` muxer, so it needs no apphost and no
+  # macOS code signature, unlike the tarballs below.
+  #
+  # One-time setup, blocks the first release: a Trusted Publishing policy is scoped to
+  # owner + repository + workflow FILE, so the release.yml policy does not reach this
+  # workflow. Add one for liqngliz / ConduitSharp / tokenflow.yml. Package ID is not part
+  # of the scope. Leave Environment empty; no job here declares `environment:`.
+  # A policy nuget cannot yet pin to GitHub's repo/owner IDs is active for 7 days only;
+  # the first successful publish makes it permanent, and the window restarts from the UI.
+  # ---------------------------------------------------------------------------
+  tool:
+    needs: dashboard
+    if: startsWith(github.ref, 'refs/tags/')  # no version to pack on workflow_dispatch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read    # a permissions block zeroes everything unlisted — checkout needs this back
+      id-token: write   # required to request the OIDC token
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # .NET 10 packs tools from Publish, so wwwroot has to exist before pack or the
+      # dashboard ships as a 404 (dotnet/docs#47916).
+      - name: Build Dashboard
+        run: |
+          cd examples/ConduitSharp.Spend/dashboard
+          npm ci
+          npm run build
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Pack
+        run: |
+          dotnet pack examples/ConduitSharp.Spend -c Release -o nupkg \
+            -p:Version="${GITHUB_REF_NAME#tokenflow-v}"
+
+      - name: NuGet login (OIDC → short-lived API key)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push nupkg/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
+            --skip-duplicate
+
+  # ---------------------------------------------------------------------------
+  # npx — the install for someone with Node and no .NET SDK, which is most of
+  # TokenFlow's audience (they proxy Claude Code or Codex). The package carries
+  # framework-dependent DLLs; npm/tokenflow/tokenflow.js fetches Microsoft's signed
+  # runtime on first run. -p:UseAppHost=false because an apphost resolves its framework
+  # from DOTNET_ROOT or a system install, and the bootstrapped runtime is in neither.
+  #
+  # Auth is npm Trusted Publishing (OIDC), no NPM_TOKEN. One-time setup, blocks the
+  # first release: npm cannot configure a trusted publisher for a package that does
+  # not exist, so `@liqngliz/tokenflow` must be published once manually, then wired at
+  # npmjs.com → @liqngliz/tokenflow → Settings → Trusted publishing with liqngliz /
+  # ConduitSharp / tokenflow.yml (case-sensitive). A mismatch reports as a 404,
+  # not as a config error (npm/cli#9088).
+  # ---------------------------------------------------------------------------
+  npm:
+    needs: dashboard
+    if: startsWith(github.ref, 'refs/tags/')  # no version to publish on workflow_dispatch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # required for the OIDC token npm publish exchanges
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+
+      # Runners ship npm 10.x; trusted publishing needs 11.5.1+.
+      - name: Upgrade npm
+        run: npm i -g npm@latest
+
+      - name: Build Dashboard
+        run: |
+          cd examples/ConduitSharp.Spend/dashboard
+          npm ci
+          npm run build
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish app into the package
+        run: |
+          dotnet publish examples/ConduitSharp.Spend -c Release \
+            -p:UseAppHost=false -o npm/tokenflow/app
+
+      - name: Publish to npm
+        working-directory: npm/tokenflow
+        run: |
+          npm version "${GITHUB_REF_NAME#tokenflow-v}" --no-git-tag-version
+          npm publish --access public

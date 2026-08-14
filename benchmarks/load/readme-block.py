@@ -19,7 +19,7 @@ GATEWAYS = [
     ("apisix pure proxy",     "APISIX"),
     ("ocelot pure proxy",     "Ocelot"),
     ("envoy pure proxy",      "Envoy"),
-    ("direct-to-upstream",    "*(no gateway — direct to nginx)*"),
+    ("direct-to-upstream",    "*(no gateway, direct to nginx)*"),
 ]
 
 jsonl_path, readme_path, run_url = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -58,7 +58,7 @@ def table_for(conns):
         rows.append((name, rec))
     if baseline is None:
         return []
-    chart_names = {"*(no gateway — direct to nginx)*": "no gateway (direct)"}
+    chart_names = {"*(no gateway, direct to nginx)*": "no gateway (direct)"}
     lines = [
         f"#### {conns} connections",
         "",
@@ -82,11 +82,11 @@ if not tables:
 
 lines = [
     START,
-    "### Throughput — relative, same rig, sequential runs",
+    "### Throughput: relative, same rig, sequential runs",
     "",
     *tables,
     "Pure proxy, 1 KB upstream response, bombardier, gateways benched sequentially on the",
-    "identical rig. **Measured on shared GitHub Actions runners (4 vCPU) — only ratios are",
+    "identical rig. **Measured on shared GitHub Actions runners (4 vCPU); only ratios are",
     "meaningful there; absolute QPS on shared CI is noise.** Raw figures for this exact run:",
     f"[CI run]({run_url}). Method & how to reproduce on pinned hardware:",
     "[benchmarks/load](benchmarks/load/README.md).",

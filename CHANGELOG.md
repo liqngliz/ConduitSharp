@@ -5,6 +5,140 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.0] — unreleased
+
+### Added
+
+- **Token rate limiting for AI APIs** — a `token-rate-limit` plugin that meters LLM token usage per
+  caller against a fixed-window budget, not request count. It reads the token counts from the response
+  body (`usageFields`, config-driven so one plugin covers OpenAI / Anthropic / Gemini / Ollama), sums
+  them, and charges the caller's window; the next request over budget gets a 429. Per-caller by header
+  (`X-Api-Key`) or JWT claim (`sub`). Reuses the shared `IRateLimitStore`, so the Redis drop-in gives a
+  budget shared across replicas. Non-streaming responses only; SSE goes uncounted.
+- `IRateLimitStore` gains a weighted `Add(key, windowId, windowSeconds, amount)` and `Peek(key,
+  windowId)`, so a limiter can charge a variable cost after a request instead of one permit before it.
+  The Redis drop-in implements both (`INCRBY` + a read).
+
+### Breaking — request-limit settings split into one budget per resource
+
+`Gateway:RequestLimits` counted RAM and disk spill in a single combined total, which could not be
+sized correctly for either: raising it to suit a large spill volume silently licensed the same
+growth in RAM, so an overloaded gateway could be OOM-killed where it should have shed with a 503.
+The combined total is replaced by two independent budgets.
+
+| Removed | Replacement | Meters |
+|---|---|---|
+| `MaxTotalBufferedBodyBytes` (RAM + disk, 128 MiB) | `MaxDiskBufferedBodyBytes` (64 MiB) | spill-file bytes only — size against free disk |
+| `MaxMemoryBufferedBodyBytes` (64 MiB) | `MaxRamBufferedBodyBytes` (64 MiB) | heap only — size against available memory |
+| `MemoryBufferThresholdBytes` (1 MiB) | `RamBufferThresholdBytes` (1 MiB) | unchanged meaning; renamed for symmetry |
+
+The removed keys are **rejected at startup** with a message naming the replacement, rather than
+ignored — a config that still looks deliberate while silently running on defaults is the failure
+mode this change exists to prevent.
+
+Behaviour changes that follow:
+
+- A buffered body is charged to exactly one budget at a time, moving from RAM to disk when it
+  spills. Nothing is double-counted.
+- The 503 load-shed now fires when **neither** budget has room, rather than when a combined total is
+  gone. A body that fits entirely in RAM is served regardless of the disk budget.
+- Body-capture prefixes are RAM-only (a tee holds pooled segments; a prefix read rents from
+  `ArrayPool`; neither ever spills) and are now charged to `MaxRamBufferedBodyBytes`. Previously
+  they were charged to the combined total, so a deployment with a large disk budget and a small
+  memory tier could accumulate capture buffers in RAM up to the disk-inclusive number.
+- `0` now reads the same way on both budgets: none of that resource is available. `0` RAM means
+  every body spills; `0` disk means a body must fit RAM or be shed. Negative values are rejected at
+  startup.
+- **There is no longer an "unlimited" value, and `0` is its exact inverse.** On the old combined
+  total, `0` disabled the check and meant "buffer without bound"; on either new budget it means
+  "none of this resource". A config carried across unchanged does not merely lose a cap — it gains
+  the opposite one. To keep unbounded behaviour, set the budget to a value large enough never to
+  bind rather than to `0`. (The removed-key rejection catches the direct rename, but an operator
+  who *re-types* `MaxDiskBufferedBodyBytes: 0` intending "unlimited" gets a gateway that refuses to
+  spill; this is the one silent inversion in the change.)
+- `RamBufferThresholdBytes` is floored at 4 KiB with no upper cap (previously clamped to 1 MiB).
+  Raising it past 1 MiB trades large-object-heap allocation for skipping the disk round-trip.
+
+### Breaking — body-capture plugins consolidated
+
+The two v1 plugins are now one. `StreamingBodyCapturePlugin` absorbed the buffering
+`BodyCapturePlugin` and then took its name, so v2 ships a single `BodyCapturePlugin` (variant
+`body-capture`) that chooses its path per request: it reuses the gateway's existing seekable buffer
+when there is one (a retry route, or a body-reading plugin on the same route), and otherwise tees a
+bounded prefix through `HttpLogging`.
+
+**The v2 `BodyCapturePlugin` is not the v1 one.** It keeps `ReadsRequestBody => false`, so unlike
+the v1 class of that name it never forces whole-body buffering. An embedder registering the type
+directly (`AddSingleton<IPipelinePlugin, BodyCapturePlugin>()`) will therefore still compile against
+v2 and silently get the streaming behaviour instead of a compile error. Check that a route relying
+on the old forced buffering declares a body-reading plugin or retry.
+
+Existing routes using `"variant": "body-capture"` keep working unchanged. Routes using
+`"variant": "body-capture-streaming"` must switch to `"body-capture"`.
+
+The plugin's ceiling on a route's `maxSize` is configurable via `BodyCapture:MaxCaptureBytes`
+(default 32 KiB), and a value beyond the addressable `int` range is rejected at startup.
+
+### Breaking — header-transform config is nested by direction
+
+`header-transform` config moved from a flat `{ add, set, remove }` to `{ request: {...}, response: {...} }`.
+The flat shape is **rejected at startup** with a migration message. This closes a silent bug: the flat
+config deserialized to an empty transform and did nothing, so a route that looked like it stripped
+headers was a no-op. Migrate:
+
+```json
+// before
+"config": { "set": { "X-Forwarded-By": "gw" }, "remove": ["X-Debug"] }
+// after
+"config": { "request": { "set": { "X-Forwarded-By": "gw" }, "remove": ["X-Debug"] } }
+```
+
+### Breaking — body-capture config is nested by direction
+
+Both capture plugins (`body-capture` and `body-capture-file`) moved from flat `{ "maxSize": N }`
+(request only) to `{ "request": { "maxSize": N }, "response": { "maxSize": M } }`. The flat shape is
+**rejected at startup** with a migration hint. A direction is captured only when its block is present
+with a positive `maxSize`; omit it (or `maxSize: 0`) to skip it. For `body-capture-file`, `logPath`
+and `maxFileBytes` stay top-level.
+
+### Added
+
+- **Response body capture.** Both `body-capture` and `body-capture-file` now capture response bodies
+  via a bounded write-through tee on `Response.Body`, so they run on every route (including
+  retry/buffered ones the request tee never sees) and capture binary responses too. The file sink
+  tags each record with a `direction` field (`request` / `response`). Both prefixes are RAM-only; the
+  gateway reserves `request.maxSize + response.maxSize` against `MaxRamBufferedBodyBytes` (the sum,
+  since HttpLogging holds the request prefix until the response completes), so enabling response
+  capture roughly doubles a route's capture reservation.
+- **Response header transform.** `header-transform` now mutates response headers too, via a
+  `response` block applied from `Response.OnStarting` just before the reply is sent. `remove` a leaky
+  upstream header (`Server`, `X-Powered-By`) or `set` a security header (`X-Frame-Options`) on the way
+  out. (`Server` note: Kestrel writes its own unless `AddServerHeader=false` on the host.)
+- `retry.retryNonIdempotent` — opt in, per route, to retrying `POST`/`PATCH`. Off by default,
+  because a non-idempotent request may already have been applied upstream, so a replay can
+  double-apply it. Enabling it forces the route to buffer, since the retry loop needs a rewindable
+  body.
+
+### Fixed
+
+- **The file body-capture sink's RAM is now budgeted.** `BodyCaptureToFilePlugin` rents a pooled
+  `maxSize` buffer per request and holds it until its background writer drains the queue, but
+  declared no `CaptureMemoryBytes` — so the gateway reserved nothing and the footprint multiplied by
+  concurrency with nothing to shed it. It now declares the buffer, putting it under
+  `MaxRamBufferedBodyBytes` and the 503. Its *disk* use stays deliberately unbudgeted: that is a
+  persistent rolling log already bounded by `maxFileBytes`, not transient per-request spill, and
+  reserving it per request would ratchet the disk budget to zero.
+
+### Documentation
+
+- **`AGENTDOC.md` and `ENTERPRISE.md` documented a plugin contract that does not exist.** Both showed
+  `ExecuteAsync(PluginContext, PluginDelegate)` with `context.ShortCircuit(...)` and a
+  `ResponseCaptureCallback`; the real signature is
+  `ExecuteAsync(HttpContext, JsonElement, RequestDelegate)` and none of those types remain in `src/`.
+  Following the docs produced a plugin that would not compile. Rewritten against the real interface,
+  including the response-capture pattern `CachePlugin` actually uses (swap `Response.Body`, restore
+  in a `finally`).
+
 ## [1.0.0] — 2026-07-25
 
 First stable release — promotes `1.0.0-rc.1` to GA.

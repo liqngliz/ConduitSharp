@@ -11,7 +11,6 @@ public sealed class FakeUpstream : IAsyncDisposable
     private Func<HttpContext, Task> _handler;
 
     public string BaseUrl { get; }
-    // Guarded by _requestsLock: concurrent test requests dispatch in parallel.
     public List<FakeRequest> ReceivedRequests { get; } = [];
 
     private FakeUpstream(WebApplication app, string baseUrl)
@@ -26,15 +25,11 @@ public sealed class FakeUpstream : IAsyncDisposable
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        // The fake never imposes a body limit: tests exercise the gateway's limits,
-        // and Kestrel's 30 MB default here would 413 large uploads before they matter.
         builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = null);
         builder.Logging.ClearProviders();
 
         var app = builder.Build();
 
-        // instance is captured by reference so the closure sees the final value
-        // once assigned below, before any request can arrive.
         FakeUpstream? instance = null;
         app.Run(ctx => instance!.DispatchAsync(ctx));
         await app.StartAsync();

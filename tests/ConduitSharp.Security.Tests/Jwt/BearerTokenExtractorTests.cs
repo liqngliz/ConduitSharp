@@ -5,9 +5,6 @@ namespace ConduitSharp.Security.Tests.Jwt;
 
 public sealed class BearerTokenExtractorTests
 {
-    // -------------------------------------------------------------------------
-    // Missing / empty header
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Extract_NullHeader_ReturnsRequiredError()
@@ -33,10 +30,6 @@ public sealed class BearerTokenExtractorTests
         Assert.Equal("Authorization header is required.", error);
     }
 
-    // -------------------------------------------------------------------------
-    // Wrong auth scheme
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void Extract_BasicScheme_ReturnsBearerError()
     {
@@ -60,10 +53,6 @@ public sealed class BearerTokenExtractorTests
         Assert.Null(token);
         Assert.Equal("Bearer token is required.", error);
     }
-
-    // -------------------------------------------------------------------------
-    // Valid extraction
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Extract_ValidBearer_ReturnsToken()
@@ -100,7 +89,6 @@ public sealed class BearerTokenExtractorTests
     [Fact]
     public void Extract_EmptyTokenAfterPrefix_ReturnsEmptyString()
     {
-        // Downstream handler is responsible for rejecting empty tokens
         var (token, error) = BearerTokenExtractor.Extract("Bearer ");
         Assert.Equal("", token);
         Assert.Null(error);

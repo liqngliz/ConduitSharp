@@ -1,0 +1,15 @@
+# Optional convenience for anyone who prefers compose to `docker run`. Needs no clone: the image
+# is pulled, not built. To build from a checkout instead, use docker-compose.dev.yml.
+services:
+  tokenflow:
+    image: ghcr.io/liqngliz/tokenflow:latest
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    volumes:
+      - ./logs:/data
+      # Your own routes, pulled out of the image and edited. See the README.
+      # - ./routes.json:/app/Configuration/routes.json:ro
+    # Linux only: Docker Desktop provides this name already.
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"

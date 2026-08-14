@@ -54,8 +54,6 @@ public static class GatewayServiceCollectionExtensions
         var options = new ConduitSharpGatewayOptions();
         configure?.Invoke(options);
 
-        // Stash the resolved composition options so UseConduitSharpGateway can read the same
-        // toggles back after Build() without the caller having to pass them twice.
         builder.Services.AddSingleton(options);
 
         builder.Services.Configure<GatewayOptions>(
@@ -65,16 +63,32 @@ public static class GatewayServiceCollectionExtensions
             .GetSection(options.ConfigurationSectionName)
             .Get<GatewayOptions>() ?? new GatewayOptions();
 
-        // Drain in-flight requests on shutdown (including admin route reload) rather than
-        // cutting them off mid-response.
         builder.WebHost.UseShutdownTimeout(
             TimeSpan.FromSeconds(gatewayOptions.ShutdownTimeoutSeconds));
 
         builder.Services.AddHttpContextAccessor();
 
-        // Used by JwksJwtAuthPlugin to fetch the public key set from the identity provider.
-        // Upstream forwarding no longer uses IHttpClientFactory — YARP builds one
-        // HttpMessageInvoker per cluster (see UpstreamForwarderHttpClientFactory).
+        static void RejectRemovedRequestLimitKeys(IConfiguration configuration, string sectionName)
+        {
+            var requestLimits = configuration.GetSection($"{sectionName}:RequestLimits");
+            if (requestLimits["MaxTotalBufferedBodyBytes"] is not null)
+                throw new InvalidOperationException(
+                    "Gateway:RequestLimits:MaxTotalBufferedBodyBytes was removed in v2.0.0. It counted RAM and disk " +
+                    "together, which cannot be sized correctly for either. Replace it with " +
+                    "'MaxDiskBufferedBodyBytes' (spill-file bytes, sized against free disk) and " +
+                    "'MaxRamBufferedBodyBytes' (heap, sized against available memory).");
+
+            if (requestLimits["MaxMemoryBufferedBodyBytes"] is not null)
+                throw new InvalidOperationException(
+                    "Gateway:RequestLimits:MaxMemoryBufferedBodyBytes was renamed in v2.0.0. Use " +
+                    "'MaxRamBufferedBodyBytes' — same meaning, named to pair with 'MaxDiskBufferedBodyBytes'.");
+
+            if (requestLimits["MemoryBufferThresholdBytes"] is not null)
+                throw new InvalidOperationException(
+                    "Gateway:RequestLimits:MemoryBufferThresholdBytes was renamed in v2.0.0. Use " +
+                    "'RamBufferThresholdBytes' — same meaning.");
+        }
+
         builder.Services.AddHttpClient("jwks");
 
         AddPipelineAndBuiltInPlugins(builder.Services);
@@ -94,27 +108,30 @@ public static class GatewayServiceCollectionExtensions
 
         builder.Services.AddSingleton(sp =>
         {
+            RejectRemovedRequestLimitKeys(
+                sp.GetRequiredService<IConfiguration>(), options.ConfigurationSectionName);
+
             var limits = sp.GetRequiredService<IOptions<GatewayOptions>>().Value.RequestLimits;
-            // The memory tier is carved out of the total, so a memory limit above it would never
-            // bind — clamp rather than reject, since the pair is usually set independently and the
-            // safe reading of "memory 256 MiB, total 128 MiB" is "all 128 MiB may be RAM".
-            var maxMemory = limits.MaxTotalBufferedBodyBytes > 0
-                ? Math.Min(limits.MaxMemoryBufferedBodyBytes, limits.MaxTotalBufferedBodyBytes)
-                : limits.MaxMemoryBufferedBodyBytes;
+
+            if (limits.MaxRamBufferedBodyBytes < 0)
+                throw new InvalidOperationException(
+                    $"Gateway:RequestLimits:MaxRamBufferedBodyBytes cannot be negative (was {limits.MaxRamBufferedBodyBytes}). " +
+                    "Use 0 to allow no RAM buffering (every body spills to disk).");
+            if (limits.MaxDiskBufferedBodyBytes < 0)
+                throw new InvalidOperationException(
+                    $"Gateway:RequestLimits:MaxDiskBufferedBodyBytes cannot be negative (was {limits.MaxDiskBufferedBodyBytes}). " +
+                    "Use 0 to disallow spilling (a body must fit the RAM budget or be shed with 503).");
+            if (limits.RamBufferThresholdBytes < 0)
+                throw new InvalidOperationException(
+                    $"Gateway:RequestLimits:RamBufferThresholdBytes cannot be negative (was {limits.RamBufferThresholdBytes}).");
 
             return new ConduitSharp.Gateway.Middleware.RequestBodyBudget(
-                limits.MaxTotalBufferedBodyBytes, maxMemory);
+                limits.MaxRamBufferedBodyBytes, limits.MaxDiskBufferedBodyBytes);
         });
 
         return builder;
     }
 
-    // ---------------------------------------------------------------------------
-    // The proxy engine. routes.json is translated into YARP's route/cluster model and served from
-    // memory — YARP's own appsettings schema is never bound, so routes.json stays the product.
-    // YARP validates each cluster's loadBalancingStrategy against the registered
-    // ILoadBalancingPolicy set at load time, which is where an unknown strategy name is caught.
-    // ---------------------------------------------------------------------------
     private static void AddReverseProxy(IServiceCollection services, GatewayRoutesConfiguration gatewayRoutes)
     {
         var (routes, clusters) = YarpConfigTranslator.Translate(gatewayRoutes);
@@ -123,7 +140,6 @@ public static class GatewayServiceCollectionExtensions
                 .LoadFromMemory(routes, clusters)
                 .AddTransforms<SuppressRetriedResponseTransform>();
 
-        // Registered after AddReverseProxy so these win over YARP's TryAdd-ed defaults.
         services.AddSingleton<IForwarderHttpClientFactory, UpstreamForwarderHttpClientFactory>();
         services.AddSingleton<IPassiveHealthCheckPolicy, ConsecutiveFailuresHealthPolicy>();
         services.AddSingleton<UpstreamRetry>();
@@ -149,10 +165,6 @@ public static class GatewayServiceCollectionExtensions
             sp.GetRequiredService<IOptions<GatewayOptions>>().Value.Cache.MaxTotalBytes));
         services.AddSingleton<IPipelinePlugin, CachePlugin>();
 
-        // No http-proxy plugin: forwarding is YARP's ForwarderMiddleware, and the "http-proxy"
-        // entry in a route's plugin list just names where in the chain that forward happens.
-        // match.headers / match.queryParams are enforced natively by YARP's header and query
-        // MatcherPolicies, built from RouteMatch.Headers / RouteMatch.QueryParameters.
     }
 
     private static void AddObservability(WebApplicationBuilder builder, GatewayOptions gatewayOptions)
@@ -160,20 +172,10 @@ public static class GatewayServiceCollectionExtensions
         builder.Services.AddSingleton<IRequestObserver, StructuredRequestLogger>();
         builder.Services.AddSingleton<IRequestObserver, OtelMetricsObserver>();
 
-        // OpenTelemetry — traces and metrics.
-        // Console exporter: Gateway:Observability:Console:Enabled=true (dev, no collector needed).
-        // OTLP exporter:   Gateway:Observability:Otlp:Enabled=true    (production, e.g. Jaeger/Grafana).
-        //
-        // OTLP is also auto-enabled when the standard OTEL_EXPORTER_OTLP_ENDPOINT environment variable
-        // is set (the OpenTelemetry / .NET Aspire convention), so the gateway "just works" under an
-        // Aspire dashboard or any orchestrator that injects that variable — no Gateway__...__Enabled needed.
         var otlp    = gatewayOptions.Observability.Otlp;
         var console = gatewayOptions.Observability.Console;
         var file    = gatewayOptions.Observability.File;
 
-        // Effective endpoint: explicit config wins, otherwise fall back to the SDK's standard env var.
-        // When left null we let the OTel SDK resolve OTEL_EXPORTER_OTLP_ENDPOINT itself; we only read it
-        // here so auto-enable and the self-tracing filter below know where the collector lives.
         var otlpEndpoint = !string.IsNullOrEmpty(otlp.Endpoint)
             ? otlp.Endpoint
             : builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
@@ -188,14 +190,7 @@ public static class GatewayServiceCollectionExtensions
             builder.Logging.AddOpenTelemetry(logging =>
             {
                 logging.IncludeFormattedMessage = true;
-                // Scope capture + serialization runs on every log record and sits on the per-request
-                // path. The gateway's useful context (route_id, path) is stamped straight onto records
-                // by the plugins that need it (e.g. body-capture's PerRouteBodyLimitInterceptor via
-                // AddParameter), not through the ASP.NET scope stack — so this drops cost, not signal.
                 logging.IncludeScopes = false;
-                // Batch export (the SDK default): spans/logs are queued and flushed in the
-                // background instead of a synchronous network call per item — Simple is a
-                // dev/debug setting and this export sits on a per-request latency path.
                 logging.AddOtlpExporter(o =>
                 {
                     if (!string.IsNullOrEmpty(otlp.Endpoint))
@@ -255,10 +250,6 @@ public static class GatewayServiceCollectionExtensions
             });
     }
 
-    // Fail fast on a route that configures BOTH a client certificate (mTLS) and
-    // skipCertificateVerification: the latter selects the "upstream-insecure" HttpClient, which
-    // carries no client certificate — so the cert would silently never be presented. The two are
-    // mutually exclusive; catch it at startup rather than as a confusing runtime auth failure.
     private static void ValidateTlsConfiguration(
         GatewayOptions gatewayOptions, GatewayRoutesConfiguration gatewayRoutes)
     {
@@ -296,9 +287,6 @@ public static class GatewayServiceCollectionExtensions
         GatewayOptions gatewayOptions,
         GatewayRoutesConfiguration gatewayRoutes)
     {
-        // External plugins — one subdirectory per route under the plugins root (organizational
-        // only; discovery is gateway-wide). DiscoverPluginTypes scans each
-        // subdirectory for IPipelinePlugin implementations.
         var pluginsDir = gatewayOptions.PluginsPath;
 
         using var bootstrap = LoggerFactory.Create(b => b.AddConsole());
@@ -312,29 +300,18 @@ public static class GatewayServiceCollectionExtensions
         if (cacheServiceType is not null)
             services.AddSingleton(typeof(ICacheService), cacheServiceType);
 
-        // A rate-limit-store DLL dropped in the plugins root (e.g. ConduitSharp.RateLimit.RedisProtocol)
-        // overrides the built-in per-process InMemoryRateLimitStore — last DI registration wins —
-        // giving the gateway rate limits shared across replicas without any core change.
         var rateLimitStoreType = loader.DiscoverServiceType<IRateLimitStore>(pluginsDir);
         if (rateLimitStoreType is not null)
             services.AddSingleton(typeof(IRateLimitStore), rateLimitStoreType);
 
-        // Same seam one level up: a dropped-in IRateLimiter replaces the *algorithm* (e.g. sliding
-        // window) rather than the counter backend. The two are independent — a drop-in algorithm
-        // may use the registered store, or keep state a store cannot model, as a sliding log does.
         var rateLimiterType = loader.DiscoverServiceType<IRateLimiter>(pluginsDir);
         if (rateLimiterType is not null)
             services.AddSingleton(typeof(IRateLimiter), rateLimiterType);
 
-        // A custom route-matching strategy dropped in as a MatcherPolicy DLL composes with the ones
-        // YARP registers — ASP.NET Core collects every registered MatcherPolicy. This is the native
-        // replacement for the old drop-in IRouteMatcher seam.
         var matcherPolicyType = loader.DiscoverServiceType<MatcherPolicy>(pluginsDir);
         if (matcherPolicyType is not null)
             services.AddSingleton(typeof(MatcherPolicy), matcherPolicyType);
 
-        // A load-balancing policy DLL (YARP's ILoadBalancingPolicy) joins the built-in set — a
-        // cluster opts in by naming it: "upstream": { "loadBalancingStrategy": "MyPolicy" }.
         var loadBalancingPolicyType = loader.DiscoverServiceType<ILoadBalancingPolicy>(pluginsDir);
         if (loadBalancingPolicyType is not null)
             services.AddSingleton(typeof(ILoadBalancingPolicy), loadBalancingPolicyType);

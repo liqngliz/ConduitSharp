@@ -6,11 +6,6 @@ namespace ConduitSharp.Integration.Tests.Gateway;
 
 public sealed class TlsTests
 {
-    // -------------------------------------------------------------------------
-    // skipCertificateVerification selects the "upstream-insecure" HttpClient.
-    // The fake upstream is plain HTTP so the request succeeds regardless —
-    // this test covers the branch in GatewayMiddleware that selects the client.
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Request_SkipCertificateVerificationTrue_RoutesSuccessfully()

@@ -17,7 +17,6 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
     [Fact]
     public async Task ConnectionRefused_Returns502()
     {
-        // Port 1 on loopback is not listening — guaranteed connection refused.
         var routes = GatewayTestHelpers.CatchAllRoutes(
             _upstream.BaseUrl, upstreamOverride: "http://127.0.0.1:1");
         await using var factory = await GatewayFactory.CreateAsync(_upstream, routes);
@@ -46,8 +45,6 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
     [Fact]
     public async Task RouteTimeoutMs_IsEnforced_Returns504()
     {
-        // The route's own timeoutMs (not an HttpClient override) must bound the upstream:
-        // a 30 s upstream against a 300 ms route timeout returns 504 well under 30 s.
         _upstream.RespondWith(async ctx =>
             await Task.Delay(TimeSpan.FromSeconds(30), ctx.RequestAborted));
 
@@ -91,10 +88,6 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
             () => client.GetAsync("/slow", cts.Token));
     }
 
-    // -------------------------------------------------------------------------
-    // R2 — upstream retry on transient failure
-    // -------------------------------------------------------------------------
-
     private string RoutesWithRetry(int maxAttempts, string methods = "[]") => $$"""
         {
           "routes": [{
@@ -111,7 +104,6 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
         }
         """;
 
-    // Fails the first `failures` calls with 503, then serves 200.
     private void FailThenSucceed(int failures)
     {
         var calls = 0;
@@ -135,7 +127,7 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("ok", await response.Content.ReadAsStringAsync());
-        Assert.Equal(2, _upstream.ReceivedRequests.Count); // one failed, one retried
+        Assert.Equal(2, _upstream.ReceivedRequests.Count);
     }
 
     [Fact]
@@ -154,20 +146,19 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
     [Fact]
     public async Task RetriesExhausted_ReturnsLastResponse()
     {
-        FailThenSucceed(failures: 5); // always fails within the attempt budget
+        FailThenSucceed(failures: 5);
         await using var factory = await GatewayFactory.CreateAsync(_upstream, RoutesWithRetry(maxAttempts: 3));
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/api/data");
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-        Assert.Equal(3, _upstream.ReceivedRequests.Count); // 1 initial + 2 retries
+        Assert.Equal(3, _upstream.ReceivedRequests.Count);
     }
 
     [Fact]
     public async Task NonIdempotentMethod_IsNotRetried_EvenWhenConfigured()
     {
-        // POST may already have been processed upstream — retrying could double-apply it.
         FailThenSucceed(failures: 1);
         await using var factory = await GatewayFactory.CreateAsync(
             _upstream, RoutesWithRetry(maxAttempts: 3, methods: """["GET","POST"]"""));
@@ -177,12 +168,8 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
             new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-        Assert.Single(_upstream.ReceivedRequests); // no retry for POST
+        Assert.Single(_upstream.ReceivedRequests);
     }
-
-    // -------------------------------------------------------------------------
-    // upstream.retry block — the full policy surface (maxAttempts / backoff / retryOn)
-    // -------------------------------------------------------------------------
 
     private string RoutesWithRetryBlock(string retryJson) => $$"""
         {
@@ -212,13 +199,12 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("ok", await response.Content.ReadAsStringAsync());
-        Assert.Equal(3, _upstream.ReceivedRequests.Count); // two failed, third served
+        Assert.Equal(3, _upstream.ReceivedRequests.Count);
     }
 
     [Fact]
     public async Task RetryBlock_RetryOn_CustomStatusCode_IsRetried()
     {
-        // 500 is not retryable by default; retryOn opts it in.
         var calls = 0;
         _upstream.RespondWith(async ctx =>
         {
@@ -241,7 +227,7 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
     [Fact]
     public async Task RetryBlock_StatusOutsideRetryOn_IsNotRetried()
     {
-        FailThenSucceed(failures: 1); // fails with 503
+        FailThenSucceed(failures: 1);
         await using var factory = await GatewayFactory.CreateAsync(_upstream,
             RoutesWithRetryBlock("""{ "maxAttempts": 3, "retryOn": [502] }"""));
         using var client = factory.CreateClient();
@@ -249,20 +235,33 @@ public sealed class UpstreamErrorTests : IAsyncLifetime
         var response = await client.GetAsync("/api/data");
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-        Assert.Single(_upstream.ReceivedRequests); // 503 not in retryOn — passed through
+        Assert.Single(_upstream.ReceivedRequests);
     }
 
     [Fact]
     public async Task IdempotentMethodWithBody_RetryResendsFullBody()
     {
-        // Regression: each attempt's HttpRequestMessage is now disposed, so the retry
-        // must rebuild its content from the buffered body rather than depend on the
-        // first attempt's (previously leaked) message keeping the stream open.
         FailThenSucceed(failures: 1);
         await using var factory = await GatewayFactory.CreateAsync(_upstream, RoutesWithRetry(maxAttempts: 2));
         using var client = factory.CreateClient();
 
         var response = await client.PutAsync("/api/data",
+            new StringContent("""{"v":42}""", System.Text.Encoding.UTF8, "application/json"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, _upstream.ReceivedRequests.Count);
+        Assert.All(_upstream.ReceivedRequests, r => Assert.Equal("""{"v":42}""", r.Body));
+    }
+
+    [Fact]
+    public async Task NonIdempotentMethod_WithRetryNonIdempotent_IsRetried_FullBodyResent()
+    {
+        FailThenSucceed(failures: 1);
+        await using var factory = await GatewayFactory.CreateAsync(_upstream,
+            RoutesWithRetryBlock("""{ "maxAttempts": 2, "retryNonIdempotent": true }"""));
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync("/api/data",
             new StringContent("""{"v":42}""", System.Text.Encoding.UTF8, "application/json"));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

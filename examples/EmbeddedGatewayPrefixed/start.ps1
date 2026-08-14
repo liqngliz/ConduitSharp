@@ -21,7 +21,7 @@ $Root       = $PSScriptRoot
 $LogDir     = Join-Path $Root "logs"
 $BinDir     = Join-Path $Root "bin"
 $PidFile    = Join-Path $Root ".pids"
-$GatewayDir = [IO.Path]::GetFullPath((Join-Path $Root "EmbeddedGateway.csproj"))
+$GatewayDir = [IO.Path]::GetFullPath((Join-Path $Root "EmbeddedGatewayPrefixed.csproj"))
 $ComposeFile = Join-Path $Root "docker-compose.yml"
 
 function Write-Step($m) { Write-Host "▶ $m" -ForegroundColor Cyan }

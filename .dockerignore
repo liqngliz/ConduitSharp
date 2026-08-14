@@ -1,0 +1,11 @@
+**/.git
+**/.vs
+**/bin
+**/obj
+**/node_modules
+**/coverage
+**/TestResults
+examples/ConduitSharp.Spend/wwwroot
+tests/
+*.md
+.github/

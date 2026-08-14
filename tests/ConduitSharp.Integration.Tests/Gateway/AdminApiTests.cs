@@ -19,11 +19,9 @@ public sealed class AdminApiTests : IAsyncDisposable
 {
     private FakeUpstream? _upstream;
 
-    // SHA-256 of "test-key"
     private static readonly string TestKeyHash =
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("test-key")));
 
-    // SHA-256 of "correct-key"
     private static readonly string CorrectKeyHash =
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("correct-key")));
 
@@ -36,11 +34,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         Environment.SetEnvironmentVariable("Gateway__AdminKeyHash", null);
     }
 
-    // -------------------------------------------------------------------------
-    // No admin key configured — endpoint not registered; /admin path has no
-    // route match, so GatewayMiddleware returns 404.
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task Reload_NoAdminKeyConfigured_TreatedAsNormalRequest_Returns404()
     {
@@ -48,7 +41,6 @@ public sealed class AdminApiTests : IAsyncDisposable
 
         await using var upstream = await FakeUpstream.StartAsync();
 
-        // Routes only match /api/** — admin path gets no match → 404
         var routes = $$"""
             {
               "routes": [{
@@ -74,10 +66,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
-    // -------------------------------------------------------------------------
-    // Wrong admin key → 401
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task Reload_WrongAdminKey_Returns401()
     {
@@ -95,10 +83,6 @@ public sealed class AdminApiTests : IAsyncDisposable
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
-
-    // -------------------------------------------------------------------------
-    // Correct key but invalid JSON → 400, file unchanged
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Reload_InvalidJson_Returns400()
@@ -148,10 +132,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         Assert.Contains(logCollector.Entries, entry => entry.Message.Contains("Admin route reload rejected"));
     }
 
-    // -------------------------------------------------------------------------
-    // Correct key + valid routes JSON → 200, file written, routes swapped in place
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task Reload_ValidJson_Returns200AndWritesFile()
     {
@@ -195,10 +175,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         Assert.NotEqual(originalContent, written);
     }
 
-    // -------------------------------------------------------------------------
-    // Hot reload — the new route table serves the very next request, no restart
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task Reload_NewRouteTable_ServesNextRequest_WithoutRestart()
     {
@@ -206,7 +182,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         var upstream = await Upstream();
         upstream.RespondWith(200, "upstream");
 
-        // Start with a route that only matches /old.
         var initial = $$"""
             {
               "routes": [{
@@ -227,7 +202,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.OK,       (await client.GetAsync("/old")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/new")).StatusCode);
 
-        // Swap in a table where /new forwards and /old is gone.
         var reloaded = $$"""
             {
               "routes": [{
@@ -250,7 +224,6 @@ public sealed class AdminApiTests : IAsyncDisposable
 
         Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(request)).StatusCode);
 
-        // Same process, same client — the endpoint table swapped underneath.
         Assert.Equal(HttpStatusCode.OK,       (await client.GetAsync("/new")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/old")).StatusCode);
     }
@@ -264,8 +237,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         await using var factory = await GatewayFactory.CreateAsync(upstream);
         var client = factory.CreateClient();
 
-        // A plugin-only route ("cluster": null) is served outside YARP, so it has its own
-        // endpoint data source — it must reload alongside the proxied routes.
         var reloaded = """
             {
               "routes": [{
@@ -284,7 +255,6 @@ public sealed class AdminApiTests : IAsyncDisposable
 
         Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(request)).StatusCode);
 
-        // No upstream, no plugin produced a response → the chain's terminal 502.
         var response = await client.GetAsync("/anything");
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.Empty(upstream.ReceivedRequests);
@@ -300,8 +270,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         await using var factory = await GatewayFactory.CreateAsync(upstream);
         var client = factory.CreateClient();
 
-        // The reload runs the same gate as startup, so a policy name nothing registers is caught
-        // here rather than blowing up YARP's config load after the table has been swapped.
         var bad = $$"""
             {
               "routes": [{
@@ -326,7 +294,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("NoSuchPolicy", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 
-        // The original table is untouched and still serving.
         var after = await client.GetAsync("/anything");
         Assert.Equal("still-here", await after.Content.ReadAsStringAsync());
     }
@@ -341,7 +308,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         await using var factory = await GatewayFactory.CreateAsync(upstream);
         var client = factory.CreateClient();
 
-        // "custom" with a variant nothing registers — must be rejected before anything swaps.
         var bad = $$"""
             {
               "routes": [{
@@ -365,14 +331,9 @@ public sealed class AdminApiTests : IAsyncDisposable
         var response = await client.SendAsync(request);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
-        // The original table is untouched and still serving.
         var after = await client.GetAsync("/anything");
         Assert.Equal("still-here", await after.Content.ReadAsStringAsync());
     }
-
-    // -------------------------------------------------------------------------
-    // O4 — atomic write leaves no temp files behind
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Reload_AtomicWrite_LeavesNoTempFiles()
@@ -404,14 +365,9 @@ public sealed class AdminApiTests : IAsyncDisposable
         var response = await client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-        // The temp file used for the atomic swap must have been renamed away, not left behind.
         Assert.Empty(Directory.GetFiles(dir, fileName + ".tmp-*"));
         Assert.Equal(newRoutes, await File.ReadAllTextAsync(routesPath));
     }
-
-    // -------------------------------------------------------------------------
-    // O5 — a successful reload increments the audit counter
-    // -------------------------------------------------------------------------
 
     [Fact]
     public async Task Reload_EmitsAuditReloadCounter()
@@ -452,10 +408,6 @@ public sealed class AdminApiTests : IAsyncDisposable
         Assert.Equal(1, Interlocked.Read(ref reloads));
     }
 
-    // -------------------------------------------------------------------------
-    // DELETE /admin/cache/{routeId} — cache invalidation
-    // -------------------------------------------------------------------------
-
     [Fact]
     public async Task InvalidateCache_ByRoute_RemovesCachedEntry_NextRequestReFetches()
     {
@@ -479,19 +431,16 @@ public sealed class AdminApiTests : IAsyncDisposable
         await using var factory = await GatewayFactory.CreateAsync(upstream, routes);
         var client = factory.CreateClient();
 
-        // Prime the cache: first GET is a miss (upstream hit), second is a HIT (no upstream hit).
         await client.GetAsync("/data");
         await client.GetAsync("/data");
         Assert.Single(upstream.ReceivedRequests);
 
-        // Invalidate the route's cache.
         var del = new HttpRequestMessage(HttpMethod.Delete, "/admin/cache/cached");
         del.Headers.Add("X-Admin-Key", "test-key");
         var delResponse = await client.SendAsync(del);
         Assert.Equal(HttpStatusCode.OK, delResponse.StatusCode);
         Assert.Contains("Invalidated", await delResponse.Content.ReadAsStringAsync());
 
-        // Next GET must miss and re-fetch from the upstream.
         await client.GetAsync("/data");
         Assert.Equal(2, upstream.ReceivedRequests.Count);
     }

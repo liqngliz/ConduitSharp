@@ -15,7 +15,6 @@ namespace ConduitSharp.Integration.Tests.Routing;
 /// </summary>
 public class GatewayRouteTests
 {
-    // Inline copy of routes.json so the test has no dependency on filesystem paths.
     private const string RoutesJson = """
         {
           "routes": [
@@ -71,10 +70,6 @@ public class GatewayRouteTests
 
     private static GatewayRoutesConfiguration Parse() => GatewayRoutesConfiguration.Parse(RoutesJson);
 
-    // -----------------------------------------------------------------------
-    // Deserialization — YARP's records bind from the same camelCase as ours
-    // -----------------------------------------------------------------------
-
     [Fact]
     public void Deserialize_LoadsEveryRoute()
     {
@@ -106,8 +101,6 @@ public class GatewayRouteTests
     [Fact]
     public void HeaderMatch_BindsYarpsMatcherObjects_IncludingTheStringEnumMode()
     {
-        // The whole reason for taking YARP's types: header matching gains modes (Prefix, Contains,
-        // NotExists, …) the old dictionary shape could not express.
         var header = Assert.Single(Parse().Routes[1].Route.Match.Headers!);
 
         Assert.Equal("X-Internal", header.Name);
@@ -135,17 +128,10 @@ public class GatewayRouteTests
     [Fact]
     public void InvalidPluginName_ThrowsJsonException()
     {
-        // Regression: registering JsonStringEnumConverter in the shared options would shadow
-        // PluginName's StrictEnumConverter (options converters beat type attributes), quietly
-        // breaking kebab-case and this error.
         var json = """{ "routes": [{ "id": "x", "route": { "match": { "path": "/" } }, "plugins": [{ "name": "no-such-plugin", "order": 1 }] }] }""";
 
         Assert.Throws<JsonException>(() => GatewayRoutesConfiguration.Parse(json));
     }
-
-    // -----------------------------------------------------------------------
-    // Reliability blocks — ours, not YARP's
-    // -----------------------------------------------------------------------
 
     [Fact]
     public void RetryBlock_Deserializes_AllFields()
@@ -186,16 +172,11 @@ public class GatewayRouteTests
     [Fact]
     public void NoRetryOrCircuitBreaker_IsNull_NotADefaultedObject()
     {
-        // Absent means off — the gateway must not invent a retry policy nobody asked for.
         var route = Parse().Routes[1];
 
         Assert.Null(route.Retry);
         Assert.Null(route.CircuitBreaker);
     }
-
-    // -----------------------------------------------------------------------
-    // Validate — route ids
-    // -----------------------------------------------------------------------
 
     [Fact]
     public void Validate_PassesForAWellFormedDocument() => Parse().Validate();
@@ -228,7 +209,7 @@ public class GatewayRouteTests
     }
 
     [Theory]
-    [InlineData("../evil")]   // route ids become directory names under the plugins root
+    [InlineData("../evil")]
     [InlineData("a/b")]
     [InlineData("with.dot")]
     [InlineData("")]
@@ -241,10 +222,6 @@ public class GatewayRouteTests
         var ex = Assert.Throws<InvalidOperationException>(() => GatewayRoutesConfiguration.Parse(json).Validate());
         Assert.Contains("Route IDs", ex.Message, StringComparison.Ordinal);
     }
-
-    // -----------------------------------------------------------------------
-    // Validate — plugins
-    // -----------------------------------------------------------------------
 
     [Fact]
     public void Validate_ThrowsWhenCustomPluginHasNoVariant()
@@ -271,11 +248,7 @@ public class GatewayRouteTests
     }
 
     [Fact]
-    public void Validate_PassesWhenCustomPluginHasVariant() => Parse().Validate(); // script-route
-
-    // -----------------------------------------------------------------------
-    // Validate — cluster destinations (the gateway cares about scheme; YARP does not)
-    // -----------------------------------------------------------------------
+    public void Validate_PassesWhenCustomPluginHasVariant() => Parse().Validate();
 
     private static string ClusterWith(string destinations) => $$"""
         { "routes": [{ "id": "r", "route": { "match": { "path": "/a" } },
@@ -293,7 +266,6 @@ public class GatewayRouteTests
     [Fact]
     public void Validate_ThrowsWhenDestinationIsNotHttp()
     {
-        // ftp:// is a valid absolute Uri — so it deserializes — but not a valid gateway upstream.
         var ex = Assert.Throws<InvalidOperationException>(
             () => GatewayRoutesConfiguration.Parse(ClusterWith("""{ "d": { "address": "ftp://svc:21" } }""")).Validate());
         Assert.Contains("http", ex.Message, StringComparison.Ordinal);
@@ -302,9 +274,6 @@ public class GatewayRouteTests
     [Fact]
     public void Validate_ThrowsWhenDestinationIsARelativePath()
     {
-        // Careful: .NET parses a leading-slash path as an absolute file:// URI on Unix, so this
-        // gets caught by the scheme check rather than the absolute-URI check. Either way it must
-        // not reach the forwarder.
         var ex = Assert.Throws<InvalidOperationException>(
             () => GatewayRoutesConfiguration.Parse(ClusterWith("""{ "d": { "address": "/relative" } }""")).Validate());
         Assert.Contains("http", ex.Message, StringComparison.Ordinal);
@@ -317,10 +286,6 @@ public class GatewayRouteTests
             () => GatewayRoutesConfiguration.Parse(ClusterWith("""{ "d": { "address": "http://[malformed" } }""")).Validate());
         Assert.Contains("absolute", ex.Message, StringComparison.Ordinal);
     }
-
-    // -----------------------------------------------------------------------
-    // Validate — retry / circuit breaker
-    // -----------------------------------------------------------------------
 
     private static string RouteWith(string block) => $$"""
         { "routes": [{ "id": "r", "route": { "match": { "path": "/a" } },

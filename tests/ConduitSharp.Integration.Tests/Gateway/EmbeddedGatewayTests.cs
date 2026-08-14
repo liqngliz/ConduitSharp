@@ -62,7 +62,6 @@ public sealed class EmbeddedGatewayTests
         },
     };
 
-    // The "embed-friendly" baseline: in-memory routes, everything the host might own turned off.
     private static void Minimal(ConduitSharpGatewayOptions o, string upstreamBaseUrl, string routePath = "/{**catch-all}")
     {
         o.Routes                    = CatchAll(upstreamBaseUrl, routePath);
@@ -84,11 +83,9 @@ public sealed class EmbeddedGatewayTests
 
         var client = app.GetTestClient();
 
-        // Under the prefix → handled by the gateway (proxied to the upstream).
         var api = await client.GetAsync("/api/thing");
         Assert.Equal("from-upstream", await api.Content.ReadAsStringAsync());
 
-        // Outside the prefix → falls through to the host's own endpoint.
         var host = await client.GetAsync("/outside");
         Assert.Equal("from-host", await host.Content.ReadAsStringAsync());
     }
@@ -126,8 +123,6 @@ public sealed class EmbeddedGatewayTests
         await using var upstream = await FakeUpstream.StartAsync();
         upstream.RespondWith(200, "proxied");
 
-        // MapHealthEndpoints=false → /healthz is not owned by the gateway, so the catch-all
-        // route matches it and forwards upstream instead of answering "OK".
         await using var app = await StartEmbeddedAsync(o => Minimal(o, upstream.BaseUrl));
 
         var resp = await app.GetTestClient().GetAsync("/healthz");
@@ -140,8 +135,6 @@ public sealed class EmbeddedGatewayTests
         await using var upstream = await FakeUpstream.StartAsync();
         upstream.RespondWith(200, "proxied");
 
-        // EnableAdminApi=false → /admin/* is not reserved, so it proxies like any other path
-        // (a 200 from the upstream, never a 401 from the admin auth gate).
         await using var app = await StartEmbeddedAsync(o => Minimal(o, upstream.BaseUrl));
 
         var resp = await app.GetTestClient().GetAsync("/admin/routes/reload");
@@ -155,8 +148,6 @@ public sealed class EmbeddedGatewayTests
         await using var upstream = await FakeUpstream.StartAsync();
         upstream.RespondWith(200, "traced");
 
-        // ConfigureObservability=true wires the OTel providers; enabling the console exporter
-        // drives the exporter branches. The gateway must still proxy normally.
         await using var app = await StartEmbeddedAsync(
             o =>
             {
@@ -184,8 +175,6 @@ public sealed class EmbeddedGatewayTests
         var tracesPath = Path.Combine(Path.GetTempPath(), $"cs-traces-{Guid.NewGuid():N}.jsonl");
         try
         {
-            // Drives the file-exporter branch of AddObservability (SimpleActivityExportProcessor
-            // + FileSpanExporter) — distinct from the console/OTLP branches.
             await using var app = await StartEmbeddedAsync(
                 o =>
                 {
@@ -216,7 +205,6 @@ public sealed class EmbeddedGatewayTests
         await using var upstream = await FakeUpstream.StartAsync();
         upstream.RespondWith(200, "mtls-proxied");
 
-        // A throwaway self-signed cert stands in for a real client certificate.
         var pfxPath = Path.Combine(Path.GetTempPath(), $"cs-mtls-{Guid.NewGuid():N}.pfx");
         using (var rsa = RSA.Create(2048))
         {
@@ -227,9 +215,6 @@ public sealed class EmbeddedGatewayTests
 
         try
         {
-            // The certificate is keyed by route id, and YARP builds a cluster's HttpMessageInvoker
-            // when it loads the config — so starting the gateway is what runs
-            // UpstreamForwarderHttpClientFactory.ConfigureHandler and loads the PKCS#12 from disk.
             await using var app = await StartEmbeddedAsync(
                 o => Minimal(o, upstream.BaseUrl),
                 settings: new Dictionary<string, string?>
@@ -252,8 +237,6 @@ public sealed class EmbeddedGatewayTests
     {
         await using var upstream = await FakeUpstream.StartAsync();
 
-        // A broken certificate must not surface as a confusing runtime auth failure on the first
-        // request — YARP builds the cluster's client at config load, so it fails the gateway.
         var ex = await Assert.ThrowsAnyAsync<Exception>(() => StartEmbeddedAsync(
             o => Minimal(o, upstream.BaseUrl),
             settings: new Dictionary<string, string?>
@@ -270,9 +253,6 @@ public sealed class EmbeddedGatewayTests
     {
         await using var upstream = await FakeUpstream.StartAsync();
 
-        // A client-certificate entry that names a route but supplies neither a PFX path nor a
-        // store thumbprint is unusable. It must be rejected when YARP builds the cluster client
-        // at config load, not surface as a confusing failure on the first request.
         var ex = await Assert.ThrowsAnyAsync<Exception>(() => StartEmbeddedAsync(
             o => Minimal(o, upstream.BaseUrl),
             settings: new Dictionary<string, string?>
@@ -287,8 +267,6 @@ public sealed class EmbeddedGatewayTests
     [Fact]
     public void Client_cert_plus_dangerousAcceptAnyServerCertificate_on_the_same_route_fails_fast()
     {
-        // Presenting a client certificate to a server you refuse to authenticate defeats the
-        // point of mTLS — it is mutual. Startup must reject the combination.
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Logging.ClearProviders();

@@ -8,10 +8,6 @@ public sealed class RequiredClaimsValidatorTests
 {
     private static JsonElement Claims(string json) => JsonDocument.Parse(json).RootElement;
 
-    // -------------------------------------------------------------------------
-    // No rules configured
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void Validate_NullRules_ReturnsNull()
     {
@@ -23,10 +19,6 @@ public sealed class RequiredClaimsValidatorTests
     {
         Assert.Null(RequiredClaimsValidator.Validate(Claims("""{"sub":"u1"}"""), []));
     }
-
-    // -------------------------------------------------------------------------
-    // Existence-only (no matcher)
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Validate_ExistenceOnly_ClaimPresent_ReturnsNull()
@@ -42,10 +34,6 @@ public sealed class RequiredClaimsValidatorTests
         Assert.Equal("Missing required claim 'hd'.",
             RequiredClaimsValidator.Validate(Claims("""{"sub":"u1"}"""), rules));
     }
-
-    // -------------------------------------------------------------------------
-    // equals
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Validate_Equals_StringMatch_ReturnsNull()
@@ -69,10 +57,6 @@ public sealed class RequiredClaimsValidatorTests
         Assert.Null(RequiredClaimsValidator.Validate(Claims("""{"ver":2}"""), rules));
     }
 
-    // -------------------------------------------------------------------------
-    // anyOf — array claim (Entra app roles)
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void Validate_AnyOf_ArrayClaimIntersects_ReturnsNull()
     {
@@ -95,10 +79,6 @@ public sealed class RequiredClaimsValidatorTests
         var rules = new[] { new RequiredClaim { Claim = "role", AnyOf = ["admin", "owner"] } };
         Assert.Null(RequiredClaimsValidator.Validate(Claims("""{"role":"admin"}"""), rules));
     }
-
-    // -------------------------------------------------------------------------
-    // allOf + delimiter — space-delimited scopes (Entra/Okta scp)
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Validate_AllOf_DelimitedScopeContainsAll_ReturnsNull()
@@ -125,8 +105,6 @@ public sealed class RequiredClaimsValidatorTests
     [Fact]
     public void Validate_AllOf_NoDelimiter_TreatsWholeStringAsOneElement()
     {
-        // Without a delimiter, "reports.read reports.write" is a single opaque value —
-        // allOf against two distinct scopes can never match.
         var rules = new[]
         {
             new RequiredClaim { Claim = "scp", AllOf = ["reports.read", "reports.write"] }
@@ -134,10 +112,6 @@ public sealed class RequiredClaimsValidatorTests
         Assert.Equal("Claim 'scp' is missing one or more required values.",
             RequiredClaimsValidator.Validate(Claims("""{"scp":"reports.read reports.write"}"""), rules));
     }
-
-    // -------------------------------------------------------------------------
-    // Nested claim path (Keycloak realm_access.roles)
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Validate_NestedPath_ResolvesThroughObjectGraph()
@@ -155,15 +129,9 @@ public sealed class RequiredClaimsValidatorTests
             RequiredClaimsValidator.Validate(Claims("""{"sub":"u1"}"""), rules));
     }
 
-    // -------------------------------------------------------------------------
-    // Literal-name precedence (Auth0 namespaced claim containing dots)
-    // -------------------------------------------------------------------------
-
     [Fact]
     public void Validate_LiteralNameWithDots_PrefersLiteralOverPathTraversal()
     {
-        // "https://example.com/roles" contains no dots that would form a nested path here,
-        // but this proves the literal top-level lookup is tried first regardless.
         var rules = new[] { new RequiredClaim { Claim = "https://example.com/roles", AnyOf = ["admin"] } };
         Assert.Null(RequiredClaimsValidator.Validate(
             Claims("""{"https://example.com/roles":["admin"]}"""), rules));
@@ -172,16 +140,10 @@ public sealed class RequiredClaimsValidatorTests
     [Fact]
     public void Validate_DottedLiteralName_NotShadowedByAccidentalNestedPath()
     {
-        // A literal key containing a dot ("a.b") must win over interpreting it as a path
-        // into a nested object also named "a" with property "b".
         var rules = new[] { new RequiredClaim { Claim = "a.b", AnyOf = ["literal-wins"] } };
         Assert.Null(RequiredClaimsValidator.Validate(
             Claims("""{"a.b":"literal-wins","a":{"b":"path-value"}}"""), rules));
     }
-
-    // -------------------------------------------------------------------------
-    // Multiple rules — logical AND, first failure wins
-    // -------------------------------------------------------------------------
 
     [Fact]
     public void Validate_MultipleRules_AllPass_ReturnsNull()

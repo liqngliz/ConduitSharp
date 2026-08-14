@@ -128,6 +128,10 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+  # TokenFlow (the spend gateway image) is NOT built here. It ships on its own
+  # `tokenflow-v*` tag from .github/workflows/tokenflow.yml, so a dashboard fix goes out
+  # without cutting NuGet packages and binaries.
+
   # ---------------------------------------------------------------------------
   # NuGet packages — the full ConduitSharp.* dependency chain, not just the tool.
   # ConduitSharp.Gateway.AspNetCore (the embeddable library) depends on Core/Traffic/
@@ -136,13 +140,15 @@ jobs:
   # `dotnet add package ConduitSharp.Gateway.AspNetCore` unable to restore its own
   # dependencies. Pack and push every packable project explicitly (deliberately NOT a
   # blanket `dotnet pack ConduitSharp.sln`, so nothing new ships by accident). The drop-in
-  # example plugins under examples/ are published too — they're the packaged form of the
+  # plugins under plugins/ are published too — they're the packaged form of the
   # plugin system (body capture, Redis cache, Redis rate-limit store) and their
   # ProjectReferences pack as dependencies on the same-version core packages.
   #
   # Uses GitHub OIDC (trusted publisher) — no API key secret required.
-  # One-time setup per package: nuget.org → Trusted Publishers → add this repo/workflow
-  # (release.yml) for EACH package ID below — trust is configured per package, not per repo.
+  # One-time setup per workflow file, NOT per package: nuget.org → Trusted Publishing →
+  # owner liqngliz, repository ConduitSharp, workflow release.yml. A policy applies to
+  # every package the owner owns, so adding a package ID to the loop above needs no new
+  # policy. A second workflow pushing packages does (see tokenflow.yml).
   # ---------------------------------------------------------------------------
   nuget:
     needs: verify-version
@@ -168,11 +174,14 @@ jobs:
             src/ConduitSharp.Gateway.AspNetCore \
             src/ConduitSharp.Gateway.AspNetCore.Swagger \
             src/ConduitSharp.Host \
-            examples/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture \
-            examples/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell \
-            examples/ConduitSharp.Cache.RedisProtocol/src/ConduitSharp.Cache.RedisProtocol \
-            examples/ConduitSharp.RateLimit.RedisProtocol/src/ConduitSharp.RateLimit.RedisProtocol \
-            examples/ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow \
+            plugins/ConduitSharp.Plugin.BodyCapture/src/ConduitSharp.Plugin.BodyCapture \
+            plugins/ConduitSharp.Plugin.BodyCaptureToFile/src/ConduitSharp.Plugin.BodyCaptureToFile \
+            plugins/ConduitSharp.Plugin.TokenSpend/src/ConduitSharp.Plugin.TokenSpend \
+            plugins/ConduitSharp.Plugin.TokenRateLimit/src/ConduitSharp.Plugin.TokenRateLimit \
+            plugins/ConduitSharp.Plugin.PowerShell/src/ConduitSharp.Plugin.PowerShell \
+            plugins/ConduitSharp.Cache.RedisProtocol/src/ConduitSharp.Cache.RedisProtocol \
+            plugins/ConduitSharp.RateLimit.RedisProtocol/src/ConduitSharp.RateLimit.RedisProtocol \
+            plugins/ConduitSharp.RateLimit.SlidingWindow/src/ConduitSharp.RateLimit.SlidingWindow \
           ; do
             dotnet pack "$proj" -c Release -o nupkg
           done

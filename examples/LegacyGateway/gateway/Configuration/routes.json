@@ -2,8 +2,11 @@
   "routes": [
     {
       "id": "inventory-service",
-      "description": "Inventory API — API key auth, rate limited, round-robin across two nodes",
-      "circuitBreaker": { "threshold": 2, "cooldownMs": 30000 },
+      "description": "Inventory API \u2014 API key auth, rate limited, round-robin across two nodes",
+      "circuitBreaker": {
+        "threshold": 2,
+        "cooldownMs": 30000
+      },
       "route": {
         "match": {
           "path": "/api/inventory/{**rest}",
@@ -57,7 +60,9 @@
           "order": 10,
           "enabled": true,
           "config": {
-            "maxSize": 1024
+            "request": {
+              "maxSize": 1024
+            }
           }
         },
         {
@@ -70,20 +75,28 @@
     },
     {
       "id": "ratelimit-demo",
-      "description": "Demo route for the drop-in SlidingWindowRateLimiter — tiny per-client quota so a burst trips 429. Forwards to the inventory cluster; only the rate-limit decision matters here.",
+      "description": "Demo route for the drop-in SlidingWindowRateLimiter \u2014 tiny per-client quota so a burst trips 429. Forwards to the inventory cluster; only the rate-limit decision matters here.",
       "route": {
         "match": {
           "path": "/api/ratelimit-demo/{**rest}",
-          "methods": [ "GET" ]
+          "methods": [
+            "GET"
+          ]
         }
       },
       "cluster": {
         "loadBalancingPolicy": "RoundRobin",
         "destinations": {
-          "node-0": { "address": "http://localhost:5101" },
-          "node-1": { "address": "http://localhost:5102" }
+          "node-0": {
+            "address": "http://localhost:5101"
+          },
+          "node-1": {
+            "address": "http://localhost:5102"
+          }
         },
-        "httpRequest": { "activityTimeout": "00:00:05" }
+        "httpRequest": {
+          "activityTimeout": "00:00:05"
+        }
       },
       "plugins": [
         {
@@ -105,7 +118,7 @@
     },
     {
       "id": "order-service",
-      "description": "Order API — JWT (HS256) auth, forwarded to order service",
+      "description": "Order API \u2014 JWT (HS256) auth, forwarded to order service",
       "route": {
         "match": {
           "path": "/api/orders/{**rest}",
@@ -146,7 +159,9 @@
           "order": 10,
           "enabled": true,
           "config": {
-            "maxSize": 1024
+            "request": {
+              "maxSize": 1024
+            }
           }
         },
         {
@@ -158,7 +173,7 @@
     },
     {
       "id": "upload-service",
-      "description": "Upload API — streamed directly without buffering; body-capture-streaming logs a bounded prefix off the tee",
+      "description": "Upload API \u2014 streamed directly without buffering; body-capture logs a bounded prefix off the tee",
       "route": {
         "match": {
           "path": "/api/upload/{**rest}",
@@ -183,11 +198,13 @@
       "plugins": [
         {
           "name": "custom",
-          "variant": "body-capture-streaming",
+          "variant": "body-capture",
           "order": 10,
           "enabled": true,
           "config": {
-            "maxSize": 1024
+            "request": {
+              "maxSize": 1024
+            }
           }
         },
         {
@@ -199,7 +216,7 @@
     },
     {
       "id": "erp-report",
-      "description": "ERP erp report — JWT auth + role-based access, rate limited, cached 60s, executed via PowerShell plugin",
+      "description": "ERP erp report \u2014 JWT auth + role-based access, rate limited, cached 60s, executed via PowerShell plugin",
       "route": {
         "match": {
           "path": "/erp/reports/summary",
@@ -262,7 +279,7 @@
     },
     {
       "id": "health",
-      "description": "Health check — passthrough, no auth, no policies",
+      "description": "Health check \u2014 passthrough, no auth, no policies",
       "route": {
         "match": {
           "path": "/health",
@@ -295,7 +312,7 @@
     },
     {
       "id": "greeter-grpc",
-      "description": "gRPC passthrough — the YARP forwarder relays HTTP/2 verbatim to the Greeter service (no transcoding)",
+      "description": "gRPC passthrough \u2014 the YARP forwarder relays HTTP/2 verbatim to the Greeter service (no transcoding)",
       "route": {
         "match": {
           "path": "/greet.Greeter/{**method}",

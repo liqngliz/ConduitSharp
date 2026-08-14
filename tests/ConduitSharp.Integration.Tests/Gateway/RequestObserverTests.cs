@@ -82,7 +82,7 @@ public sealed class RequestObserverTests : IAsyncLifetime
 
         Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
         var seen = Assert.Single(observer.Seen);
-        Assert.Null(seen.RouteId);      // no route matched — still observed
+        Assert.Null(seen.RouteId);
         Assert.Equal(404, seen.StatusCode);
     }
 

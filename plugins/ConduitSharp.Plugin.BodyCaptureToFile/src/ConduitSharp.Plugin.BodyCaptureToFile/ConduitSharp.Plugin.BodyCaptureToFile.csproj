@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Library</OutputType>
+    <RootNamespace>ConduitSharp.Plugin.BodyCaptureToFile</RootNamespace>
+    
+    <IsPackable>true</IsPackable>
+    <PackageId>ConduitSharp.Plugin.BodyCaptureToFile</PackageId>
+    <Title>ConduitSharp BodyCaptureToFile Plugin</Title>
+    <PackageTags>$(PackageTags);audit;logging;jsonl;wire-log;plugin</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>
+      A plugin for the ConduitSharp API gateway that captures a bounded prefix of request bodies,
+      response bodies, or both, to a rolling JSONL file. A bounded channel and a background writer
+      keep the write off the request path; rows carry the trace id, so they join to token-spend rows.
+    </Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\ConduitSharp.Core\ConduitSharp.Core.csproj" />
+  </ItemGroup>
+</Project>

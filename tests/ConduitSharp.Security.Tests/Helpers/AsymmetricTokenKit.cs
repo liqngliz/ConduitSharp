@@ -58,7 +58,7 @@ internal static class AsymmetricTokenKit
 
     internal static string SignEs256(string payloadJson, string? kid = Kid) =>
         Sign(payloadJson, "ES256", kid, data =>
-            Ec.SignData(data, HashAlgorithmName.SHA256)); // IEEE P1363 (R‖S), JWT's format
+            Ec.SignData(data, HashAlgorithmName.SHA256));
 
     /// <summary>Token with the given alg in the header but a garbage signature.</summary>
     internal static string UnsignedToken(string alg, string payloadJson = """{"sub":"u1"}""")

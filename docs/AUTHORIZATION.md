@@ -3,11 +3,9 @@
 _Part of the [ConduitSharp documentation](../README.md)._
 
 
-`jwt-auth` and `jwks-jwt-auth` validate a token's signature, expiry, issuer, and audience —
-but a *valid* token doesn't mean the caller is *allowed* to hit this particular route. Add
-a `"requiredClaims"` array to either plugin's config to enforce that too — Entra app roles,
-Auth0 namespaced roles, Okta/Entra scopes, Keycloak realm roles, or any other claim your
-identity provider issues:
+`jwt-auth` and `jwks-jwt-auth` validate signature, expiry, issuer, and audience. A
+`"requiredClaims"` array adds per-route permission on top: Entra app roles, Auth0 namespaced
+roles, Okta/Entra scopes, Keycloak realm roles, any claim the IdP issues.
 
 ```json
 {
@@ -29,41 +27,41 @@ identity provider issues:
 }
 ```
 
-A missing or non-matching claim short-circuits **403 Forbidden** — not 401 — because the
-token itself is valid; the caller just lacks permission for this route. All entries in
-`requiredClaims` must pass (logical AND).
+A missing or non-matching claim short-circuits **403 Forbidden**, not 401: the token is valid,
+the caller lacks permission. All entries in `requiredClaims` must pass (logical AND).
 
 Each rule names a `claim` plus at most one matcher:
 
 | Matcher | Semantics |
 |---|---|
-| *(none)* | The claim must merely exist, with any value |
-| `equals` | The claim's value must equal this exactly |
-| `anyOf`  | The claim's value set must intersect this list — the typical "one of these roles" check |
-| `allOf`  | The claim's value set must contain every entry in this list — typical for OAuth scopes |
+| *(none)* | Claim exists, any value |
+| `equals` | Value equals this exactly |
+| `anyOf`  | Value set intersects this list ("one of these roles") |
+| `allOf`  | Value set contains every entry (typical for OAuth scopes) |
 
-The claim's value becomes a set before matching: a JSON array becomes the set of its
-members (Entra app roles: `"roles": ["Admin"]`); a single string becomes a
-one-element set, unless `"delimiter"` is set, which splits it first (Entra/Okta's
-space-delimited `scp`/`scope`: `"scp": "reports.read reports.write"`); a boolean or number
-becomes its string form (Google's `"email_verified": true`).
+The value becomes a set before matching:
 
-**Claim lookup** tries the literal top-level property name first — so a namespaced claim
-that itself contains dots, like Auth0's `https://example.com/roles`, matches directly — and
-only falls back to splitting the name on `.` and traversing into nested objects if no
-literal match exists, which is how Keycloak's `realm_access.roles` resolves.
+| Claim shape | Becomes | Example |
+|---|---|---|
+| JSON array | its members | Entra app roles, `"roles": ["Admin"]` |
+| string | one-element set | |
+| string + `"delimiter"` | split on the delimiter | Entra/Okta `"scp": "reports.read reports.write"` |
+| bool / number | its string form | Google `"email_verified": true` |
 
-A malformed `requiredClaims` block (an empty claim name, an empty `anyOf`/`allOf`, or more
-than one matcher on the same rule) fails at startup — via the same fail-fast path as an
-invalid `rate-limit` or `jwks-jwt-auth` config — rather than on the first request.
+**Claim lookup** tries the literal top-level property name first, so a namespaced claim
+containing dots (Auth0's `https://example.com/roles`) matches directly. Only on no literal match
+does it split the name on `.` and traverse nested objects, which is how Keycloak's
+`realm_access.roles` resolves.
+
+A malformed `requiredClaims` block (empty claim name, empty `anyOf`/`allOf`, or two matchers on
+one rule) fails at startup, not on the first request.
 
 ### Multiple JWT providers per route
 
-To allow multiple identity providers (e.g., accepting tokens from either Auth0 *or* Azure AD on the same endpoint), you can pass an array of providers to the `"providers"` key in either `jwt-auth` or `jwks-jwt-auth`.
+A `"providers"` array on `jwt-auth` or `jwks-jwt-auth` accepts tokens from several IdPs on one
+endpoint (Auth0 *or* Azure AD). Providers are evaluated in order; the first that validates lets
+the request through (logical OR). Each carries its own `requiredClaims`.
 
-The plugin will evaluate the token against each provider sequentially. If *any* provider successfully validates the token (logical OR), the request is allowed through. Each provider can also declare its own distinct `requiredClaims`.
-
-**routes.json:**
 ```json
 {
   "name": "jwks-jwt-auth",
@@ -85,7 +83,7 @@ The plugin will evaluate the token against each provider sequentially. If *any* 
 }
 ```
 
-### Microsoft Entra ID (Azure AD) — v2.0 token, app-role RBAC
+### Microsoft Entra ID (Azure AD): v2.0 token, app-role RBAC
 
 Locking a route to a single Entra app role (`erp.user`) end to end:
 
@@ -116,41 +114,36 @@ Locking a route to a single Entra app role (`erp.user`) end to end:
 }
 ```
 
-`issuer`/`audience` here are the **v2.0** pairing. This only matches tokens from an API app
-registration whose manifest has `"accessTokenAcceptedVersion": 2` — the (more common,
-unset-by-default) v1.0 pairing is `issuer: "https://sts.windows.net/<tenant-id>/"` and
-`audience: "api://<api-app-id-uri>"` instead. Pick whichever matches what your API's app
-registration actually issues — decode a real token at [jwt.ms](https://jwt.ms) and read its
-`iss`/`aud` rather than guessing; the two pairings never appear in the same token, and a
-mismatch 401s with `"Invalid issuer."` or `"Invalid audience."`.
+Two mutually exclusive pairings, one per token. Match whichever your API's app registration
+actually issues; decode a real token at [jwt.ms](https://jwt.ms) and read `iss`/`aud`.
 
-**Getting a token that actually carries the `roles` claim** (Entra portal steps, one-time setup):
+| | `issuer` | `audience` | When |
+|---|---|---|---|
+| **v2.0** (above) | `https://login.microsoftonline.com/<tenant-id>/v2.0` | `<api-client-id-guid>` | manifest has `"accessTokenAcceptedVersion": 2` |
+| **v1.0** | `https://sts.windows.net/<tenant-id>/` | `api://<api-app-id-uri>` | default, more common |
+
+A mismatch 401s with `"Invalid issuer."` or `"Invalid audience."`.
+
+**Getting a token that carries the `roles` claim** (Entra portal, one-time):
 
 1. **Define the app role** on the *API's* app registration → **App roles** → **Create app role**.
-   Set **Value** to `erp.user` exactly — this is a case-sensitive string, and it's what
-   ends up in the token's `roles` array. Allowed member types: Users/Groups (or
-   Applications, for service-to-service calls).
-2. **Assign the role** — API's app registration → **Enterprise applications** → find the
-   same app → **Users and groups** → **Add assignment** → pick the user/group → select the
-   `erp.user` role. Without this step the token is still valid, it just won't carry
-   `roles` at all (see below).
-3. **Client requests a token for this API's scope** — e.g.
-   `az account get-access-token --resource api://<api-app-id-uri>` for a quick manual test,
-   or an OAuth client-credentials/auth-code flow requesting
-   `api://<api-app-id-uri>/.default` in production. The returned access token's payload now
-   includes `"roles": ["erp.user"]`.
-4. **Verify** — paste the token into [jwt.ms](https://jwt.ms) and confirm `iss`, `aud`, and
-   `roles` all match what's in the route config above.
+   **Value** = `erp.user`, case-sensitive, lands verbatim in the token's `roles` array. Allowed
+   member types: Users/Groups, or Applications for service-to-service.
+2. **Assign the role**: API's app registration → **Enterprise applications** → same app →
+   **Users and groups** → **Add assignment** → user/group → `erp.user`. Skip this and the token
+   is still valid but carries no `roles` at all.
+3. **Client requests a token for this API's scope**:
+   `az account get-access-token --resource api://<api-app-id-uri>` for a manual test, or an OAuth
+   client-credentials/auth-code flow requesting `api://<api-app-id-uri>/.default` in production.
+   The payload now includes `"roles": ["erp.user"]`.
+4. **Verify** at [jwt.ms](https://jwt.ms): `iss`, `aud`, `roles` match the route config above.
 
-Two failure modes this produces, both intentional:
+Two failure modes, both intentional:
 
-- **Unassigned user, valid token** → `roles` claim is *absent from the token entirely*
-  (Entra omits it, rather than sending an empty array) → gateway returns
-  `403 Missing required claim 'roles'.` — the token is fine, the user just isn't
-  provisioned for this route yet.
-- **Wrong `issuer`/`audience` pairing** → `401 Invalid issuer.` / `401 Invalid audience.`
-  before `requiredClaims` is ever evaluated — fix the config pairing above, not the role
-  assignment.
+| Cause | Result |
+|---|---|
+| Unassigned user, valid token | Entra omits `roles` entirely (not an empty array) → `403 Missing required claim 'roles'.` Provision the user; the token is fine. |
+| Wrong `issuer`/`audience` pairing | `401 Invalid issuer.` / `401 Invalid audience.`, before `requiredClaims` runs. Fix the pairing, not the role assignment. |
 
 ---
 

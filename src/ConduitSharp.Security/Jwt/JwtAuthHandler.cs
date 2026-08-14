@@ -20,8 +20,6 @@ public sealed class JwtAuthHandler
     {
         claims = default;
 
-        // Fail closed on a non-HS256 config or a signing key that isn't valid base64 —
-        // same outcome as a signature that doesn't verify.
         byte[] keyBytes;
         try
         {
@@ -39,7 +37,6 @@ public sealed class JwtAuthHandler
         parameters.IssuerSigningKey = new SymmetricSecurityKey(keyBytes);
         parameters.ValidAlgorithms  = ["HS256"];
 
-        // Completes synchronously for symmetric keys — no I/O involved.
         var (success, validationError, validatedClaims) =
             JwtValidation.ValidateAsync(token, parameters).GetAwaiter().GetResult();
 
