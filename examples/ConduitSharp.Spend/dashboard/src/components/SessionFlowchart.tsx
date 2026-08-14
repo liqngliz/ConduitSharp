@@ -168,7 +168,7 @@ export const Flowchart: React.FC<{
           const yOut = currentPathY + outThick / 2;
 
           return (
-            <g key={`paths-left-${p.sessionId}-${p.firstTs}`} style={{ mixBlendMode: 'screen' }}>
+            <g key={`paths-left-${p.sessionId}-${p.firstTs || p.ts || p.turn || i}`} style={{ mixBlendMode: 'screen' }}>
               {p.in > 0 && (
                 <path 
                   d={createPath(350, yIn, 440, midYIn + hIn / 2)} 
@@ -349,7 +349,7 @@ export const Flowchart: React.FC<{
 
           return (
             <g 
-              key={`node-${p.sessionId}-${p.firstTs || p.ts}`} 
+              key={`node-${p.sessionId}-${p.firstTs || p.ts || p.turn || i}`} 
               data-trace={p.trace}
               data-traces={p.traces?.join(',')}
               transform={`translate(0, ${y})`}

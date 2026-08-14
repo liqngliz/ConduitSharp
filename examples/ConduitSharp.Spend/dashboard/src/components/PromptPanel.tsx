@@ -28,7 +28,7 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({ selected, sessions, co
   if (row) {
     lastRowRef.current = row;
   }
-  const displayRow = row || lastRowRef.current;
+  const displayRow = row || (selected ? null : lastRowRef.current);
 
   // Sync active trace with selected prompt
   useEffect(() => {
@@ -109,10 +109,20 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({ selected, sessions, co
     return extractUserPrompt(req.body);
   }, [entries]);
 
+  const formattedEntries = useMemo(() => {
+    if (!entries) return null;
+    return entries.map(e => ({
+      ...e,
+      formattedBody: formatWireBody(e.body)
+    }));
+  }, [entries]);
+
   const isOpen = selected !== null;
 
   return (
     <div
+      aria-hidden={!isOpen}
+      inert={!isOpen}
       className={`fixed inset-y-0 right-0 z-50 w-full md:w-1/2 bg-surface/95 backdrop-blur-xl border-l border-white/10 shadow-2xl transition-transform duration-300 ease-out flex flex-col overflow-x-hidden ${
         isOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'
       }`}
@@ -216,7 +226,7 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({ selected, sessions, co
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-gray-400">User Prompt</h3>
-              {!fullPrompt && <span className="text-[11px] text-gray-500 italic">(prefix only)</span>}
+              {!fullPrompt && !loading && <span className="text-[11px] text-gray-500 italic">(prefix only)</span>}
             </div>
             <pre className="whitespace-pre-wrap break-words max-h-64 overflow-auto bg-black/40 border border-white/5 rounded-lg p-3 text-xs font-mono text-gray-200">
               {fullPrompt || displayRow.prompt}
@@ -242,9 +252,9 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({ selected, sessions, co
               </div>
             )}
 
-            {entries && entries.length > 0 && (
+            {formattedEntries && formattedEntries.length > 0 && (
               <div className="space-y-4">
-                {entries.map((entry, idx) => (
+                {formattedEntries.map((entry, idx) => (
                   <div key={idx} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs font-mono text-gray-400 px-1">
                       <div className="flex items-center gap-2">
@@ -262,14 +272,14 @@ export const PromptPanel: React.FC<PromptPanelProps> = ({ selected, sessions, co
                       <span className="text-gray-500 text-[11px]">{entry.body?.length || 0} chars</span>
                     </div>
                     <pre className="bg-black/40 border border-white/5 rounded p-3 text-[11px] font-mono max-h-96 overflow-auto whitespace-pre-wrap break-all">
-                      {formatWireBody(entry.body)}
+                      {entry.formattedBody}
                     </pre>
                   </div>
                 ))}
               </div>
             )}
 
-            {!loading && !error && (!entries || entries.length === 0) && (
+            {!loading && !error && (!formattedEntries || formattedEntries.length === 0) && (
               <div className="p-4 text-xs font-mono text-gray-500 bg-white/5 rounded border border-white/5">
                 {displayRow.traces.length === 0 ? 'No trace recorded for this call.' : 'No wire log entries found.'}
               </div>
