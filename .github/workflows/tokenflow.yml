@@ -207,6 +207,12 @@ jobs:
           dotnet publish examples/ConduitSharp.Spend -c Release \
             -p:UseAppHost=false -o npm/tokenflow/app
 
+      # npmjs.com renders the package root README and nothing else, so without this the listing
+      # is the one-line description alone. npm always packs a root README regardless of `files`.
+      # Copied rather than committed so the two cannot drift.
+      - name: Copy the README into the package
+        run: cp examples/ConduitSharp.Spend/README.md npm/tokenflow/README.md
+
       - name: Publish to npm
         working-directory: npm/tokenflow
         run: |
