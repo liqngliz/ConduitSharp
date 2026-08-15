@@ -66,3 +66,5 @@ examples/ConduitSharp.Spend/logs/*
 # npx wrapper: app/ is `dotnet publish` output, built by CI and by the local publish step
 npm/tokenflow/app/
 npm/tokenflow/*.tgz
+# copied from examples/ConduitSharp.Spend/ by the npm job, never edited here
+npm/tokenflow/README.md
