@@ -74,6 +74,24 @@ export interface TokenWeights {
 
 export const DEFAULT_WEIGHTS: TokenWeights = { in: 1, cw: 1.25, cr: 0.1, out: 5 };
 
+function applyWeights(record: SpendRecord, useWeights: boolean, weightsConfig: Record<string, TokenWeights>): SpendRecord {
+  const rawThink = Math.min(record.think ?? 0, record.out);
+  const rawOut = record.out - rawThink;
+
+  if (useWeights) {
+    const w = weightsConfig[record.model] || DEFAULT_WEIGHTS;
+    return {
+      ...record,
+      in: record.in * (w.in ?? 1),
+      cacheWrite: record.cacheWrite * (w.cw ?? 1.25),
+      cacheRead: record.cacheRead * (w.cr ?? 0.1),
+      out: rawOut * (w.out ?? 5),
+      think: rawThink * (w.out ?? 5)
+    };
+  }
+  return { ...record, out: rawOut, think: rawThink };
+}
+
 export function computeMetrics(records: SpendRecord[], config: InsightsConfig = DEFAULT_INSIGHTS_CONFIG, useWeights: boolean = false, weightsConfig: Record<string, TokenWeights> = {}): MetricsData {
   const metrics: MetricsData = {
     totals: { in: 0, out: 0, cacheWrite: 0, cacheRead: 0, think: 0, ms: 0, messagesSent: 0 },
@@ -85,30 +103,7 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
   };
 
   for (const rawRecord of records) {
-    let record = rawRecord;
-    
-    // Split out think tokens before applying any weights; clamp if think exceeds out
-    const rawThink = Math.min(record.think ?? 0, record.out);
-    const rawOut = record.out - rawThink;
-    
-    // Apply token weights before any calculations
-    if (useWeights && record.model) {
-      const w = weightsConfig[record.model] || DEFAULT_WEIGHTS;
-      record = {
-        ...record,
-        in: record.in * (w.in ?? 1),
-        cacheWrite: record.cacheWrite * (w.cw ?? 1.25),
-        cacheRead: record.cacheRead * (w.cr ?? 0.1),
-        out: rawOut * (w.out ?? 5),
-        think: rawThink * (w.out ?? 5)
-      };
-    } else {
-      record = {
-        ...record,
-        out: rawOut,
-        think: rawThink
-      };
-    }
+    let record = applyWeights(rawRecord, useWeights, weightsConfig);
 
     // Totals
     metrics.totals.in += record.in;
@@ -181,14 +176,12 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
     metrics.dailyUsage[day].out += record.out;
 
     const model = (record.model && record.model.trim() !== '') ? record.model : 'unknown';
-    if (model.toLowerCase() !== 'unknown') {
-      if (!metrics.modelBreakdown[model]) metrics.modelBreakdown[model] = { in: 0, cacheRead: 0, cacheWrite: 0, think: 0, out: 0 };
-      metrics.modelBreakdown[model].in += record.in;
-      metrics.modelBreakdown[model].cacheRead += record.cacheRead;
-      metrics.modelBreakdown[model].cacheWrite += record.cacheWrite;
-      metrics.modelBreakdown[model].think += record.think ?? 0;
-      metrics.modelBreakdown[model].out += record.out;
-    }
+    metrics.modelBreakdown[model] ??= { in: 0, cacheRead: 0, cacheWrite: 0, think: 0, out: 0 };
+    metrics.modelBreakdown[model].in += record.in;
+    metrics.modelBreakdown[model].cacheRead += record.cacheRead;
+    metrics.modelBreakdown[model].cacheWrite += record.cacheWrite;
+    metrics.modelBreakdown[model].think += record.think ?? 0;
+    metrics.modelBreakdown[model].out += record.out;
 
     const route = record.route || 'unknown';
     if (!metrics.routeBreakdown[route]) metrics.routeBreakdown[route] = { in: 0, cacheRead: 0, cacheWrite: 0, think: 0, out: 0 };
@@ -246,8 +239,8 @@ export function computeMetrics(records: SpendRecord[], config: InsightsConfig = 
       
       const curDate = new Date(cur.ts).getTime();
       
-      // Fold identical consecutive prompts regardless of turn boundaries
-      if (curDate >= preOrigDate && cur.prompt === pre.prompt) {
+      // Fold identical consecutive prompts regardless of turn boundaries, except empty prompts
+      if (curDate >= preOrigDate && cur.prompt !== '' && cur.prompt === pre.prompt) {
         pre.in += cur.in;
         pre.out += cur.out;
         pre.think += cur.think;
@@ -359,29 +352,10 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, co
 
   let toolHeavy = 0;
 
-  for (const rawRecord of records) {
-    let record = rawRecord;
-    
-    const rawThink = Math.min(record.think ?? 0, record.out);
-    const rawOut = record.out - rawThink;
+  const counted = records.filter(r => r.in + r.out + r.cacheRead + r.cacheWrite + (r.think ?? 0) > 0);
 
-    if (useWeights && record.model) {
-      const w = weightsConfig[record.model] || DEFAULT_WEIGHTS;
-      record = {
-        ...record,
-        in: record.in * (w.in ?? 1),
-        cacheWrite: record.cacheWrite * (w.cw ?? 1.25),
-        cacheRead: record.cacheRead * (w.cr ?? 0.1),
-        out: rawOut * (w.out ?? 5),
-        think: rawThink * (w.out ?? 5)
-      };
-    } else {
-      record = {
-        ...record,
-        out: rawOut,
-        think: rawThink
-      };
-    }
+  for (const rawRecord of counted) {
+    let record = applyWeights(rawRecord, useWeights, weightsConfig);
 
     const totalIn = record.in + record.cacheWrite + record.cacheRead;
     const total = totalIn + record.out + (record.think ?? 0);
@@ -489,7 +463,7 @@ export function computeInsights(records: SpendRecord[], metrics: MetricsData, co
 }
 
 export const evaluatePromptFlags = (promptStr: string, totalIn: number, out: number, turnCount: number, config: InsightsConfig) => {
-  const isVague = promptStr.length < config.vaguePromptLength && totalIn > config.vagueMinInput;
+  const isVague = promptStr.length > 0 && promptStr.length < config.vaguePromptLength && totalIn > config.vagueMinInput;
   const isInputHeavy = totalIn > config.inputHeavyMinInput && out < config.inputHeavyMaxOutput;
   const isMarathon = turnCount > config.marathonMinTurns;
 
@@ -530,7 +504,7 @@ export function calculateSMA(prompts: SMAPrompt[], intervalMinutes: number, peri
     maxTime = explicitStartStr ? Math.max(Date.now(), new Date(allSorted[allSorted.length - 1].ts).getTime()) : new Date(allSorted[allSorted.length - 1].ts).getTime();
   }
   
-  if (minTime >= maxTime || (allSorted.length === 0 && !explicitStartStr)) return [];
+  if (minTime >= maxTime || (allSorted.length === 0 && !explicitStartStr)) return { data: [], actualIntervalMinutes: intervalMinutes };
   
   let actualIntervalMs = intervalMs;
   let numBuckets = Math.max(1, Math.ceil((maxTime - minTime + 1) / actualIntervalMs));
@@ -588,5 +562,5 @@ export function calculateSMA(prompts: SMAPrompt[], intervalMinutes: number, peri
     }
   }
   
-  return smaData;
+  return { data: smaData, actualIntervalMinutes: actualIntervalMs / 60000 };
 }

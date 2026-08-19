@@ -34,7 +34,7 @@ export const Charts: React.FC<{
     return Object.values(metrics.sessions).flatMap(s => s.prompts);
   }, [metrics]);
   
-  const smaData = useMemo(() => {
+  const { data: smaData, actualIntervalMinutes } = useMemo(() => {
     return calculateSMA(allPrompts, smaConfig.intervalMinutes, smaConfig.smaPeriod, startDate);
   }, [allPrompts, smaConfig.intervalMinutes, smaConfig.smaPeriod, startDate]);
 
@@ -188,6 +188,9 @@ export const Charts: React.FC<{
                   onChange={e => setSmaConfig({...smaConfig, intervalMinutes: Math.max(1, Number(e.target.value) || 1)})}
                   className="bg-black/40 border border-white/10 rounded px-2 py-1 text-sm w-16 focus:border-blue-500 focus:outline-none transition-colors text-right"
                 />
+                {actualIntervalMinutes !== smaConfig.intervalMinutes && (
+                  <span className="text-[10px] text-amber-400">(actual: {Math.round(actualIntervalMinutes)})</span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-xs text-gray-400">Period (intervals)</label>
