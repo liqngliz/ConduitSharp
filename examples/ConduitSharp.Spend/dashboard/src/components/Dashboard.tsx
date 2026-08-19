@@ -42,9 +42,10 @@ export const Dashboard: React.FC = () => {
     return () => { isMounted.current = false; };
   }, []);
   
-  const [lookbackConfig, setLookbackConfig] = useState<{ days: number }>(() => 
-    safeJSONParse('conduit_lookback_config', { days: 7 })
-  );
+  const [lookbackConfig, setLookbackConfig] = useState<{ days: number }>(() => {
+    const n = Number(safeJSONParse('conduit_lookback_config', {}).days);
+    return { days: Number.isFinite(n) && n >= 0 ? n : 7 };
+  });
   
   const [lookbackInputStr, setLookbackInputStr] = useState(lookbackConfig.days.toString());
   useEffect(() => {
@@ -126,19 +127,25 @@ export const Dashboard: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
+    setError(null);
+    seenIds.current = new Set();
+
     fetch('/api/spend')
       .then(res => {
         if (!res.ok) throw new Error('Failed to fetch dates');
         return res.json();
       })
       .then((dates: string[]) => {
+        if (cancelled) return;
         const targetDates = dates.filter(d => d >= dateConfig.start && d <= dateConfig.end);
         return Promise.all(
           targetDates.map(date => fetch(`/api/spend/${date}`).then(r => r.json()))
         );
       })
-      .then((results: SpendRecord[][]) => {
+      .then((results: SpendRecord[][] | undefined) => {
+        if (cancelled || !results) return;
         const parsed = results.flat();
         
         const newSet = new Set<string>();
@@ -149,17 +156,22 @@ export const Dashboard: React.FC = () => {
           const map = new Map<string, SpendRecord>();
           prev.forEach(r => map.set(recordKey(r), r));
           parsed.forEach(r => map.set(recordKey(r), r));
-          
-          return Array.from(map.values());
+          return Array.from(map.values()).filter(r => {
+            const d = r.ts.split('T')[0];
+            return d >= dateConfig.start && d <= dateConfig.end;
+          });
         });
         
         setLoading(false);
       })
       .catch(err => {
+        if (cancelled) return;
         console.error(err);
         setError('Could not load logs from /api/spend.');
         setLoading(false);
       });
+
+    return () => { cancelled = true; };
   }, [dateConfig.start, dateConfig.end]);
 
   useEffect(() => {
