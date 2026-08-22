@@ -262,7 +262,7 @@ describe('calculateSMA', () => {
     ] as any;
     
     // Interval 1 min, Period 2
-    const sma = calculateSMA(prompts, 1, 2);
+    const { data: sma } = calculateSMA(prompts, 1, 2);
     
     // Buckets:
     // 10:00: in 10
@@ -287,5 +287,105 @@ describe('calculateSMA', () => {
     expect(metrics.sessions['sess1'].prompts).toHaveLength(1);
     expect(metrics.sessions['sess1'].prompts[0].trace).toBe('trace-first');
     expect(metrics.sessions['sess1'].prompts[0].traces).toEqual(['trace-first', 'trace-second']);
+  });
+});
+
+describe('Defect fixes', () => {
+  // #5 — an empty prompt is missing data, not evidence that two rows are the same prompt
+  it('#5: empty prompts never fold together', () => {
+    const records: SpendRecord[] = [
+      // 0-token empty prompt should be discarded
+      { ts: "2026-08-01T10:00:00Z", route: "codex", model: "", servedModel: "", caller: "a", in: 0, out: 0, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 1, tools: 0, ms: 100, streamed: true, prompt: "" },
+      // two empty prompts in one session stay two rows
+      { ts: "2026-08-01T10:01:00Z", route: "claude", model: "m", servedModel: "m", caller: "a", in: 100, out: 50, cacheWrite: 0, cacheRead: 0, session: "sess2", turn: 1, tools: 0, ms: 100, streamed: true, prompt: "" },
+      { ts: "2026-08-01T10:02:00Z", route: "claude", model: "m", servedModel: "m", caller: "a", in: 200, out: 60, cacheWrite: 0, cacheRead: 0, session: "sess2", turn: 2, tools: 0, ms: 100, streamed: true, prompt: "" },
+    ];
+    const metrics = computeMetrics(records);
+    // sess1 should be completely discarded or have 0 prompts
+    if (metrics.sessions['sess1']) {
+      expect(metrics.sessions['sess1'].prompts).toHaveLength(0);
+    } else {
+      expect(metrics.sessions['sess1']).toBeUndefined();
+    }
+    // sess2 keeps both rows: 100 in and 200 in are separate turns
+    expect(metrics.sessions['sess2'].prompts).toHaveLength(2);
+  });
+
+  // #6 — records without a model still get weighted with DEFAULT_WEIGHTS
+  it('#6: model-less records get DEFAULT_WEIGHTS when weighting is on', () => {
+    const records: SpendRecord[] = [
+      { ts: "2026-08-01T10:00:00Z", route: "claude", model: "", servedModel: "", caller: "a", in: 100, out: 50, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 1, tools: 0, ms: 100, streamed: true, prompt: "test" },
+    ];
+    // DEFAULT_WEIGHTS: in=1, cw=1.25, cr=0.1, out=5
+    const metrics = computeMetrics(records, DEFAULT_INSIGHTS_CONFIG, true, {});
+    expect(metrics.totals.in).toBe(100);   // 100 * 1
+    expect(metrics.totals.out).toBe(250);  // 50 * 5
+  });
+
+  // #7 + #13 — every record reaches modelBreakdown, so it sums to metrics.totals
+  it('#7+#13: blank model lands in modelBreakdown unconditionally', () => {
+    const records: SpendRecord[] = [
+      // Valid unknown model (prompt not empty, tokens > 0)
+      { ts: "2026-08-01T10:00:00Z", route: "local", model: "", servedModel: "", caller: "b", in: 100, out: 50, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 1, tools: 0, ms: 100, streamed: true, prompt: "test" },
+      // Empty prompt unknown model (prompt is empty, tokens > 0)
+      { ts: "2026-08-01T10:01:00Z", route: "local", model: "", servedModel: "", caller: "c", in: 50, out: 10, cacheWrite: 0, cacheRead: 0, session: "sess2", turn: 1, tools: 0, ms: 100, streamed: true, prompt: "" },
+    ];
+    const metrics = computeMetrics(records);
+
+    // "unknown" must exist in modelBreakdown
+    expect(metrics.modelBreakdown['unknown']).toBeDefined();
+    
+    // both records, empty prompt or not
+    expect(metrics.modelBreakdown['unknown'].in).toBe(150);
+    // and the breakdown sums to the totals the headline shows
+    const sum = Object.values(metrics.modelBreakdown).reduce((a, v) => a + v.in + v.out + v.cacheRead + v.cacheWrite + v.think, 0);
+    const totals = metrics.totals;
+    expect(sum).toBe(totals.in + totals.out + totals.cacheRead + totals.cacheWrite + totals.think);
+  });
+
+  // #10 — evaluatePromptFlags must not flag empty prompts as vague
+  it('#10: empty prompt is not flagged vague by evaluatePromptFlags', () => {
+    const flags = evaluatePromptFlags('', 5000, 100, 1, DEFAULT_INSIGHTS_CONFIG);
+    expect(flags.isVague).toBe(false);
+  });
+
+  // #11 — zero-token records must not dilute insight averages
+  it('#11: zero-token records are excluded from insight averages', () => {
+    const records: SpendRecord[] = [
+      { ts: "2026-08-01T10:00:00Z", route: "claude", model: "m", servedModel: "m", caller: "a", in: 100, out: 50, cacheWrite: 0, cacheRead: 0, session: "sess1", turn: 1, tools: 0, ms: 100, streamed: true, prompt: "real prompt" },
+      // zero-token poll record
+      { ts: "2026-08-01T10:01:00Z", route: "codex", model: "m", servedModel: "m", caller: "a", in: 0, out: 0, cacheWrite: 0, cacheRead: 0, session: "sess2", turn: 0, tools: 0, ms: 50, streamed: false, prompt: "" },
+    ];
+    const metrics = computeMetrics(records);
+    const insights = computeInsights(records, metrics);
+
+    // Only the first record has tokens; the zero-token record must not inflate the count
+    // avgNonVagueTokens should be 150 (one record: 100 in + 50 out), not 75 (150 / 2)
+    expect(insights.avgNonVagueTokens).toBe(150);
+  });
+
+  // #12 — calculateSMA returns actual interval when bucket count is capped
+  it('#12: calculateSMA returns actualIntervalMinutes reflecting the 5000-bucket cap', () => {
+    // Create a range that would exceed 5000 one-minute buckets
+    // 10 days = 14400 minutes >> 5000
+    const prompts = [
+      { ts: "2026-08-01T00:00:00Z", in: 10, out: 5, think: 0, cacheRead: 0, cacheWrite: 0, total: 15 },
+      { ts: "2026-08-10T23:59:00Z", in: 20, out: 10, think: 0, cacheRead: 0, cacheWrite: 0, total: 30 },
+    ] as any;
+
+    const { data, actualIntervalMinutes } = calculateSMA(prompts, 1, 2);
+    expect(data.length).toBeLessThanOrEqual(5000);
+    expect(actualIntervalMinutes).toBeGreaterThan(1);
+  });
+
+  // #12 — SMA returns the user-set interval when no capping occurs
+  it('#12: calculateSMA returns user-set interval when under 5000 buckets', () => {
+    const prompts = [
+      { ts: "2026-08-01T10:00:00Z", in: 10, out: 5, think: 0, cacheRead: 0, cacheWrite: 0, total: 15 },
+      { ts: "2026-08-01T10:02:00Z", in: 20, out: 10, think: 0, cacheRead: 0, cacheWrite: 0, total: 30 },
+    ] as any;
+
+    const { actualIntervalMinutes } = calculateSMA(prompts, 1, 2);
+    expect(actualIntervalMinutes).toBe(1);
   });
 });
